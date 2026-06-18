@@ -1,5 +1,5 @@
 /**
- * @name Chatbot-SILI 万界规划局QQ机器人
+ * @name SILI-agent 万界规划局QQ机器人
  * @author Dragon-Fish <dragon-fish@qq.com>
  *
  * @license MIT

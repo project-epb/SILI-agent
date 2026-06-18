@@ -43,7 +43,7 @@ export default class PluginAbout extends BasePlugin {
               ——或者你也可以艾特我后直接输入问题，并以问号结尾，直截了当地提出问题~
             </p>
             <p>
-              开源地址(记得点✨哦): https://github.com/project-epb/Chatbot-SILI
+              开源地址(记得点✨哦): https://github.com/project-epb/SILI-agent
             </p>
           </>
         )

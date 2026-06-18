@@ -2,9 +2,9 @@
 
 <img src="https://github.com/user-attachments/assets/5bcf2bcd-5777-424d-b413-9c7a33344c1b" alt="SILI avatar" width="200"/>
 
-# Chatbot SILI v4
+# SILI-agent
 
-Brand new SILI: harder, better, faster, stronger.
+The S-I-L-I Network: harder, better, faster, stronger.
 
 </div>
 
@@ -22,19 +22,19 @@ Brand new SILI: harder, better, faster, stronger.
 
 ### 向 SILI 直截了当地提出问题吧！
 
-<img src="https://github.com/project-epb/Chatbot-SILI/assets/44761872/79e1ac41-c147-48a2-9f0a-11c8fba5b696" width="350">
+<img src="https://github.com/project-epb/SILI-agent/assets/44761872/79e1ac41-c147-48a2-9f0a-11c8fba5b696" width="350">
 
 <div align="right">—— AI powered ☆ 生动有趣又偶尔生草</div>
 
 ### 让 SILI 教教你外语怎么说！
 
-<img src="https://github.com/project-epb/Chatbot-SILI/assets/44761872/54433e6b-790b-4f7e-a29f-00eacea1504f" width="350">
+<img src="https://github.com/project-epb/SILI-agent/assets/44761872/54433e6b-790b-4f7e-a29f-00eacea1504f" width="350">
 
 <div align="right">—— 月が绮丽ですね</div>
 
 ### ~~就要涩涩！~~ 只是搜图而已啦！
 
-<img src="https://github.com/project-epb/Chatbot-SILI/assets/44761872/fc420e88-caea-4ece-a0b6-367e33d425d3" width="350">
+<img src="https://github.com/project-epb/SILI-agent/assets/44761872/fc420e88-caea-4ece-a0b6-367e33d425d3" width="350">
 
 <div align="right">—— SILI sama~ Can can word~!</div>
 
