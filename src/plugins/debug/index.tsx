@@ -146,5 +146,20 @@ export class PluginDebug extends BasePlugin {
         if (!ev) return 'No event data found.'
         return JSON.stringify(ev, null, 2)
       })
+
+    ctx
+      .command('debug.forward', 'Test forward message', { authority: 3 })
+      .action(({ session }) => {
+        return (
+          <message forward>
+            <message user_id={session.userId} nickname={session.username}>
+              {session.content}
+            </message>
+            <message user_id={session.bot.userId} nickname={'BOT'}>
+              Hi! This message is from the bot.
+            </message>
+          </message>
+        )
+      })
   }
 }

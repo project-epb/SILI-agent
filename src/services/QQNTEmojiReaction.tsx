@@ -12,7 +12,9 @@ declare module 'koishi' {
 
 export class QQNTEmojiReactionService extends Service {
   constructor(public ctx: Context) {
-    super('qqntEmojiReaction')
+    super(ctx)
+    this.ctx.set('qqntEmojiReaction', this)
+
     const that = this
     this.ctx
       .platform('onebot')
