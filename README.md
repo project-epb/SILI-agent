@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/user-attachments/assets/5bcf2bcd-5777-424d-b413-9c7a33344c1b" alt="SILI avatar" width="200"/>
+<img src="https://r2.epb.wiki/avatar/SILI.jpg" alt="SILI avatar" width="200"/>
 
 # SILI-agent
 
