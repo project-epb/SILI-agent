@@ -157,8 +157,8 @@ badwords.ini
 
 .volumns/
 
-# claude code superpowers plugin
-docs/superpowers
+# claude code superpowers plugin runtime dir
+# (SDD docs under docs/superpowers are tracked on purpose)
 .superpowers
 
 # per-environment Claude Code local notes (imported by CLAUDE.md via @CLAUDE.local.md)
