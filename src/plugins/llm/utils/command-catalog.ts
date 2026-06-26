@@ -2,6 +2,21 @@ import { Context } from 'koishi'
 
 import { isForbiddenAgentCommand } from '../tools'
 
+declare module 'koishi' {
+  namespace Command {
+    interface Config {
+      /** agent catalog 专用描述；存在则覆盖 description（仅对 agent 生效，不影响人类 help）。必须是确定性静态串。 */
+      descriptionForAgents?: string
+      /** agent 调 help 时详情段专用文案（更技术性）；缺省回落 description/usage。 */
+      helpForAgents?: string
+      /** 仅对人类 help 隐藏，agent catalog 仍可见（投影到 config.hidden 落地）。 */
+      hideForHuman?: boolean
+      /** 仅对 agent catalog 隐藏，人类 help 正常可见。 */
+      hideForAgents?: boolean
+    }
+  }
+}
+
 export interface CommandCatalogArg {
   name: string
   type: string
@@ -22,6 +37,8 @@ export interface CommandCatalogEntry {
   description: string
   /** Long-form usage block (multi-line, often with examples). */
   usage?: string
+  /** agent-only 详情文案（来自 command config 的 helpForAgents）；优先于 description 渲染。 */
+  agentHelp?: string
   args: CommandCatalogArg[]
   options: CommandCatalogOption[]
   aliases: string[]
@@ -106,7 +123,7 @@ export function renderCatalogEntryDetail(entry: CommandCatalogEntry): string {
 
   lines.push(`# ${heading}`)
   lines.push('')
-  lines.push(entry.description?.trim() || '(无描述)')
+  lines.push(entry.agentHelp?.trim() || entry.description?.trim() || '(无描述)')
 
   if (entry.usage?.trim()) {
     lines.push('')
@@ -188,13 +205,26 @@ export function renderCompactCatalog(entries: CommandCatalogEntry[]): string {
   return header + '\n\n' + lines.join('\n')
 }
 
+/**
+ * 把 `hideForHuman` 投影到官方 `config.hidden`，让 @koishijs/plugin-help
+ * 对人类隐藏该命令（plugin-help 只读 config.hidden）。仅在未显式设置
+ * hidden 时投影，避免覆盖使用方意图。agent 侧 buildCommandCatalog 用
+ * `!hideForHuman` 豁免，故投影后 agent 仍可见。
+ */
+export function projectHideForHuman(config: any): void {
+  if (config?.hideForHuman && config.hidden === undefined) {
+    config.hidden = true
+  }
+}
+
 export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
   const list = (ctx as any).$commander?._commandList ?? []
   const visited = new WeakSet()
 
   const visit = (cmd: any): CommandCatalogEntry | null => {
     if (!cmd || visited.has(cmd)) return null
-    if (cmd.config?.hidden) return null
+    if (cmd.config?.hideForAgents) return null
+    if (cmd.config?.hidden && !cmd.config?.hideForHuman) return null
     // 同时过滤掉 agent 不允许调用的命令——既不在 catalog 里出现，也不会被
     // dispatchTool 调到（双层防御）。
     if (isForbiddenAgentCommand(cmd.name)) return null
@@ -205,6 +235,7 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
       ctx.i18n.text(localeFallback, [key], {}) || ''
 
     const description: string =
+      cmd.config?.descriptionForAgents ||
       i18n(`commands.${cmd.name}.description`) ||
       cmd._description ||
       cmd.config?.description ||
@@ -248,6 +279,7 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
       name: cmd.displayName || cmd.name,
       description,
       usage,
+      agentHelp: cmd.config?.helpForAgents,
       args,
       options,
       aliases,

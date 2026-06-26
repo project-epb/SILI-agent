@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  buildCommandCatalog,
   findCatalogEntry,
+  projectHideForHuman,
   renderCatalogEntryDetail,
   renderCommandCatalog,
   renderCompactCatalog,
@@ -376,5 +378,128 @@ describe('renderCatalogEntryDetail', () => {
     }
     const out = renderCatalogEntryDetail(entry)
     expect(out).toContain('# foo <a> [b]')
+  })
+})
+
+// ---- fake koishi ctx/command factories for buildCommandCatalog ----
+function makeCmd(over: any = {}): any {
+  return {
+    name: over.name ?? 'cmd',
+    displayName: over.displayName,
+    config: over.config ?? {},
+    locale: '',
+    _description: over._description ?? '',
+    _usage: over._usage,
+    _arguments: over._arguments ?? [],
+    _options: over._options ?? {},
+    _aliases: over._aliases ?? {},
+    children: over.children ?? [],
+    parent: over.parent ?? null,
+    _root: undefined,
+  }
+}
+function makeCtx(commands: any[]): any {
+  return {
+    $commander: { _commandList: commands },
+    i18n: { text: () => '' },
+  }
+}
+
+describe('buildCommandCatalog: descriptionForAgents', () => {
+  it('uses descriptionForAgents over the human description', () => {
+    const cmd = makeCmd({
+      name: 'comfyui.generate',
+      _description: '人类看的描述',
+      config: { descriptionForAgents: '当需要画图时调用' },
+    })
+    const entries = buildCommandCatalog(makeCtx([cmd]))
+    expect(entries[0].description).toBe('当需要画图时调用')
+  })
+
+  it('falls back to the human description when descriptionForAgents is absent', () => {
+    const cmd = makeCmd({ name: 'foo', _description: '普通描述' })
+    const entries = buildCommandCatalog(makeCtx([cmd]))
+    expect(entries[0].description).toBe('普通描述')
+  })
+})
+
+describe('buildCommandCatalog: agent-side visibility', () => {
+  it('hideForAgents excludes the command from the catalog', () => {
+    const cmds = [
+      makeCmd({ name: 'a' }),
+      makeCmd({ name: 'b', config: { hideForAgents: true } }),
+    ]
+    const entries = buildCommandCatalog(makeCtx(cmds))
+    expect(entries.map((e) => e.name)).toEqual(['a'])
+  })
+
+  it('hideForHuman keeps the command visible to agents', () => {
+    const cmds = [makeCmd({ name: 'a', config: { hideForHuman: true } })]
+    const entries = buildCommandCatalog(makeCtx(cmds))
+    expect(entries.map((e) => e.name)).toEqual(['a'])
+  })
+
+  it('plain hidden is excluded from the catalog (regression)', () => {
+    const cmds = [makeCmd({ name: 'a', config: { hidden: true } })]
+    const entries = buildCommandCatalog(makeCtx(cmds))
+    expect(entries).toHaveLength(0)
+  })
+
+  it('hidden + hideForHuman stays visible to agents (projected case)', () => {
+    const cmds = [
+      makeCmd({ name: 'a', config: { hidden: true, hideForHuman: true } }),
+    ]
+    const entries = buildCommandCatalog(makeCtx(cmds))
+    expect(entries.map((e) => e.name)).toEqual(['a'])
+  })
+})
+
+describe('renderCatalogEntryDetail: agentHelp', () => {
+  it('uses agentHelp for the description section when present', () => {
+    const entry: CommandCatalogEntry = {
+      name: 'comfyui.generate',
+      description: '简短描述',
+      agentHelp: '详细技术帮助：template 必填，prompt 必填，loras 传 JSON',
+      args: [],
+      options: [],
+      aliases: [],
+      children: [],
+    }
+    const out = renderCatalogEntryDetail(entry)
+    expect(out).toContain('详细技术帮助')
+    expect(out).not.toContain('简短描述')
+  })
+
+  it('falls back to description when agentHelp is absent', () => {
+    const entry: CommandCatalogEntry = {
+      name: 'foo',
+      description: '普通描述',
+      args: [],
+      options: [],
+      aliases: [],
+      children: [],
+    }
+    const out = renderCatalogEntryDetail(entry)
+    expect(out).toContain('普通描述')
+  })
+})
+
+describe('projectHideForHuman', () => {
+  it('sets hidden=true for a hideForHuman command', () => {
+    const config: any = { hideForHuman: true }
+    projectHideForHuman(config)
+    expect(config.hidden).toBe(true)
+  })
+
+  it('does not override an explicitly-set hidden', () => {
+    const config: any = { hideForHuman: true, hidden: false }
+    projectHideForHuman(config)
+    expect(config.hidden).toBe(false)
+  })
+
+  it('is a no-op when hideForHuman is absent', () => {
+    const config: any = {}
+    projectHideForHuman(config)
+    expect(config.hidden).toBeUndefined()
   })
 })

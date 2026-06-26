@@ -27,9 +27,11 @@ import { parseLLMProviders } from '@/utils/parseLLMProviders'
 import PluginAbout from '~/about'
 import PatchCallme from '~/callme'
 import PluginCanIUse from '~/caniuse'
+import PluginComfyUI from '~/comfy-ui'
 import PluginDatabaseAdmin from '~/dbadmin'
 import { PluginDebug } from '~/debug'
 import PluginDice from '~/dice'
+import PluginGelbooru from '~/gelbooru'
 import PluginHljs from '~/hljs'
 import { PluginHomo } from '~/homo'
 import PluginLLM from '~/llm'
@@ -445,6 +447,65 @@ app.plugin(function PluginCollectionSILICore(ctx) {
     tavily: env.LLM_TAVILY_API_KEY
       ? { apiKey: env.LLM_TAVILY_API_KEY }
       : undefined,
+  })
+  // ComfyUI 图像生成：从 data/comfyui 加载 workflow/guide（容器里 /app/data，
+  // 即宿主机 .volumns/core/comfyui/）；后端 baseURL + 认证走 .env（沿用 Hermes
+  // 变量名）。未配 COMFYUI_BASE_URL 时插件惰性无害（命令仍注册，generate 返回
+  // 未配置提示）。
+  ctx.plugin(PluginComfyUI, {
+    http: env.COMFYUI_BASE_URL
+      ? {
+          baseURL: env.COMFYUI_BASE_URL,
+          headers:
+            env.CF_SERVICE_TOKEN_ID && env.CF_SERVICE_TOKEN_SECRET
+              ? {
+                  'CF-Access-Client-Id': env.CF_SERVICE_TOKEN_ID,
+                  'CF-Access-Client-Secret': env.CF_SERVICE_TOKEN_SECRET,
+                }
+              : undefined,
+        }
+      : undefined,
+    workflows: PluginComfyUI.scanWorkflowTemplates(
+      resolve(ctx.baseDir, 'data/comfyui/workflows')
+    ),
+    guides: PluginComfyUI.scanGuides(
+      resolve(ctx.baseDir, 'data/comfyui/guides')
+    ),
+    // 临时措施：放行沙盒群 / NGNL 群 / 站长私聊（复用现有 .env 变量；CHANNEL_QQ_*
+    // 是群 channelId，站长私聊用 private:<QQ号>）。都未配则为空数组 = 不限。
+    allowedChannels: [
+      env.ACCOUNT_QQ_XIAOYUJUN && `private:${env.ACCOUNT_QQ_XIAOYUJUN}`,
+      env.CHANNEL_QQ_SANDBOX,
+      env.CHANNEL_QQ_NGNL_COMMON,
+    ].filter(Boolean) as string[],
+    // 访问控制（防群友刷爆显卡）：可经 .env 调整，缺省给保护性默认。
+    // COMFYUI_GENERATE_MIN_INTERVAL_S 单位为秒（转成 ms）。
+    generate: {
+      authority: env.COMFYUI_GENERATE_AUTHORITY
+        ? Number(env.COMFYUI_GENERATE_AUTHORITY)
+        : 1,
+      minInterval: env.COMFYUI_GENERATE_MIN_INTERVAL_S
+        ? Number(env.COMFYUI_GENERATE_MIN_INTERVAL_S) * 1000
+        : 30_000,
+      maxUsage: env.COMFYUI_GENERATE_MAX_USAGE
+        ? Number(env.COMFYUI_GENERATE_MAX_USAGE)
+        : 0,
+    },
+    // 提示词过滤（按需启用）：blacklist 命中即拒绝、force* 追加强制词，Computed 可按群。
+    // 复杂逻辑用 ctx.on('comfyui/before-generate', ...) 自己写监听器。
+    // filter: {
+    //   blacklist: (s) => s.channelId === env.CHANNEL_QQ_XXX ? ['nsfw', 'nude'] : [],
+    //   forceNegative: 'nsfw, nude',
+    // },
+  })
+  // Gelbooru 标签/图片查询（agent 工具，只读）：凭据走 .env，未配则惰性无害
+  // （命令仍注册，调用返回未配置提示）。imageBlacklist 可按需启用，Computed 按群。
+  ctx.plugin(PluginGelbooru, {
+    apiKey: env.GELBOORU_API_KEY,
+    userId: env.GELBOORU_USER_ID,
+    // 含敏感标签的 post 去缩略图（保留 tags/score 供 agent 写 prompt 参考）。
+    // imageBlacklist: (s) =>
+    //   s.channelId === env.CHANNEL_QQ_XXX ? [] : ['nsfw', 'nude', 'explicit'],
   })
   ctx.plugin(PluginPing)
   ctx.plugin(PluginPixiv, {

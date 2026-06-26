@@ -3,6 +3,7 @@ import type { Context, Logger } from 'koishi'
 import {
   type CommandCatalogEntry,
   buildCommandCatalog,
+  projectHideForHuman,
   renderCompactCatalog,
 } from '../utils/command-catalog'
 
@@ -33,6 +34,11 @@ export class CommandCatalogService {
 
   /** Hook into ctx ready so we get a first build automatically. */
   bind(): void {
+    // hideForHuman → config.hidden 投影：对已注册命令补一遍，并监听后续新增命令。
+    for (const cmd of (this.ctx as any).$commander?._commandList ?? []) {
+      projectHideForHuman(cmd.config)
+    }
+    this.ctx.on('command-added', (cmd: any) => projectHideForHuman(cmd.config))
     this.ctx.on('ready', () => this.refresh('ready'))
   }
 
