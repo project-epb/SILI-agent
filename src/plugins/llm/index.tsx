@@ -18,6 +18,7 @@ import AdminCommands from './commands/admin'
 import ChatCommand from './commands/chat'
 import { ChatCompletionUsage, LLMProviderBase } from './providers/_base'
 import { AnthropicProvider } from './providers/anthropic'
+import { CopilotProvider } from './providers/copilot'
 import { OpenAIProvider } from './providers/openai'
 import { ActiveChatRegistry } from './services/active-chats'
 import { ChatHistoryService } from './services/chat-history'
@@ -102,6 +103,13 @@ export type ProviderConfig =
       name: string
       type: 'anthropic'
       options: AnthropicClientOptions
+      model?: string
+      maxTokens?: number
+    }
+  | {
+      name: string
+      type: 'copilot'
+      options: ClientOptions
       model?: string
       maxTokens?: number
     }
@@ -351,6 +359,12 @@ export default class PluginLLM extends BasePlugin<Config> {
           this.providers.set(
             providerConfig.name,
             new AnthropicProvider(providerConfig.options)
+          )
+          break
+        case 'copilot':
+          this.providers.set(
+            providerConfig.name,
+            new CopilotProvider(providerConfig.options)
           )
           break
         default:
