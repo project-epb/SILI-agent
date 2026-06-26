@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - 不引入 `github-copilot-ai` npm 包（它依赖 `openai@^5`，与本项目 `openai@^6.17.0` 冲突）。客户端代码内联进仓库。
-- vendored 客户端逻辑**零改动**，唯一允许的改动是 import 指向本项目的 `openai@6` + 文件头加来源/MIT 署名注释。endpoint 切换逻辑（`getBaseURLByPlan` / `setCopilotInternalUser`）原样保留。
+- vendored 客户端**行为零改动**，端点切换逻辑（`getBaseURLByPlan` / `setCopilotInternalUser`）原样保留。允许的改动仅限：(a) import 指向本项目的 `openai@6`；(b) 文件头加来源/MIT 署名注释；(c) 两处不改变行为的清理 —— 构造函数里 `let baseURL` 改 `const baseURL`，`setCopilotInternalAuth` 删掉第二个 `if` 里重复的 `!auth.token` 死判（上一行已判过）。这两处已直接写进下方 Task 1 的代码，按代码照抄即可。
 - 路径别名：`@/*` → `src/*`，`~/*` → `src/plugins/*`，`$utils/*` → `src/utils/*`。
 - 测试位于被测代码同级的 `__tests__/`，用 vitest（`describe/it/expect`，from `'vitest'`）。
 - 类型检查命令：`npx tsc --noEmit -p .`。
@@ -69,7 +69,7 @@ export class GithubCopilotAI extends OpenAI {
       copilotPlan?: 'default' | 'individual' | 'enterprise'
     } = {}
   ) {
-    let baseURL = GithubCopilotAI.getBaseURLByPlan(
+    const baseURL = GithubCopilotAI.getBaseURLByPlan(
       options.copilotPlan || 'default'
     )
     super({
@@ -154,7 +154,7 @@ export class GithubCopilotAI extends OpenAI {
     if (!auth.token || !auth.expires_at) {
       throw new Error('Invalid payload', { cause: auth })
     }
-    if (!auth.token || Date.now() / 1000 > auth.expires_at) {
+    if (Date.now() / 1000 > auth.expires_at) {
       this.#copilotInternalAuth = null
       return null
     }
