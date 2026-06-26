@@ -1,4 +1,4 @@
-import { ClientOptions, OpenAI } from 'openai'
+import type { ClientOptions, OpenAI } from 'openai'
 
 import {
   ChatCompletionFeatures,
