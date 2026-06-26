@@ -47,6 +47,23 @@ describe('parseLLMProviders', () => {
     expect(out[0].name).toBe('fallback')
   })
 
+  it('parses a copilot provider with apiKey as the GitHub OAuth token', () => {
+    const out = parseLLMProviders({
+      LLM_PROVIDER_0_NAME: 'copilot',
+      LLM_PROVIDER_0_TYPE: 'copilot',
+      LLM_PROVIDER_0_API_KEY: 'gho_token',
+    })
+    expect(out).toEqual([
+      {
+        name: 'copilot',
+        model: undefined,
+        maxTokens: undefined,
+        type: 'copilot',
+        options: { apiKey: 'gho_token' },
+      },
+    ])
+  })
+
   describe('with unmatched LLM_DEFAULT_PROVIDER', () => {
     let warnSpy: ReturnType<typeof vi.spyOn>
 

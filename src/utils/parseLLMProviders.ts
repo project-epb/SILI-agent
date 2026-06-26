@@ -5,7 +5,9 @@ import type { ProviderConfig } from '~/llm'
  *
  * Convention:
  *   LLM_PROVIDER_{N}_NAME     — unique identifier (required)
- *   LLM_PROVIDER_{N}_TYPE     — 'openai' | 'anthropic' (required)
+ *   LLM_PROVIDER_{N}_TYPE     — 'openai' | 'anthropic' | 'copilot' (required)
+ *     For 'copilot', API_KEY is your GitHub OAuth token; BASE_URL is normally
+ *     left unset (the endpoint is auto-detected from your Copilot plan).
  *   LLM_PROVIDER_{N}_BASE_URL — API base URL (optional, mainly for openai-compatible)
  *   LLM_PROVIDER_{N}_API_KEY  — API key (optional, SDK can also read from its own env var)
  *   LLM_PROVIDER_{N}_MODEL       — default model override
@@ -54,6 +56,15 @@ export function parseLLMProviders(
       providers.push({
         ...base,
         type: 'anthropic',
+        options: {
+          ...(baseURL && { baseURL }),
+          ...(apiKey && { apiKey }),
+        },
+      })
+    } else if (type === 'copilot') {
+      providers.push({
+        ...base,
+        type: 'copilot',
         options: {
           ...(baseURL && { baseURL }),
           ...(apiKey && { apiKey }),
