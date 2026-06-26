@@ -26,11 +26,17 @@ function mapOpenAIFinishReason(reason: string | undefined): StreamFinishReason {
 }
 
 export class OpenAIProvider extends LLMProviderBase {
-  private client: OpenAI
+  protected client: OpenAI
 
   constructor(options: ClientOptions) {
     super()
-    this.client = new OpenAI(options)
+    this.client = this.createClient(options)
+  }
+
+  /** Build the underlying OpenAI-protocol client. Subclasses override to
+   *  swap in a compatible client (e.g. Copilot). */
+  protected createClient(options: ClientOptions): OpenAI {
+    return new OpenAI(options)
   }
 
   protected normalizeOptions(
