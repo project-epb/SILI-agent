@@ -41,10 +41,15 @@ export default class PluginVersion extends BasePlugin {
           onebotVersionInfo,
         })
 
+        const runtime = process.versions.bun
+          ? `Bun v${process.versions.bun} (Node ${process.versions.node})`
+          : `Node v${process.versions.node}`
+
         if (!options!.all) {
           return [
             `[SILI Core] v${pkgInfo.version} (${gitHash?.trim()})`,
             `[Koishi.js] v${KOISHI_VERSION}`,
+            `[Runtime] ${runtime}`,
             `[Platforms] ${platforms}`,
             onebotVersionInfo
               ? `[OneBot] ${onebotVersionInfo.app_name} ${onebotVersionInfo.app_version} / protocol ${onebotVersionInfo.protocol_version}`
@@ -71,6 +76,7 @@ export default class PluginVersion extends BasePlugin {
           [
             `[SILI Core] v${pkgInfo.version} (${gitHash})`,
             `[Koishi.js] v${KOISHI_VERSION}`,
+            `[Runtime] ${runtime}`,
             `- installed plugins:`,
             `  - ${plugins.join('\n  - ')}`,
             `- active plugins:`,

@@ -41,10 +41,10 @@ RUN \
     # 刷新字体缓存
     fc-cache -fv
 
-# 安装 Node.js LTS 以及 bun
+# 安装 Node.js LTS 以及 bun（钉死 bun 版本，保证镜像可复现；安装脚本靠首位置参数选版本）
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
     apt-clean-install nodejs && \
-    curl -fsSL https://bun.sh/install | bash
+    curl -fsSL https://bun.com/install | bash -s "bun-v1.3.14"
 
 # 将 bun 添加到 PATH
 ENV PATH="/root/.bun/bin:${PATH}"

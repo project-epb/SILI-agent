@@ -13,7 +13,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "@satorijs/element",
+    "jsxImportSource": "@/satori-jsx",
     "paths": {
       "@/*": ["./src/*"],
       "~/*": ["./src/plugins/*"],

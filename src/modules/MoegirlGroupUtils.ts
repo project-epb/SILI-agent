@@ -5,6 +5,7 @@
 import { Context, Session, Time, h, segment } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
+import { checkUserHasRole } from '@/utils/formatSession'
 
 interface SpamLog {
   time: string
@@ -61,7 +62,7 @@ export default class MoegirlGroupUtils extends BasePlugin {
       )
       if (hitWhiteList) return
 
-      const isAdmin = session.author?.roles?.some((i) => i === 'admin')
+      const isAdmin = checkUserHasRole(session, 'admin')
       if (isAdmin) return
 
       const { authority } = await session.getUser(session.userId, ['authority'])
@@ -86,7 +87,7 @@ export default class MoegirlGroupUtils extends BasePlugin {
           return true
         }
       })
-      const isAdmin = session.author.roles?.some((i) => i === 'admin')
+      const isAdmin = checkUserHasRole(session, 'admin')
       if (!hitBlackList || isAdmin) {
         return
       }

@@ -100,6 +100,10 @@ Fandom 的全域跨语言链接同样适用，例如 `[[w:c:zh.ngnl:初濑伊纲
 docker compose up -d
 ```
 
+**运行时**：源码以 TypeScript + 最新 ECMAScript 规范编写，由 **bun** 直接执行（dev 与生产统一、无编译步骤），bun 同时充当包管理器。
+
+> ⚠️ `package.json` 显式声明 `"type": "commonjs"`。koishi 的加载器依赖 CJS 的 `require.extensions`，**请勿改为 `"type": "module"`**，否则启动即失败。
+
 详见 [开发文档](docs/README.md)。
 
 ---

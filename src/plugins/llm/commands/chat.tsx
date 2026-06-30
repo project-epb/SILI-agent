@@ -3,6 +3,7 @@ import { Context, Time, h } from 'koishi'
 import crypto from 'node:crypto'
 
 import { cancellableInterval } from '@/utils/cancellableDefferred'
+import { getUserRoles } from '@/utils/formatSession'
 
 import BasePlugin from '~/_boilerplate'
 
@@ -246,9 +247,10 @@ export default class ChatCommand extends BasePlugin {
               id: session.event.user?.id,
               name: session.event.user?.name,
               group_nickname: session.event.member?.nick,
-              channel_roles: session.event.member?.roles
-                ?.filter(Boolean)
-                ?.join(','),
+              channel_roles:
+                getUserRoles(session)
+                  .map((r) => r.id)
+                  .join(',') || undefined,
             },
             channel: {
               id: session.event.channel?.id,

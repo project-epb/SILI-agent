@@ -8,11 +8,9 @@ import { Context, h } from 'koishi'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { useDirname } from '@/utils/dir'
-
 import { BaseSticker } from '../_base'
 
-const __dirname = useDirname(import.meta.url)
+const __dirname = import.meta.dirname
 
 export default class 蔚蓝档案 extends BaseSticker {
   constructor(public ctx: Context) {

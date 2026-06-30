@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SILI 是基于 [Koishi](https://koishi.chat/) 的群聊机器人，主要部署在 QQ（NapCat OneBot 适配器），也支持 Discord / KOOK / DingTalk / 卫星等。
 
-Runtime: **tsx + bun**（生产用 bun，dev 用 tsx）。Node >= 24.11。
+Runtime: **bun**（dev 与生产统一）。bun 同时是包管理器和运行时——`bun ./src/index.ts` 直接跑 TS/JSX，取代了过去的 tsx。Node >= 24.11（部分原生 API 依赖；bun 自带 CJS 兼容运行时，koishi 的 CJS loader 才跑得起来）。JSX 经 `src/satori-jsx/` 的 shim 暴露具名导出（satori 是 default-only ESM，严格 loader 直接 import 具名会失败）。
 
 **SILI 命令前缀按部署不同**：生产环境是 `!`、测试 / 本地 dev 是 `;`。本文档示例命令一律不带前缀（写 `chat` / `debug.history` / `llm.compact`），按你所在环境补上即可。
 
@@ -13,7 +13,7 @@ Runtime: **tsx + bun**（生产用 bun，dev 用 tsx）。Node >= 24.11。
 | | |
 |---|---|
 | `bun start` | 生产启动 |
-| `bun dev` / `pnpm dev` / `npm run dev` | 本地开发（tsx --watch） |
+| `bun dev` | 本地开发（`bun --watch ./src/index.ts`） |
 | `bun test` / `npx vitest run` | 跑全量测试一次 |
 | `bun test:watch` / `npx vitest` | watch 模式 |
 | `npx vitest run <path>` | 跑单个文件 / 目录 |
