@@ -61,7 +61,6 @@
     "koishi-plugin-adapter-onebot": "^6.8.0",
     "koishi-plugin-assets-s3": "^1.3.2",
     "koishi-plugin-autowithdraw-fix": "^1.3.7",
-    "koishi-plugin-baidu": "^1.1.1",
     "koishi-plugin-basedata": "^0.2.0",
     "koishi-plugin-dialogue": "^4.1.3",
     "koishi-plugin-dialogue-author": "^1.2.1",

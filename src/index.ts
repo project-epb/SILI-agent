@@ -82,7 +82,6 @@ import * as PluginStatus from '@koishijs/plugin-status'
 import AdapterOnebot from 'koishi-plugin-adapter-onebot'
 import PluginAssetsS3 from 'koishi-plugin-assets-s3'
 import * as PluginAutowithdraw from 'koishi-plugin-autowithdraw-fix'
-import * as PluginBaidu from 'koishi-plugin-baidu'
 import * as PluginBasedata from 'koishi-plugin-basedata'
 import * as PluginDialogue from 'koishi-plugin-dialogue'
 import * as PluginDialogueAuthor from 'koishi-plugin-dialogue-author'
@@ -290,10 +289,6 @@ app.plugin(function PluginCollectionLegacy(ctx) {
     ctx.plugin(PluginEcho)
     ctx.plugin(PluginRateLimit)
     ctx.plugin(PluginRecall)
-  })
-  // [tools]
-  ctx.plugin(function PluginCollectionLegacyTools(ctx) {
-    ctx.plugin(PluginBaidu)
   })
 })
 

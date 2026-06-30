@@ -37,7 +37,6 @@
         "koishi-plugin-adapter-onebot": "^6.8.0",
         "koishi-plugin-assets-s3": "^1.3.2",
         "koishi-plugin-autowithdraw-fix": "^1.3.7",
-        "koishi-plugin-baidu": "^1.1.1",
         "koishi-plugin-basedata": "^0.2.0",
         "koishi-plugin-dialogue": "^4.1.3",
         "koishi-plugin-dialogue-author": "^1.2.1",
@@ -1094,8 +1093,6 @@
     "koishi-plugin-assets-s3": ["koishi-plugin-assets-s3@1.3.2", "https://registry.npmmirror.com/koishi-plugin-assets-s3/-/koishi-plugin-assets-s3-1.3.2.tgz", { "dependencies": { "@aws-sdk/client-s3": "3.685.0", "@koishijs/assets": "1.1.2" }, "peerDependencies": { "koishi": "4.18.0" } }, "sha512-C3VCgCT9dfev5OoOqCG5H0sPXQzkCaG0Qh4IHaA+tMapcGWgtCiiBPlp8AFCPJxXBO5eYXV2LyOsSU/zZ/rCMQ=="],
 
     "koishi-plugin-autowithdraw-fix": ["koishi-plugin-autowithdraw-fix@1.3.7", "https://registry.npmmirror.com/koishi-plugin-autowithdraw-fix/-/koishi-plugin-autowithdraw-fix-1.3.7.tgz", { "peerDependencies": { "koishi": "^4.13.8" } }, "sha512-O/C8nOvB4eiEji4BTtalHecOzuNvhAzi7AiRHtsBJNlf99r1PihrvffASjFOWTn/7SQMQtmdfgUjAYjt/C4+wg=="],
-
-    "koishi-plugin-baidu": ["koishi-plugin-baidu@1.1.1", "https://registry.npmmirror.com/koishi-plugin-baidu/-/koishi-plugin-baidu-1.1.1.tgz", { "dependencies": { "cheerio": "1.0.0-rc.12" }, "peerDependencies": { "koishi": "4.18.0" } }, "sha512-b4m9Jtu/tk4urrMJEvLSxcLNs4JcPO1/gBZg2aPFnmZbxN0wiigdT7u8Qxf8Xm02PUnWV4cFjTmGiZRiZBb3Fg=="],
 
     "koishi-plugin-basedata": ["koishi-plugin-basedata@0.2.0", "https://registry.npmmirror.com/koishi-plugin-basedata/-/koishi-plugin-basedata-0.2.0.tgz", { "peerDependencies": { "koishi": "^4.18.0" } }, "sha512-+pseDTxCSTEbMUkeAWQXcImX6rugbPhqLAcgHvA1DyA079G0SLcJeUL49qiunYcuEzz8t2/1N9E3SUDGgUQ69Q=="],
 
