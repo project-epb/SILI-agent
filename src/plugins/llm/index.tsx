@@ -161,6 +161,13 @@ export interface Config {
   enableAgent?: boolean
   maxToolIterations?: number
   showToolCallNotice?: boolean
+  /**
+   * DeepSeek "DSML leak" workaround (see utils/dsml-leak.ts): when the model
+   * dumps its tool-call markup as plain content, re-send the same payload
+   * this many times before giving up (then a graceful fallback reply shows).
+   * Re-rolls don't consume the tool-iteration budget. 0 disables. Default 2.
+   */
+  dsmlLeakMaxRetries?: number
   memoryByteLimit?: number
   memoryUpdateInterval?: number
   memoryForkMaxRetries?: number
@@ -310,6 +317,7 @@ export default class PluginLLM extends BasePlugin<Config> {
       enableAgent: true,
       maxToolIterations: 5,
       showToolCallNotice: true,
+      dsmlLeakMaxRetries: 2,
       memoryByteLimit: 3000,
       memoryUpdateInterval: 10,
       memoryForkMaxRetries: 3,

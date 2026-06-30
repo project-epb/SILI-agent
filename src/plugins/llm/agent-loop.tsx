@@ -9,6 +9,7 @@ import type {
   ToolCall,
 } from './providers/_base'
 import { PROTOCOL_MARKERS } from './utils/protocol'
+import { containsDsmlLeak } from './utils/dsml-leak'
 import { ToolRegistry } from './tools'
 
 const { SILENT: SILENT_MARKER, INTERRUPTED: INTERRUPTED_MARKER, MSG_BREAK: MSG_BREAK_MARKER } =
@@ -36,6 +37,19 @@ function buildInterruptedContent(content: string): string {
   return content + '\n' + INTERRUPTED_MARKER
 }
 
+/**
+ * Thrown when the DeepSeek "DSML leak" bug (see utils/dsml-leak.ts) keeps
+ * corrupting the stream past `dsmlLeakMaxRetries` re-sends of the same
+ * payload. The caller (chat.tsx) catches this like any other agent-loop
+ * failure and shows its graceful fallback reply instead of the garbage.
+ */
+export class DsmlLeakUnrecoverableError extends Error {
+  constructor(retries: number) {
+    super(`DSML leak persisted after ${retries} retr${retries === 1 ? 'y' : 'ies'}`)
+    this.name = 'DsmlLeakUnrecoverableError'
+  }
+}
+
 export interface AgentLoopOptions {
   ctx: Context
   provider: LLMProviderBase
@@ -45,6 +59,14 @@ export interface AgentLoopOptions {
   registry: ToolRegistry                    // 工具注册表
   maxIterations: number
   showToolCallNotice: boolean
+  /**
+   * Max times to re-send the SAME payload when a DeepSeek "DSML leak"
+   * (utils/dsml-leak.ts) corrupts the assistant content. These retries do
+   * NOT consume the tool-iteration budget — it's the same logical turn,
+   * just re-rolled. 0 disables the workaround. Exhausting it throws
+   * DsmlLeakUnrecoverableError. Default 2.
+   */
+  dsmlLeakMaxRetries?: number
   session: Session
   logger: Logger
   /** Optional signal to interrupt mid-loop. Aborts the in-flight LLM stream,
@@ -52,6 +74,14 @@ export interface AgentLoopOptions {
    *  so partial assistant text is preserved with an `<interrupted/>` marker. */
   signal?: AbortSignal
   onUserVisibleText: (text: string) => Promise<void>
+  /**
+   * Drop any visible text streamed via onUserVisibleText this turn that the
+   * caller has buffered but not yet flushed to the user. Called when a DSML
+   * leak is detected so the partial garbage (and any legit prelude that
+   * preceded it) is discarded before the payload is re-sent — the re-roll
+   * regenerates the whole assistant turn from scratch.
+   */
+  onDiscardVisible?: () => Promise<void> | void
   onAssistantRecord: (record: AssistantTurnRecord) => Promise<void>
   onToolRecord: (record: ToolTurnRecord) => Promise<void>
   /**
@@ -119,15 +149,9 @@ export async function runAgentLoop(
       toolChoice: isLastAllowed ? undefined : opts.options.toolChoice ?? 'auto',
     }
 
-    const stream = opts.provider.streamChatCompletion(
-      messages,
-      callOptions,
-      { ...opts.features, signal: opts.signal }
-    )
-
     let currentContent = ''
     let currentReasoning = ''
-    const collectedToolCalls: ToolCall[] = []
+    let collectedToolCalls: ToolCall[] = []
     let lastError: Error | undefined
     let usage: ChatCompletionUsage | undefined
     let streamAborted = false
@@ -141,46 +165,116 @@ export async function runAgentLoop(
      */
     let assistantTurnTime = 0
 
-    try {
-      for await (const delta of stream) {
-        if (isAborted()) {
+    // ---- DSML-leak workaround ----
+    // DeepSeek hosts occasionally dump the model's tool-call markup as plain
+    // content (see utils/dsml-leak.ts). When that happens, discard the
+    // garbled attempt and re-send the SAME payload. These re-rolls do NOT
+    // consume the tool-iteration budget (`iterations` already incremented;
+    // we loop here, not back to `outer`). Exhausting the retries throws so
+    // the caller shows a graceful fallback instead of the garbage.
+    const dsmlMaxRetries = opts.dsmlLeakMaxRetries ?? 2
+    let dsmlRetries = 0
+    let dsmlLeaked = false
+    dsml: while (true) {
+      // Reset per-attempt accumulators (a re-roll starts the turn over).
+      currentContent = ''
+      currentReasoning = ''
+      collectedToolCalls = []
+      lastError = undefined
+      usage = undefined
+      streamAborted = false
+      dsmlLeaked = false
+
+      const stream = opts.provider.streamChatCompletion(
+        messages,
+        callOptions,
+        { ...opts.features, signal: opts.signal }
+      )
+
+      try {
+        for await (const delta of stream) {
+          if (isAborted()) {
+            streamAborted = true
+            break
+          }
+          switch (delta.kind) {
+            case 'reasoning_content':
+              currentReasoning += delta.content
+              break
+            case 'content':
+              currentContent += delta.content
+              // Detect on the ACCUMULATED content — the sentinel can straddle
+              // chunk boundaries. Once it fires, stop forwarding: the rest of
+              // this stream is garbage we're about to discard, and we don't
+              // want it growing past the split threshold and flushing.
+              if (containsDsmlLeak(currentContent)) {
+                dsmlLeaked = true
+                break
+              }
+              await opts.onUserVisibleText(delta.content)
+              break
+            case 'tool_call':
+              collectedToolCalls.push(delta.toolCall)
+              break
+            case 'usage':
+              usage = delta.usage
+              break
+            case 'error':
+              lastError = delta.error
+              break
+            case 'finish':
+              break
+          }
+          if (dsmlLeaked) break
+        }
+      } catch (e: any) {
+        // SDKs throw AbortError when the upstream signal fires — treat as
+        // graceful interrupt rather than a failure to surface.
+        if (isAborted() || e?.name === 'AbortError') {
           streamAborted = true
-          break
-        }
-        switch (delta.kind) {
-          case 'reasoning_content':
-            currentReasoning += delta.content
-            break
-          case 'content':
-            currentContent += delta.content
-            await opts.onUserVisibleText(delta.content)
-            break
-          case 'tool_call':
-            collectedToolCalls.push(delta.toolCall)
-            break
-          case 'usage':
-            usage = delta.usage
-            break
-          case 'error':
-            lastError = delta.error
-            break
-          case 'finish':
-            break
+        } else {
+          throw e
         }
       }
-    } catch (e: any) {
-      // SDKs throw AbortError when the upstream signal fires — treat as
-      // graceful interrupt rather than a failure to surface.
-      if (isAborted() || e?.name === 'AbortError') {
-        streamAborted = true
-      } else {
-        throw e
+
+      // Count tokens spent on this attempt — even a leaked one really billed.
+      if (usage) totalUsage = mergeUsage(totalUsage, usage)
+
+      if (dsmlLeaked && !isAborted()) {
+        // Drop the partial garbage (+ any legit prelude) the caller buffered
+        // but hasn't shown yet; the re-roll regenerates the turn from scratch.
+        await opts.onDiscardVisible?.()
+        if (dsmlRetries < dsmlMaxRetries) {
+          dsmlRetries++
+          opts.logger.warn(
+            '[agent] DSML leak detected, re-sending payload (retry %d/%d)',
+            dsmlRetries,
+            dsmlMaxRetries
+          )
+          continue dsml
+        }
+        opts.logger.error(
+          '[agent] DSML leak persisted after %d retr%s, giving up',
+          dsmlMaxRetries,
+          dsmlMaxRetries === 1 ? 'y' : 'ies'
+        )
+        throw new DsmlLeakUnrecoverableError(dsmlMaxRetries)
       }
+
+      break dsml
+    }
+
+    // Reached here with dsmlLeaked still set means the leak and the user's
+    // interrupt raced on the same attempt (so we neither retried nor threw).
+    // Fall through as a clean abort: drop the garbage, persist nothing.
+    if (dsmlLeaked) {
+      await opts.onDiscardVisible?.()
+      currentContent = ''
+      currentReasoning = ''
+      streamAborted = true
     }
 
     if (lastError && !streamAborted) throw lastError
-
-    if (usage) totalUsage = mergeUsage(totalUsage, usage)
 
     // Pin assistant turn time NOW — before any tool dispatch. If we wait
     // until persistence (which happens after all tools complete), the

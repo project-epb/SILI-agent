@@ -541,11 +541,20 @@ export default class ChatCommand extends BasePlugin {
             registry: effectiveRegistry,
             maxIterations: llm.config.maxToolIterations ?? 5,
             showToolCallNotice: llm.config.showToolCallNotice ?? true,
+            dsmlLeakMaxRetries: llm.config.dsmlLeakMaxRetries ?? 2,
             session,
             logger: llm.logger,
             onUserVisibleText: async (chunk) => {
               sendBuffer += chunk
               await flushVisibleText(false)
+            },
+            onDiscardVisible: () => {
+              // DSML leak: drop everything streamed-but-not-yet-flushed this
+              // turn (sendFromIndex marks the last flushed point), so the
+              // re-rolled turn starts from a clean buffer. Already-flushed
+              // text can't be unsent — rare for the short leak block, which
+              // normally sits sub-threshold and unflushed.
+              sendBuffer = sendBuffer.slice(0, sendFromIndex.value)
             },
             onAssistantRecord: async (record) => {
               await llm.ctx.database.create('openai_chat', {
