@@ -14,7 +14,7 @@
 - **用户侧行为 1:1 复刻旧插件**：所有回复字符串**逐字取自** `node_modules/koishi-plugin-github/lib/locales/zh-CN.json`（不自造；本计划给出关键 key→串作参考，实施者以该 JSON 为准）。命令名/别名/option/authority 与旧一致。
 - **数据层复用**（Phase 1 已建，不改 schema）：`user.github.{accessToken,refreshToken}`、`channel.github.webhooks: Record<repoLower, EventFilter>`、`github` 表 `{ id: hookId, name: repoLower, secret }`。订阅写入的 filter meta 为 `{}`（= 全事件启用）。
 - **签名/secret 兼容**：新建 webhook 时 `secret = Random.id()`（koishi），`config.url = ctx.server.config.selfUrl + config.path + '/webhook'`，`events: ['*']`，不设 `content_type`（GitHub 默认 form）——与存量一致。
-- **OAuth**：scope `admin:repo_hook,repo`；`redirect_uri = config.redirect`（**手动配置的完整 URL**，1:1 旧行为，不从 selfUrl 推导）；code 交换 = `POST https://github.com/login/oauth/access_token`（client_id/secret + code/state/redirect_uri 作 query，`Accept: application/json`）；401 自动 refresh 并回写 token；回调路由返回**裸状态码**（400/403/200，无 HTML）。
+- **OAuth**：scope `admin:repo_hook,repo`；`redirect_uri` = **`config.redirect || (ctx.server.config.selfUrl + sanitize(config.path) + '/authorize')`**（`redirect` 为可选覆盖项；缺省时从 selfUrl 推导出与回调路由 `GET {path}/authorize` 一致的 URL——比旧插件的「留空靠 GitHub 回落登记 callback」更明确、常见情况零配置）。**同一个 `redirectUri` 值必须同时用于 authorize 链接与 code 交换**（GitHub 要求两处一致）。code 交换 = `POST https://github.com/login/oauth/access_token`（client_id/secret + code/state/redirect_uri 作 query，`Accept: application/json`）；401 自动 refresh 并回写 token；回调路由返回**裸状态码**（400/403/200，无 HTML）。
 - `repoRegExp = /^[\w.-]+\/[\w.-]+$/`；仓库名一律 `.toLowerCase()`。
 - Quester 错误状态读 `e.response?.status`（仓库先例：gelbooru/client.ts:98、comfy-ui/client.ts:47）。`ctx.http` 方法：`post(url, data, config)`、`get(url, config)`、`delete(url, config)`；config 支持 `{ params, headers, data }`（先例：gelbooru/comfy-ui client）。**实施者写 http.ts 前先扫一眼这两个 client 确认 Quester 用法。**
 - 注释用英文；测试在 `src/plugins/github/__tests__/`。别名 `~/*`→`src/plugins/*`。
@@ -271,8 +271,8 @@ git commit -m "feat(github): GitHubHttp ctx.http layer (token exchange, 401 refr
 - Produces:
   - `interface OAuthCallbackDeps { consumeState(state: string): number | undefined; exchangeCode(code: string, state: string): Promise<OAuthTokens>; storeTokens(userId: number, tokens: OAuthTokens): Promise<void> }`
   - `handleOAuthCallback(query: Record<string, any>, deps: OAuthCallbackDeps): Promise<number>`（返回 HTTP 状态码）
-  - `applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void`（注册 `github.authorize`/`.auth` 命令 + `GET {path}/authorize` 路由）
-  - `buildAuthorizeUrl(config: Config, state: string): string`（供命令与测试复用）
+  - `applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void`（注册 `github.authorize`/`.auth` 命令 + `GET {path}/authorize` 路由；内部计算 `redirectUri = config.redirect || selfUrl + sanitize(path) + '/authorize'` 并同时用于 authorize 链接与 code 交换）
+  - `buildAuthorizeUrl(clientId: string, redirectUri: string, state: string): string`（供命令与测试复用）
 
 - [ ] **Step 1: 写失败测试**
 
@@ -313,7 +313,7 @@ describe('handleOAuthCallback', () => {
 
 describe('buildAuthorizeUrl', () => {
   it('includes client_id, state, redirect_uri, and the repo-hook scope', () => {
-    const url = buildAuthorizeUrl({ appId: 'CID', redirect: 'https://sili.example/api/github/authorize' } as any, 'ST')
+    const url = buildAuthorizeUrl('CID', 'https://sili.example/api/github/authorize', 'ST')
     expect(url).toMatch(/^https:\/\/github\.com\/login\/oauth\/authorize\?/)
     const q = new URL(url).searchParams
     expect(q.get('client_id')).toBe('CID')
@@ -339,12 +339,12 @@ import type { GitHubHttp } from './http'
 
 const sanitize = (p: string) => (p.endsWith('/') ? p.slice(0, -1) : p)
 
-/** Build the GitHub OAuth authorize URL (1:1 with the old plugin: scope admin:repo_hook,repo). */
-export function buildAuthorizeUrl(config: Config, state: string): string {
+/** Build the GitHub OAuth authorize URL (scope admin:repo_hook,repo). */
+export function buildAuthorizeUrl(clientId: string, redirectUri: string, state: string): string {
   const params = new URLSearchParams({
     state,
-    client_id: config.appId ?? '',
-    redirect_uri: config.redirect ?? '',
+    client_id: clientId,
+    redirect_uri: redirectUri,
     scope: 'admin:repo_hook,repo',
   })
   return 'https://github.com/login/oauth/authorize?' + params.toString()
@@ -375,6 +375,9 @@ export async function handleOAuthCallback(
 export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void {
   const path = sanitize(config.path ?? '/github')
   const states: Record<string, number> = Object.create(null) // state token -> koishi user id
+  // Effective redirect_uri: explicit config.redirect override, else derive the callback route's
+  // own URL from selfUrl. The SAME value must be used for the authorize link and the code exchange.
+  const redirectUri = () => config.redirect || ctx.server.config.selfUrl + path + '/authorize'
 
   ctx.command('github.authorize')
     .alias('github.auth')
@@ -383,7 +386,7 @@ export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void
       const state = Random.id()
       states[state] = session!.user!.id
       // '.follow-link' in the old locale = '请点击下面的链接继续操作：'
-      return '请点击下面的链接继续操作：\n' + buildAuthorizeUrl(config, state)
+      return '请点击下面的链接继续操作：\n' + buildAuthorizeUrl(config.appId ?? '', redirectUri(), state)
     })
 
   ctx.server.get(path + '/authorize', async (koa) => {
@@ -394,7 +397,7 @@ export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void
         delete states[s]
         return id
       },
-      exchangeCode: (code, state) => http.getTokens({ code, state, redirect_uri: config.redirect }),
+      exchangeCode: (code, state) => http.getTokens({ code, state, redirect_uri: redirectUri() }),
       storeTokens: (id, t) =>
         ctx.database.set('user', { id }, {
           'github.accessToken': t.access_token,
@@ -1050,13 +1053,13 @@ import { migrateRepoRename } from './rename'
     })
 ```
 
-- [ ] **Step 2: 改 src/index.ts 传 redirect**
+- [ ] **Step 2: 改 src/index.ts 传 redirect（可选覆盖）**
 
 在 `src/index.ts` 的 `ctx.plugin(PluginGithub, {...})` 注册块（研究 §4 指出约 314-320 行），在配置对象里加一行：
 ```ts
-    redirect: env.TOKEN_GITHUB_REDIRECT,
+    redirect: env.TOKEN_GITHUB_REDIRECT, // optional override; unset → derived from selfUrl (see applyOAuth)
 ```
-（与 `appId: env.TOKEN_GITHUB_APPID` 同风格。**部署者需在 `.env` 设 `TOKEN_GITHUB_REDIRECT` = GitHub OAuth App 登记的 callback URL，例如 `https://<域名>/api/github/authorize`。**）
+（与 `appId: env.TOKEN_GITHUB_APPID` 同风格。**`TOKEN_GITHUB_REDIRECT` 可不设**——未设时 `env.TOKEN_GITHUB_REDIRECT` 为 undefined，`applyOAuth` 回落到 `selfUrl + path + '/authorize'`（= 回调路由自身 URL），常见情况零配置。仅当 OAuth App 登记的 callback 与推导值不一致时才需在 `.env` 设它覆盖。)
 
 - [ ] **Step 3: 类型检查 + 全量 github 测试**
 
@@ -1071,10 +1074,10 @@ Create `.debug/github-plugin/phase3-smoke-checklist.md`（部署到有公网 cal
 ```markdown
 # Phase 3 真机冒烟清单（需公网 callback）
 
-前置：.env 设 TOKEN_GITHUB_APPID / TOKEN_GITHUB_APPSECRET / TOKEN_GITHUB_REDIRECT（= OAuth App 登记 callback）。
+前置：.env 设 TOKEN_GITHUB_APPID / TOKEN_GITHUB_APPSECRET。TOKEN_GITHUB_REDIRECT 可不设（缺省推导为 selfUrl + path + '/authorize'，需与 OAuth App 登记的 callback 一致；不一致才设它覆盖）。
 命令前缀按环境（生产 ! / 本地 ;）。
 
-1. 授权：`github.authorize` → 收到 "请点击下面的链接继续操作：" + 链接。浏览器打开 → GitHub 授权 → 回调返回 200（浏览器空白页/状态码，正常）。
+1. 授权：`github.authorize` → 收到 "请点击下面的链接继续操作：" + 链接（链接里的 redirect_uri 应 = 推导值或你设的覆盖值）。浏览器打开 → GitHub 授权 → 回调返回 200（浏览器空白页/状态码，正常）。
    - 验证：DB `user.github.accessToken` 已写入。
 2. 注册 webhook：`github.repos <你的测试仓库> -a` → "添加仓库成功！"；GitHub 仓库 Settings→Webhooks 出现新 hook，url = <selfUrl>/api/github/webhook。
    - 验证：DB `github` 表新增 { id, name, secret }。
@@ -1105,7 +1108,7 @@ git commit -m "feat(github): wire OAuth/commands/rename into plugin entry + redi
 - `github`/`gh` -l/-a/-d（含未注册仓库的「发空行即添加」链式）→ Task 3 ✅
 - `github.repos` -a/-d/-s（建/删 hook + DB + `-s` 链式 + 错误码映射）→ Task 4 ✅
 - 仓库改名迁移 → Task 5 ✅
-- redirect 配置注入（1:1 旧的手动 config.redirect，走新 env）→ Task 6 ✅
+- redirect 配置：可选覆盖 `config.redirect`，缺省从 `selfUrl + path + '/authorize'` 推导（比旧插件留空更明确）→ Task 2(redirectUri) + Task 6(可选 env) ✅
 - 数据层/签名/secret/URL 兼容不变（复用 Phase 1 schema，建 hook 参数 1:1）→ 各 task 约束 ✅
 - 回复串逐字取 locale JSON → Task 3/4 明确要求实施者核对 ✅
 - 不引 octokit（方案 A）、bun-only、inject 加 http → Global Constraints + Task 1/6 ✅
