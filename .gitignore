@@ -163,3 +163,6 @@ badwords.ini
 
 # per-environment Claude Code local notes (imported by CLAUDE.md via @CLAUDE.local.md)
 CLAUDE.local.md
+
+# local-only compose override (mounts .debug into core for testing)
+docker-compose.override.yml
