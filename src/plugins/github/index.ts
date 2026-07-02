@@ -6,6 +6,8 @@ import { GitHubHttp } from './http'
 import { applyOAuth } from './oauth'
 import { applyCommands, makeRepoStore } from './commands'
 import { migrateRepoRename } from './rename'
+import { HistoryStore } from './history'
+import { ReplyHandler, parseReplyCommand, formatHelp } from './reply'
 import type { Config as GitHubConfig } from './types'
 
 // Re-export the config type and the Schema value under the same public name
@@ -60,6 +62,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
 
     const http = new GitHubHttp(ctx, this.config)
     const repoStore = makeRepoStore(ctx)
+    const history = new HistoryStore(ctx, this.config.replyTimeout ?? Time.hour)
 
     applyOAuth(ctx, this.config, http)
     applyCommands(ctx, this.config, http, this.store, repoStore)
@@ -70,6 +73,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
         return row ? { name: row.name, secret: row.secret } : undefined
       },
       targets: (repo, event, action) => this.store.targets(repo, event, action),
+      recordHistory: (ids, actions) => history.record(ids, actions),
       onRename: (hookId, oldName, newName, secret) =>
         migrateRepoRename(hookId, oldName, newName, secret, this.store, {
           setHookName: async (id, name, sec) => {
@@ -80,6 +84,34 @@ export default class PluginGitHub extends BasePlugin<Config> {
             await ctx.database.upsert('channel', rows)
           },
         }),
+    })
+
+    // ---- quick-reply interactions (quote a pushed message → act on the GitHub resource) ----
+    const prefix = this.config.messagePrefix ?? ''
+    const footer = this.config.replyFooter ?? ''
+
+    // Pull the github user field only when the quoted message is in history (needs a token).
+    ctx.before('attach-user', (session, fields) => {
+      if (session.quote && history.get(session.quote.id)) fields.add('github')
+    })
+
+    ctx.middleware((session, next) => {
+      if (!session.quote) return next()
+      const actions = history.get(session.quote.id)
+      if (!actions) return next()
+      const { name, message } = parseReplyCommand(session.stripped.content.trim())
+      if (name === 'help') return formatHelp(Object.keys(actions))
+      const params = (actions as Record<string, any[]>)[name]
+      if (!params) return next()
+      // Middleware sessions carry no static user fields (Observed<never>); the github
+      // field is attached at runtime by the attach-user hook above. Match the codebase
+      // idiom of `session.user as any` for reading such extended fields.
+      const su = session.user as any
+      const user = { id: su.id, github: su.github }
+      const quoted = session.quote.content ?? ''
+      const quotedText = quoted.startsWith(prefix) ? quoted.slice(prefix.length) : quoted
+      const handler = new ReplyHandler(ctx, http, user, message, quotedText, footer)
+      return (handler as any)[name](...params)
     })
   }
 }
