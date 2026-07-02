@@ -37,7 +37,7 @@ reply 交互需要「引用的这条消息 → 对应哪个 GitHub 资源 url」
 
 **采用方案 B：新增独立的 `actions.ts`，`buildActions(event, payload) → ActionMap`，Phase 2 渲染器零改动。** webhook 广播后 `history[msgId] = buildActions(event, payload)`。理由：Phase 2 刚在生产验证通过，不去动它；reply 作为纯叠加层，回归风险最低。
 
-**唯一例外 —— INDICATOR footer 截断（见专节）：** 需要在 comment/issues 渲染器的 body 清理里加一步「遇 `<!-- BOT-MESSAGE-FOOTER -->` 截断」。这是方案 B 里唯一必须碰 Phase 2 的地方，改动极小（`events/util.ts` 的 `cleanBody` 加一行截断）。
+**Phase 2 真·零改动：** 原以为需要给 `cleanBody` 加 INDICATOR 截断，核对后发现 `events/util.ts` 的 `cleanBody` **已经**做了（`indexOf(INDICATOR)` → `slice`，util.ts:11-12）。bot 代发评论被推回群时 footer 早已被截掉，Phase 2 渲染器完全不用动。
 
 ## 模块结构
 
@@ -48,7 +48,7 @@ src/plugins/github/
 ├── history.ts       新增：内存 history map（msgId → ActionMap）+ replyTimeout 清理封装
 ├── commands.ts      扩展：github.issue / github.star 两条命令
 ├── http.ts          扩展：GitHubHttp 加通用 authed request(user, method, url, body?, headers?)
-├── events/util.ts   微调：cleanBody 遇 INDICATOR 截断
+│  (events/util.ts   无需改：cleanBody 已支持 INDICATOR 截断，util.ts:11-12)
 ├── index.ts         接线：广播后写 history、注册 before('attach-user') + reply middleware
 └── __tests__/       actions / parseReplyCommand / buildQuotedComment / formatHelp / INDICATOR / ReplyHandler
 ```
@@ -141,7 +141,7 @@ ctx.middleware((session, next) => {
 `INDICATOR = '<!-- BOT-MESSAGE-FOOTER -->'`（沿用旧插件常量值，保证与存量 bot 评论兼容）。
 
 - **发送**：`buildQuotedComment` 在正文与 footer 之间插入 INDICATOR（见增强2 步骤2）。
-- **渲染**：bot 代发的评论会作为 `issue_comment(created)` 事件被推回群一次。`events/util.ts` 的 `cleanBody` 加一步：`body` 含 INDICATOR 时截断到 INDICATOR 之前，只保留正文。这样推回的消息不带重复 footer。回环只有一跳（无限循环不存在），维持 1:1 行为（推送 + 截 footer），不额外做「跳过推送」。
+- **渲染**：bot 代发的评论会作为 `issue_comment(created)` 事件被推回群一次。`events/util.ts` 的 `cleanBody` **已经**在 `body` 含 INDICATOR 时截断到之前（util.ts:11-12），推回的消息自动不带重复 footer，无需改动。回环只有一跳（无限循环不存在），维持 1:1 行为（推送 + 截 footer），不额外做「跳过推送」。
 
 ## github.issue / github.star 命令
 
