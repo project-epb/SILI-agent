@@ -1,0 +1,73 @@
+import type { Context } from 'koishi'
+import { isSignatureValid } from './verify'
+import { renderers } from './events'
+import type { Config } from './types'
+
+const UNPARSED_BODY = Symbol.for('unparsedBody')
+
+export interface WebhookDeps {
+  /** Look up a webhook's shared secret by its GitHub hook id. */
+  getSecret(hookId: number): Promise<string | undefined>
+  /** Resolve subscribed cids for a repo + event (+ action). */
+  targets(repo: string, event: string, action?: string): string[]
+}
+
+export interface WebhookResult {
+  status: number
+  targets?: string[]
+  message?: import('koishi').Fragment
+}
+
+function safeParse(source: any): any {
+  try {
+    return JSON.parse(source)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Pure webhook core: validate signature over the raw body, resolve targets, render.
+ * Status codes mirror the old plugin: 400 bad payload, 202 unknown hook, 403 bad
+ * signature, 200 otherwise. No koa/HTTP here so it is directly unit-testable.
+ */
+export async function handleWebhook(
+  headers: Record<string, any>,
+  rawBody: string | undefined,
+  body: any,
+  deps: WebhookDeps
+): Promise<WebhookResult> {
+  const event = String(headers['x-github-event'] ?? '')
+  const signature = headers['x-hub-signature-256'] as string | undefined
+  const hookId = +headers['x-github-hook-id']
+  const payload = safeParse(body?.payload)
+  if (!event || !payload?.repository?.full_name) return { status: 400 }
+
+  const secret = await deps.getSecret(hookId)
+  if (!secret) return { status: 202 } // unknown hook: repos -a probe window
+
+  if (!(await isSignatureValid(secret, rawBody, signature))) return { status: 403 }
+
+  const repo = payload.repository.full_name.toLowerCase()
+  const targets = deps.targets(repo, event, payload.action)
+  const render = renderers[event]
+  const message = render ? render(payload) : null
+  if (!targets.length || message == null) return { status: 200 }
+  return { status: 200, targets, message }
+}
+
+/** Register the koa webhook route; broadcasts rendered messages to subscribers. */
+export function applyWebhook(ctx: Context, config: Config, deps: WebhookDeps): void {
+  const prefix = config.messagePrefix ?? ''
+  ctx.server.post((config.path ?? '/github') + '/webhook', async (koa) => {
+    const reqBody = koa.request.body as any
+    const rawBody = reqBody?.[UNPARSED_BODY] as string | undefined
+    const result = await handleWebhook(koa.headers, rawBody, reqBody, deps)
+    koa.status = result.status
+    if (result.targets?.length && result.message != null) {
+      const content =
+        typeof result.message === 'string' ? prefix + result.message : [prefix, result.message]
+      await ctx.broadcast(result.targets, content as any)
+    }
+  })
+}
