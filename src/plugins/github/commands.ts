@@ -11,6 +11,7 @@ export const MSG = {
   privateContext: '当前不是群聊上下文。',
   repoExpected: '请输入仓库名。',
   repoInvalid: '请输入正确的仓库名。',
+  requireAuth: '要使用此功能，请先对机器人进行授权。',
   reposEmpty: '当前没有监听的仓库。',
   subAddUnchanged: (n: string) => `已经在当前频道订阅过仓库 ${n}。`,
   subAddSucceeded: '添加订阅成功！',
@@ -154,6 +155,54 @@ export function applyCommands(
 
   // github.repos is registered in Task 4 (same applyCommands function).
   applyReposCommand(ctx, config, http, store, repoStore)
+  applyIssueStarCommands(ctx, http)
+}
+
+/** github.issue / github.star — direct authed actions (1:1 old plugin). */
+function applyIssueStarCommands(ctx: Context, http: GitHubHttp): void {
+  const requireAuth = async (s: any) => {
+    await s.send(MSG.requireAuth)
+    return s.execute({ name: 'github.authorize' })
+  }
+
+  ctx
+    .command('github.issue [title] [body:text]')
+    .userFields(['id', 'github'])
+    .option('repo', '-r [repo:string]')
+    .action(async ({ session, options }, title, body) => {
+      const s = session!
+      if (!options!.repo) return MSG.repoExpected
+      if (!REPO_RE.test(options!.repo)) return MSG.repoInvalid
+      if (!s.user!.github?.accessToken) return requireAuth(s)
+      const user = { id: s.user!.id, github: s.user!.github }
+      try {
+        await http.request(user, 'POST', `https://api.github.com/repos/${options!.repo}/issues`, { title, body })
+      } catch (e: any) {
+        ctx.logger('github').warn(e)
+        const detail = describeHttpError(e)
+        return detail ? `创建 issue 失败：${detail}` : '创建 issue 失败。'
+      }
+      return '已创建 issue。'
+    })
+
+  ctx
+    .command('github.star [name]')
+    .userFields(['id', 'github'])
+    .action(async ({ session }, name) => {
+      const s = session!
+      if (!name) return MSG.repoExpected
+      if (!REPO_RE.test(name)) return MSG.repoInvalid
+      if (!s.user!.github?.accessToken) return requireAuth(s)
+      const user = { id: s.user!.id, github: s.user!.github }
+      try {
+        await http.request(user, 'PUT', `https://api.github.com/user/starred/${name}`)
+      } catch (e: any) {
+        ctx.logger('github').warn(e)
+        const detail = describeHttpError(e)
+        return detail ? `star 失败：${detail}` : 'star 失败。'
+      }
+      return `已 star ${name}。`
+    })
 }
 
 /** github.repos [name] — manage the global webhook registry (-a create / -d delete / -s also-subscribe). */
@@ -184,7 +233,7 @@ function applyReposCommand(
       if (!s.user!.github?.accessToken) {
         // Reworded from the old 'github.require-auth' string: the old text said "enter your
         // GitHub username", but the flow is now link-based OAuth (no username entry).
-        await s.send('要使用此功能，请先对机器人进行授权。')
+        await s.send(MSG.requireAuth)
         return s.execute({ name: 'github.authorize' })
       }
       const repo = name.toLowerCase()
