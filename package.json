@@ -54,6 +54,7 @@
     "@koishijs/plugin-sandbox": "^3.4.2",
     "@koishijs/plugin-server": "^3.2.7",
     "@koishijs/plugin-status": "^7.4.10",
+    "@octokit/webhooks-methods": "^6.0.0",
     "@tavily/core": "^0.7.3",
     "fexios": "^6.2.1",
     "json5": "^2.2.3",

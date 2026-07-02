@@ -30,6 +30,7 @@
         "@koishijs/plugin-sandbox": "^3.4.2",
         "@koishijs/plugin-server": "^3.2.7",
         "@koishijs/plugin-status": "^7.4.10",
+        "@octokit/webhooks-methods": "^6.0.0",
         "@tavily/core": "^0.7.3",
         "fexios": "^6.2.1",
         "json5": "^2.2.3",
@@ -367,6 +368,8 @@
     "@oclif/plugin-warn-if-update-available": ["@oclif/plugin-warn-if-update-available@2.1.1", "https://registry.npmmirror.com/@oclif/plugin-warn-if-update-available/-/plugin-warn-if-update-available-2.1.1.tgz", { "dependencies": { "@oclif/core": "2.15.0", "chalk": "4.1.2", "debug": "4.3.7", "http-call": "5.3.0", "lodash.template": "4.5.0", "semver": "7.6.3" } }, "sha512-y7eSzT6R5bmTIJbiMMXgOlbBpcWXGlVhNeQJBLBCCy1+90Wbjyqf6uvY0i2WcO4sh/THTJ20qCW80j3XUlgDTA=="],
 
     "@oclif/screen": ["@oclif/screen@3.0.8", "https://registry.npmmirror.com/@oclif/screen/-/screen-3.0.8.tgz", {}, "sha512-yx6KAqlt3TAHBduS2fMQtJDL2ufIHnDRArrJEOoTTuizxqmjLT+psGYOHpmMl3gvQpFJ11Hs76guUUktzAF9Bg=="],
+
+    "@octokit/webhooks-methods": ["@octokit/webhooks-methods@6.0.0", "https://registry.npmmirror.com/@octokit/webhooks-methods/-/webhooks-methods-6.0.0.tgz", {}, "sha512-MFlzzoDJVw/GcbfzVC1RLR36QqkTLUf79vLVO3D+xn7r0QgxnFoLZgtrzxiQErAjFUOdH6fas2KeQJ1yr/qaXQ=="],
 
     "@octokit/webhooks-types": ["@octokit/webhooks-types@5.8.0", "https://registry.npmmirror.com/@octokit/webhooks-types/-/webhooks-types-5.8.0.tgz", {}, "sha512-8adktjIb76A7viIdayQSFuBEwOzwhDC+9yxZpKNHjfzrlostHCw0/N7JWpWMObfElwvJMk2fY2l1noENCk9wmw=="],
 
