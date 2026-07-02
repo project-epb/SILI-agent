@@ -14,27 +14,39 @@ describe('handleOAuthCallback', () => {
   const makeDeps = () => ({
     consumeState: vi.fn((s: string) => (s === 'good' ? 7 : undefined)),
     exchangeCode: vi.fn().mockResolvedValue(tokens),
+    fetchUsername: vi.fn().mockResolvedValue('octocat'),
     storeTokens: vi.fn().mockResolvedValue(undefined),
   })
 
   it('400 when state is missing', async () => {
     const deps = makeDeps()
-    expect(await handleOAuthCallback({ code: 'c' }, deps)).toBe(400)
+    expect(await handleOAuthCallback({ code: 'c' }, deps)).toMatchObject({ status: 400 })
     expect(deps.exchangeCode).not.toHaveBeenCalled()
+    expect(deps.fetchUsername).not.toHaveBeenCalled()
   })
   it('400 when state is an array (duplicate query param)', async () => {
-    expect(await handleOAuthCallback({ state: ['a', 'b'], code: 'c' }, makeDeps())).toBe(400)
+    expect(await handleOAuthCallback({ state: ['a', 'b'], code: 'c' }, makeDeps()))
+      .toMatchObject({ status: 400 })
   })
   it('403 when state is unknown', async () => {
     const deps = makeDeps()
-    expect(await handleOAuthCallback({ state: 'bad', code: 'c' }, deps)).toBe(403)
+    expect(await handleOAuthCallback({ state: 'bad', code: 'c' }, deps)).toMatchObject({ status: 403 })
     expect(deps.exchangeCode).not.toHaveBeenCalled()
   })
-  it('200 exchanges the code and stores tokens for the mapped user', async () => {
+  it('200 exchanges the code, fetches the username, and stores tokens for the mapped user', async () => {
     const deps = makeDeps()
-    expect(await handleOAuthCallback({ state: 'good', code: 'CODE' }, deps)).toBe(200)
+    expect(await handleOAuthCallback({ state: 'good', code: 'CODE' }, deps))
+      .toMatchObject({ status: 200, username: 'octocat' })
     expect(deps.exchangeCode).toHaveBeenCalledWith('CODE', 'good')
-    expect(deps.storeTokens).toHaveBeenCalledWith(7, tokens)
+    expect(deps.fetchUsername).toHaveBeenCalledWith(tokens.access_token)
+    expect(deps.storeTokens).toHaveBeenCalledWith(7, tokens, 'octocat')
+  })
+  it('200 stores tokens even when username fetch fails (fail-soft)', async () => {
+    const deps = makeDeps()
+    deps.fetchUsername.mockResolvedValue(undefined)
+    expect(await handleOAuthCallback({ state: 'good', code: 'CODE' }, deps))
+      .toMatchObject({ status: 200 })
+    expect(deps.storeTokens).toHaveBeenCalledWith(7, tokens, undefined)
   })
 })
 
@@ -56,6 +68,12 @@ describe('renderCallbackPage', () => {
     expect(html).toContain('<!DOCTYPE html>')
     expect(html).toContain('绑定成功')
     expect(html).toContain('你现在可以安全地关闭此网页。')
+    expect(html).not.toContain('已绑定')
+  })
+  it('shows the bound account when a username is given', () => {
+    const html = renderCallbackPage(200, 'octocat')
+    expect(html).toContain('绑定成功')
+    expect(html).toContain('@octocat')
   })
   it('renders a failure page for non-200 statuses', () => {
     for (const s of [400, 403]) {

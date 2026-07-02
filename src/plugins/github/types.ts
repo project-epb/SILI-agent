@@ -39,5 +39,20 @@ export interface OAuthTokens {
 /** The subset of a koishi user this plugin reads/writes (userFields(['id','github'])). */
 export interface GitHubUser {
   id: number
-  github: { accessToken: string; refreshToken: string }
+  github: { accessToken: string; refreshToken: string; username?: string }
+}
+
+// koishi table augmentations. This self-written plugin owns the github schema types now
+// (replacing the dead koishi-plugin-github, whose d.ts we no longer import); `username`
+// is the field Task 7 adds. Shapes mirror the legacy schema so existing data keeps working.
+declare module 'koishi' {
+  interface User {
+    github: { accessToken: string; refreshToken: string; username?: string }
+  }
+  interface Channel {
+    github: { webhooks: Record<string, EventFilter> }
+  }
+  interface Tables {
+    github: { id: number; name: string; secret: string }
+  }
 }

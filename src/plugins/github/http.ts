@@ -21,6 +21,13 @@ export class GitHubHttp {
     })
   }
 
+  /** Fetch the authenticated user's profile (login = GitHub username). Fresh token, no refresh. */
+  getUser(accessToken: string): Promise<{ login: string }> {
+    return this.ctx.http.get(`${API}/user`, {
+      headers: { authorization: `token ${accessToken}`, accept: 'application/vnd.github.v3+json' },
+    })
+  }
+
   /** Run an authed call; on 401 refresh the user's token, persist it, and retry once. */
   private async withAuth<T>(user: GitHubUser, fn: (token: string) => Promise<T>): Promise<T> {
     try {

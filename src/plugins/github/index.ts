@@ -35,6 +35,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
     ctx.model.extend('user', {
       'github.accessToken': 'string(50)',
       'github.refreshToken': 'string(50)',
+      'github.username': 'string(50)',
     })
     ctx.model.extend('channel', {
       'github.webhooks': 'json',

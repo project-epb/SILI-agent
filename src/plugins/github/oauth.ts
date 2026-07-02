@@ -19,31 +19,36 @@ export interface OAuthCallbackDeps {
   /** Return the koishi user id for a state token and consume (delete) it; undefined if unknown. */
   consumeState(state: string): number | undefined
   exchangeCode(code: string, state: string): Promise<OAuthTokens>
-  storeTokens(userId: number, tokens: OAuthTokens): Promise<void>
+  /** Fetch the GitHub username for a fresh access token. MUST be fail-soft (return undefined on error, never throw). */
+  fetchUsername(accessToken: string): Promise<string | undefined>
+  storeTokens(userId: number, tokens: OAuthTokens, username?: string): Promise<void>
 }
 
 /** Pure OAuth callback core. Status order mirrors the old plugin: 400 bad state, 403 unknown, 200 ok. */
 export async function handleOAuthCallback(
   query: Record<string, any>,
   deps: OAuthCallbackDeps
-): Promise<number> {
+): Promise<{ status: number; username?: string }> {
   const state = query.state
-  if (!state || Array.isArray(state)) return 400
+  if (!state || Array.isArray(state)) return { status: 400 }
   const userId = deps.consumeState(String(state))
-  if (userId === undefined) return 403
+  if (userId === undefined) return { status: 403 }
   const tokens = await deps.exchangeCode(String(query.code), String(state))
-  await deps.storeTokens(userId, tokens)
-  return 200
+  const username = await deps.fetchUsername(tokens.access_token)
+  await deps.storeTokens(userId, tokens, username)
+  return { status: 200, username }
 }
 
 /** Pure: a clean self-contained HTML page for the OAuth callback (200 = success, else failure). */
-export function renderCallbackPage(status: number): string {
+export function renderCallbackPage(status: number, username?: string): string {
   const ok = status === 200
   const accent = ok ? '#2ea043' : '#cf222e'
   const icon = ok ? '&#10003;' : '&#10005;' // ✓ / ✕
   const title = ok ? '绑定成功' : '授权失败'
+  // username is external data rendered into HTML; keep only [A-Za-z0-9_-] defensively.
+  const safe = username ? String(username).replace(/[^\w-]/g, '') : ''
   const message = ok
-    ? '你现在可以安全地关闭此网页。'
+    ? (safe ? `已绑定 @${safe}，你现在可以安全地关闭此网页。` : '你现在可以安全地关闭此网页。')
     : '授权链接无效或已过期，请回到聊天中重新发起授权。'
   return `<!DOCTYPE html>
 <html lang="zh">
@@ -96,7 +101,7 @@ export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void
     })
 
   ctx.server.get(path + '/authorize', async (koa) => {
-    const status = await handleOAuthCallback(koa.query, {
+    const result = await handleOAuthCallback(koa.query, {
       consumeState: (s) => {
         const id = states[s]
         if (id === undefined) return undefined
@@ -104,15 +109,23 @@ export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void
         return id
       },
       exchangeCode: (code, state) => http.getTokens({ code, state, redirect_uri: redirectUri() }),
-      storeTokens: async (id, t) => {
+      fetchUsername: async (accessToken) => {
+        try {
+          return (await http.getUser(accessToken)).login
+        } catch {
+          return undefined // fail-soft: OAuth still succeeds without the username
+        }
+      },
+      storeTokens: async (id, t, username) => {
         await ctx.database.set('user', { id }, {
           'github.accessToken': t.access_token,
           'github.refreshToken': t.refresh_token,
+          ...(username ? { 'github.username': username } : {}),
         })
       },
     })
-    koa.status = status
+    koa.status = result.status
     koa.type = 'html'
-    koa.body = renderCallbackPage(status)
+    koa.body = renderCallbackPage(result.status, result.username)
   })
 }

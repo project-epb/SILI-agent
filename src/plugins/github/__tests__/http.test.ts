@@ -80,6 +80,19 @@ describe('createWebhook', () => {
   })
 })
 
+describe('getUser', () => {
+  it('GETs /user with the token auth header and returns the profile', async () => {
+    const ctx = makeCtx()
+    ctx.http.get.mockResolvedValue({ login: 'octocat', id: 1 })
+    const http = new GitHubHttp(ctx, config)
+    const out = await http.getUser('AT')
+    expect(out).toEqual({ login: 'octocat', id: 1 })
+    expect(ctx.http.get).toHaveBeenCalledWith('https://api.github.com/user', {
+      headers: { authorization: 'token AT', accept: 'application/vnd.github.v3+json' },
+    })
+  })
+})
+
 describe('deleteWebhook', () => {
   it('DELETEs /repos/{repo}/hooks/{id} with auth header', async () => {
     const ctx = makeCtx()
