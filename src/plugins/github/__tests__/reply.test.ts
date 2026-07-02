@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { parseReplyCommand, formatHelp, buildQuotedComment, INDICATOR } from '../reply'
+import { describe, it, expect, vi } from 'vitest'
+vi.mock('koishi', () => ({ Context: class {}, Random: { id: () => 'stub' } }))
+import { parseReplyCommand, formatHelp, buildQuotedComment, INDICATOR, ReplyHandler } from '../reply'
 
 describe('parseReplyCommand', () => {
   it('treats .help / help / !help / /help (any case) as help', () => {
@@ -46,5 +47,96 @@ describe('buildQuotedComment', () => {
   it('empty footer → no trailing footer line', () => {
     const out = buildQuotedComment('q', 'r', '')
     expect(out.endsWith(INDICATOR)).toBe(true)
+  })
+})
+
+function makeHandler(content: string, quotedText = 'Q', footer = 'F') {
+  const request = vi.fn().mockResolvedValue(undefined)
+  const ctx = { logger: () => ({ warn: vi.fn() }) } as any
+  const http = { request } as any
+  const user = { id: 7, github: { accessToken: 'at', refreshToken: 'rt' } }
+  return { handler: new ReplyHandler(ctx, http, user, content, quotedText, footer), request, user }
+}
+
+describe('ReplyHandler', () => {
+  it('link returns the url (no network)', async () => {
+    const { handler, request } = makeHandler('')
+    expect(await handler.link('https://x')).toBe('https://x')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('react POSTs the emoji with the squirrel-girl accept header', async () => {
+    const { handler, request, user } = makeHandler('+1')
+    await handler.react('https://api/react')
+    expect(request).toHaveBeenCalledWith(user, 'POST', 'https://api/react', { content: '+1' }, {
+      accept: 'application/vnd.github.squirrel-girl-preview',
+    })
+  })
+
+  it('react rejects an unknown emoji without calling the api', async () => {
+    const { handler, request } = makeHandler('thumbsup')
+    const out = await handler.react('https://api/react')
+    expect(out).toContain('reaction')
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('reply POSTs a quoted comment body', async () => {
+    const { handler, request, user } = makeHandler('好的', 'alice commented', 'F')
+    await handler.reply('https://api/comments')
+    expect(request).toHaveBeenCalledWith(user, 'POST', 'https://api/comments', {
+      body: '> alice commented\n\n好的\n\n<!-- BOT-MESSAGE-FOOTER -->\nF',
+    })
+  })
+
+  it('reply threads extra params (commit_comment path/position)', async () => {
+    const { handler, request } = makeHandler('r', 'q', '')
+    await handler.reply('https://api/x', { path: 'a.ts', position: 3 })
+    expect(request.mock.calls[0][3]).toMatchObject({ path: 'a.ts', position: 3 })
+  })
+
+  it('close with content comments first, then PATCHes state=closed', async () => {
+    const { handler, request } = makeHandler('done', 'q', '')
+    await handler.close('https://api/i', 'https://api/i/comments')
+    expect(request.mock.calls[0].slice(1, 3)).toEqual(['POST', 'https://api/i/comments'])
+    expect(request.mock.calls[1].slice(1)).toEqual(['PATCH', 'https://api/i', { state: 'closed' }])
+  })
+
+  it('close without content only PATCHes', async () => {
+    const { handler, request } = makeHandler('', 'q', '')
+    await handler.close('https://api/i', 'https://api/i/comments')
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.calls[0].slice(1)).toEqual(['PATCH', 'https://api/i', { state: 'closed' }])
+  })
+
+  it('merge splits content into commit_title (first line) + commit_message (rest)', async () => {
+    const { handler, request, user } = makeHandler('feat: title\nlong body', 'q', '')
+    await handler.merge('https://api/pr/merge')
+    expect(request).toHaveBeenCalledWith(user, 'PUT', 'https://api/pr/merge', {
+      merge_method: 'merge',
+      commit_title: 'feat: title',
+      commit_message: 'long body',
+    })
+  })
+
+  it('rebase/squash pass the merge_method', async () => {
+    const a = makeHandler('t', 'q', ''); await a.handler.rebase('https://api/pr/merge')
+    expect(a.request.mock.calls[0][3]).toMatchObject({ merge_method: 'rebase' })
+    const b = makeHandler('t', 'q', ''); await b.handler.squash('https://api/pr/merge')
+    expect(b.request.mock.calls[0][3]).toMatchObject({ merge_method: 'squash' })
+  })
+
+  it('base PATCHes the base branch', async () => {
+    const { handler, request, user } = makeHandler('main', 'q', '')
+    await handler.base('https://api/pr')
+    expect(request).toHaveBeenCalledWith(user, 'PATCH', 'https://api/pr', { base: 'main' })
+  })
+
+  it('on api failure returns a hint with the http detail', async () => {
+    const request = vi.fn().mockRejectedValue({ response: { status: 422, data: { message: 'Unprocessable' } } })
+    const ctx = { logger: () => ({ warn: vi.fn() }) } as any
+    const user = { id: 7, github: { accessToken: 'at', refreshToken: 'rt' } }
+    const handler = new ReplyHandler(ctx, { request } as any, user, '好', 'q', '')
+    const out = await handler.reply('https://api/x')
+    expect(out).toContain('HTTP 422: Unprocessable')
   })
 })

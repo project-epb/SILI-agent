@@ -1,4 +1,8 @@
+import type { Context } from 'koishi'
 import { REACTIONS } from './actions'
+import type { GitHubHttp } from './http'
+import type { GitHubUser } from './types'
+import { describeHttpError } from './commands'
 
 /** Marker inserted between a bot-authored comment body and its footer. cleanBody
  * (events/util.ts) cuts at this marker so a rebroadcast bot comment drops the footer. */
@@ -48,4 +52,82 @@ export function buildQuotedComment(quotedText: string, userReply: string, footer
   parts.push(INDICATOR)
   if (footer) parts.push(footer)
   return parts.join('\n')
+}
+
+/** Executes a single quick-reply action against GitHub. `content` is the user's cleaned
+ * reply text; `quotedText` is the original pushed message (prefix already stripped). */
+export class ReplyHandler {
+  constructor(
+    private ctx: Context,
+    private http: GitHubHttp,
+    private user: GitHubUser,
+    private content: string,
+    private quotedText: string,
+    private footer: string
+  ) {}
+
+  /** Run a network action; on failure log + return a specific hint (never throw). */
+  private async run(fn: () => Promise<unknown>, hint: string): Promise<string | undefined> {
+    try {
+      await fn()
+    } catch (e: any) {
+      this.ctx.logger('github').warn(e)
+      const detail = describeHttpError(e)
+      return detail ? `${hint}：${detail}` : `${hint}。`
+    }
+  }
+
+  link(url: string): string {
+    return url
+  }
+
+  react(url: string): Promise<string | undefined> | string {
+    if (!(REACTIONS as readonly string[]).includes(this.content)) {
+      return `未知的 reaction，请用：${REACTIONS.join(' ')}`
+    }
+    return this.run(
+      () => this.http.request(this.user, 'POST', url, { content: this.content }, {
+        accept: 'application/vnd.github.squirrel-girl-preview',
+      }),
+      'reaction 失败'
+    )
+  }
+
+  reply(url: string, params?: Record<string, any>): Promise<string | undefined> {
+    const body = buildQuotedComment(this.quotedText, this.content, this.footer)
+    return this.run(() => this.http.request(this.user, 'POST', url, { body, ...params }), '评论失败')
+  }
+
+  async close(url: string, commentUrl: string): Promise<string | undefined> {
+    if (this.content) {
+      const err = await this.reply(commentUrl)
+      if (err) return err
+    }
+    return this.run(() => this.http.request(this.user, 'PATCH', url, { state: 'closed' }), '关闭失败')
+  }
+
+  base(url: string): Promise<string | undefined> {
+    return this.run(() => this.http.request(this.user, 'PATCH', url, { base: this.content }), '修改 base 失败')
+  }
+
+  merge(url: string, method = 'merge'): Promise<string | undefined> {
+    const [title] = this.content.split('\n', 1)
+    const message = this.content.slice(title.length)
+    return this.run(
+      () => this.http.request(this.user, 'PUT', url, {
+        merge_method: method,
+        commit_title: title.trim(),
+        commit_message: message.trim(),
+      }),
+      '合并失败'
+    )
+  }
+
+  rebase(url: string): Promise<string | undefined> {
+    return this.merge(url, 'rebase')
+  }
+
+  squash(url: string): Promise<string | undefined> {
+    return this.merge(url, 'squash')
+  }
 }
