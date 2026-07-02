@@ -1,6 +1,7 @@
 import type { Context } from 'koishi'
 import { isSignatureValid } from './verify'
 import { renderers } from './events'
+import { buildActions, type ActionMap } from './actions'
 import type { Config, RenderOptions } from './types'
 
 const UNPARSED_BODY = Symbol.for('unparsedBody')
@@ -12,12 +13,15 @@ export interface WebhookDeps {
   targets(repo: string, event: string, action?: string): string[]
   /** Migrate subscriptions when the repo was renamed (optional; no-op if absent). */
   onRename?(hookId: number, oldName: string, newName: string, secret: string): Promise<void>
+  /** Record broadcast message ids → quick-reply actions (optional; wired to HistoryStore). */
+  recordHistory?(messageIds: string[], actions: ActionMap): void
 }
 
 export interface WebhookResult {
   status: number
   targets?: string[]
   message?: import('koishi').Fragment
+  actions?: ActionMap
 }
 
 function safeParse(source: any): any {
@@ -61,7 +65,7 @@ export async function handleWebhook(
   const render = renderers[event]
   const message = render ? render(payload, renderOptions) : null
   if (!targets.length || message == null) return { status: 200 }
-  return { status: 200, targets, message }
+  return { status: 200, targets, message, actions: buildActions(event, payload) }
 }
 
 /** Register the koa webhook route; broadcasts rendered messages to subscribers. */
@@ -77,7 +81,8 @@ export function applyWebhook(ctx: Context, config: Config, deps: WebhookDeps): v
     if (result.targets?.length && result.message != null) {
       const content =
         typeof result.message === 'string' ? prefix + result.message : [prefix, result.message]
-      await ctx.broadcast(result.targets, content as any)
+      const messageIds = await ctx.broadcast(result.targets, content as any)
+      if (result.actions && deps.recordHistory) deps.recordHistory(messageIds, result.actions)
     }
   })
 }

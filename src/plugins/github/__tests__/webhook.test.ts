@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { describe, it, expect } from 'vitest'
 import { handleWebhook, type WebhookDeps } from '../webhook'
+import { buildActions } from '../actions'
 
 const secret = 's3cr3t'
 const payloadObj = {
@@ -52,5 +53,34 @@ describe('handleWebhook', () => {
     const r = await handleWebhook(headers(), raw, body, { ...deps, targets: () => [] })
     expect(r.status).toBe(200)
     expect(r.targets ?? []).toEqual([])
+  })
+
+  it('returns quick-reply actions for an interactive event on success', async () => {
+    const issuesPayload = {
+      repository: { full_name: 'Org/Repo' },
+      issue: {
+        url: 'https://api.github.com/repos/Org/Repo/issues/1',
+        html_url: 'https://github.com/Org/Repo/issues/1',
+        comments_url: 'https://api.github.com/repos/Org/Repo/issues/1/comments',
+        title: 'a bug',
+        number: 1,
+        body: 'oops',
+        user: { type: 'User' },
+      },
+      sender: { login: 'alice' },
+      action: 'opened',
+    }
+    const issuesJson = JSON.stringify(issuesPayload)
+    const issuesRaw = 'payload=' + encodeURIComponent(issuesJson)
+    const issuesSig = 'sha256=' + createHmac('sha256', secret).update(issuesRaw).digest('hex')
+    const r = await handleWebhook(
+      headers({ 'x-github-event': 'issues', 'x-hub-signature-256': issuesSig }),
+      issuesRaw,
+      { payload: issuesJson },
+      deps
+    )
+    expect(r.status).toBe(200)
+    expect(r.targets).toEqual(['mock:1'])
+    expect(r.actions).toEqual(buildActions('issues', issuesPayload))
   })
 })
