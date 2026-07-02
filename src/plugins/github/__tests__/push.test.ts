@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { renderPush } from '../events/push'
+import type { RenderOptions } from '../types'
+
+const opts: RenderOptions = { bodyMaxLength: 500 }
 
 const base = {
   pusher: { name: 'alice' },
@@ -13,15 +16,15 @@ const base = {
 
 describe('renderPush', () => {
   it('renders pusher, branch, and first line of each commit', () => {
-    expect(renderPush(base)).toBe('alice pushed to org/repo:main\n[abcdef] fix: the thing')
+    expect(renderPush(base, opts)).toBe('alice pushed to org/repo:main\n[abcdef] fix: the thing')
   })
   it('skips bot pushes', () => {
-    expect(renderPush({ ...base, sender: { type: 'Bot' } })).toBeNull()
+    expect(renderPush({ ...base, sender: { type: 'Bot' } }, opts)).toBeNull()
   })
   it('skips branch creation (before all zeros)', () => {
-    expect(renderPush({ ...base, before: '0'.repeat(40) })).toBeNull()
+    expect(renderPush({ ...base, before: '0'.repeat(40) }, opts)).toBeNull()
   })
   it('skips branch deletion (after all zeros)', () => {
-    expect(renderPush({ ...base, after: '0'.repeat(40) })).toBeNull()
+    expect(renderPush({ ...base, after: '0'.repeat(40) }, opts)).toBeNull()
   })
 })

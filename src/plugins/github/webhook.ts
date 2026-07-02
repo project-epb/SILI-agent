@@ -1,7 +1,7 @@
 import type { Context } from 'koishi'
 import { isSignatureValid } from './verify'
 import { renderers } from './events'
-import type { Config } from './types'
+import type { Config, RenderOptions } from './types'
 
 const UNPARSED_BODY = Symbol.for('unparsedBody')
 
@@ -35,7 +35,8 @@ export async function handleWebhook(
   headers: Record<string, any>,
   rawBody: string | undefined,
   body: any,
-  deps: WebhookDeps
+  deps: WebhookDeps,
+  renderOptions: RenderOptions = { bodyMaxLength: 500 }
 ): Promise<WebhookResult> {
   const event = String(headers['x-github-event'] ?? '')
   const signature = headers['x-hub-signature-256'] as string | undefined
@@ -51,7 +52,7 @@ export async function handleWebhook(
   const repo = payload.repository.full_name.toLowerCase()
   const targets = deps.targets(repo, event, payload.action)
   const render = renderers[event]
-  const message = render ? render(payload) : null
+  const message = render ? render(payload, renderOptions) : null
   if (!targets.length || message == null) return { status: 200 }
   return { status: 200, targets, message }
 }
@@ -62,7 +63,9 @@ export function applyWebhook(ctx: Context, config: Config, deps: WebhookDeps): v
   ctx.server.post((config.path ?? '/github') + '/webhook', async (koa) => {
     const reqBody = koa.request.body as any
     const rawBody = reqBody?.[UNPARSED_BODY] as string | undefined
-    const result = await handleWebhook(koa.headers, rawBody, reqBody, deps)
+    const result = await handleWebhook(koa.headers, rawBody, reqBody, deps, {
+      bodyMaxLength: config.bodyMaxLength ?? 500,
+    })
     koa.status = result.status
     if (result.targets?.length && result.message != null) {
       const content =

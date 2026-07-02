@@ -19,6 +19,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
     messagePrefix: Schema.string().default('[GitHub] '),
     replyFooter: Schema.string().role('textarea').default(''),
     replyTimeout: Schema.natural().role('ms').default(Time.hour),
+    bodyMaxLength: Schema.natural().default(500),
   })
 
   private store = new SubscriptionStore()

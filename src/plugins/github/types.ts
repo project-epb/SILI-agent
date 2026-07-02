@@ -10,6 +10,8 @@ export interface Config {
   messagePrefix?: string
   replyFooter?: string
   replyTimeout?: number
+  /** Max characters of an issue/PR/comment body before truncation. Default 500; 0 = no limit. */
+  bodyMaxLength?: number
 }
 
 /** Per-channel event filter meta, keyed by camelized event name.
@@ -19,5 +21,11 @@ export type EventFilter = Record<string, boolean | Record<string, boolean>>
 /** A repo's subscribers: cid ('platform:id') -> filter meta. */
 export type RepoConfig = Record<string, EventFilter>
 
-/** Renders a parsed webhook payload into a chat message, or null to skip. */
-export type EventRenderer = (payload: any) => Fragment | null
+/** Options threaded into renderers (e.g. body truncation length). */
+export interface RenderOptions {
+  bodyMaxLength: number
+}
+
+/** Renders a parsed webhook payload into a chat message, or null to skip.
+ * Renderers that don't need `opts` may omit the parameter. */
+export type EventRenderer = (payload: any, opts: RenderOptions) => Fragment | null
