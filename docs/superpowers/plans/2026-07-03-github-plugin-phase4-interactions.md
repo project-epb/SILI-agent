@@ -1079,6 +1079,140 @@ git commit -m "feat(github): wire history + quote-reply middleware"
 
 ---
 
+## Task 9: webhook timeout 修复（fire-and-forget 立即 200）+ 内存去重
+
+**Files:**
+- Create: `src/plugins/github/dedup.ts`
+- Test: `src/plugins/github/__tests__/dedup.test.ts`
+- Modify: `src/plugins/github/webhook.ts`（`applyWebhook`）
+
+**Interfaces:**
+- Produces: `class DedupStore` — 构造 `(ctx: Context, ttl: number)`；`firstSeen(id: string): boolean`
+
+**背景：** GitHub webhook 投递有 10s 超时。当前 `applyWebhook` 在 handler 里 `await ctx.broadcast(...)` 才返回，把广播到 QQ 的耗时算进了 webhook 响应时间 —— NapCat 卡顿时 >10s → GitHub timeout + 重试。修复：验签通过**立即回 200**，broadcast + recordHistory 用 fire-and-forget 异步。GitHub 重试用**同一** `x-github-delivery` id，用内存 dedup 防重复推送。400/202/403 路径本就立即 return status，不动。
+
+- [ ] **Step 1: 写失败测试** `src/plugins/github/__tests__/dedup.test.ts`
+
+```ts
+import { describe, it, expect, vi } from 'vitest'
+import { DedupStore } from '../dedup'
+
+function makeCtx() {
+  return { setTimeout: (fn: () => void, ms: number) => globalThis.setTimeout(fn, ms) } as any
+}
+
+describe('DedupStore', () => {
+  it('firstSeen returns true once per id, false on repeats', () => {
+    const d = new DedupStore(makeCtx(), 1000)
+    expect(d.firstSeen('d1')).toBe(true)
+    expect(d.firstSeen('d1')).toBe(false)
+    expect(d.firstSeen('d2')).toBe(true)
+  })
+  it('never dedups an empty id (missing delivery id must still process)', () => {
+    const d = new DedupStore(makeCtx(), 1000)
+    expect(d.firstSeen('')).toBe(true)
+    expect(d.firstSeen('')).toBe(true)
+  })
+  it('forgets an id after the ttl so a much-later redelivery processes again', async () => {
+    vi.useFakeTimers()
+    try {
+      const d = new DedupStore(makeCtx(), 1000)
+      expect(d.firstSeen('d1')).toBe(true)
+      expect(d.firstSeen('d1')).toBe(false)
+      await vi.advanceTimersByTimeAsync(1001)
+      expect(d.firstSeen('d1')).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `npx vitest run src/plugins/github/__tests__/dedup.test.ts`
+Expected: FAIL（`../dedup` 不存在）
+
+- [ ] **Step 3: 实现** `src/plugins/github/dedup.ts`
+
+```ts
+import type { Context } from 'koishi'
+
+/** In-memory dedup of webhook deliveries by x-github-delivery id. GitHub retries a failed
+ * delivery with the SAME id, so a first-seen check drops duplicate processing. Entries expire
+ * after ttl. Lost on restart (fine — retries happen within minutes). An empty id is never
+ * deduped: a missing delivery id must still be processed. */
+export class DedupStore {
+  private seen = new Set<string>()
+
+  constructor(private ctx: Context, private ttl: number) {}
+
+  /** True the first time an id is seen (records it + schedules expiry); false on repeats. */
+  firstSeen(id: string): boolean {
+    if (id && this.seen.has(id)) return false
+    if (id) {
+      this.seen.add(id)
+      this.ctx.setTimeout(() => this.seen.delete(id), this.ttl)
+    }
+    return true
+  }
+}
+```
+
+- [ ] **Step 4: 跑测试确认通过**
+
+Run: `npx vitest run src/plugins/github/__tests__/dedup.test.ts`
+Expected: PASS
+
+- [ ] **Step 5: 改 webhook.ts applyWebhook — fire-and-forget + dedup**
+
+顶部加 `import { DedupStore } from './dedup'` 和常量 `const DEDUP_TTL = 10 * 60 * 1000 // 10min covers GitHub's retry window`。把 `applyWebhook` 改为：
+
+```ts
+export function applyWebhook(ctx: Context, config: Config, deps: WebhookDeps): void {
+  const prefix = config.messagePrefix ?? ''
+  const dedup = new DedupStore(ctx, DEDUP_TTL)
+  ctx.server.post((config.path ?? '/github') + '/webhook', async (koa) => {
+    const reqBody = koa.request.body as any
+    const rawBody = reqBody?.[UNPARSED_BODY] as string | undefined
+    const result = await handleWebhook(koa.headers, rawBody, reqBody, deps, {
+      bodyMaxLength: config.bodyMaxLength ?? 500,
+    })
+    // Respond immediately (incl. 200) — never await broadcast, or a slow QQ send would blow
+    // GitHub's 10s webhook timeout and trigger retries.
+    koa.status = result.status
+    if (result.status !== 200 || !result.targets?.length || result.message == null) return
+    const deliveryId = String(koa.headers['x-github-delivery'] ?? '')
+    if (!dedup.firstSeen(deliveryId)) return // duplicate delivery (GitHub retry): already 200, skip
+    const content =
+      typeof result.message === 'string' ? prefix + result.message : [prefix, result.message]
+    // fire-and-forget: 200 already sent; broadcast + record history run async.
+    ctx
+      .broadcast(result.targets, content as any)
+      .then((messageIds) => {
+        if (result.actions && deps.recordHistory) deps.recordHistory(messageIds, result.actions)
+      })
+      .catch((e) => ctx.logger('github').warn(e))
+  })
+}
+```
+
+- [ ] **Step 6: 类型检查 + 全套测试**
+
+Run: `npx tsc --noEmit -p . 2>&1 | grep -cE "src/plugins/github"` → `0`
+Run: `npx vitest run src/plugins/github` → 全绿
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/plugins/github/dedup.ts src/plugins/github/__tests__/dedup.test.ts src/plugins/github/webhook.ts
+git commit -m "fix(github): respond 200 immediately + dedup deliveries (webhook timeout)"
+```
+
+**真机验证（Task 9）：** 部署后触发一次事件，观察 GitHub webhook 投递**快速 200**（不再 timeout）。DedupStore 逻辑由单测覆盖 —— GitHub 自动重试用同一 delivery id（dedup 生效），手动 redeliver 会生成新 id，故真机难构造重复，以单测为准。
+
+---
+
 ## 真机冒烟（全部 task 完成后，部署到生产验证）
 
 引用交互依赖真实 webhook 推送 + OneBot 引用回复，无法单测，须真机走一遍（生产已是本分支的部署目标）：
