@@ -172,3 +172,4 @@ ctx.middleware((session, next) => {
 
 - **`.shot`**：puppeteer 截 GitHub 页面。依赖 puppeteer 服务 + 公网访问 github.com + 硬编码 anchor selector，脆弱且增量有限（推送消息已含评论正文）。未来若做，单独一个 plan。
 - **`githubProxy` / `githubApiProxy` 可选配置**（backlog）：国内服务器（生产阿里云杭州）访问 github.com 存在网络抖动 —— Phase 3 的 OAuth token 交换就曾 `fetch failed`。一个可选的出站代理配置能一并改善 OAuth / REST / 未来 `.shot` 的连通性。非本期范围，记录待评估。
+- **跳过 bot 自发评论的回推**（backlog）：用户通过快捷指令代发的评论会作为 `issue_comment(created)` 事件被推回群一次，略吵。本期维持 1:1（推 + INDICATOR 截 footer），与旧插件一致不处理。未来可选优化：webhook 渲染层检测评论 body 含 INDICATOR → 直接跳过该条推送。
