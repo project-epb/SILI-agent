@@ -8,23 +8,23 @@ import type { Config as GitHubConfig } from './types'
 // (koishi's interface+Schema idiom; aliased import avoids a merged-declaration clash).
 export type Config = GitHubConfig
 
-// koishi reads a plugin's Schema from a static/namespace member, not this sibling
-// module binding, so the exported `Config` Schema's `.default()`s are NOT applied
-// at runtime. Follow the SILI idiom (see mediawiki) and merge defaults manually.
-const DEFAULT_CONFIG: Config = {
-  path: '/github',
-  messagePrefix: '[GitHub] ',
-  replyFooter: '',
-  replyTimeout: Time.hour,
-}
-
 export default class PluginGitHub extends BasePlugin<Config> {
   static inject = ['database', 'server']
+
+  static Config: Schema<Config> = Schema.object({
+    path: Schema.string().default('/github'),
+    appId: Schema.string(),
+    appSecret: Schema.string(),
+    redirect: Schema.string(),
+    messagePrefix: Schema.string().default('[GitHub] '),
+    replyFooter: Schema.string().role('textarea').default(''),
+    replyTimeout: Schema.natural().role('ms').default(Time.hour),
+  })
 
   private store = new SubscriptionStore()
 
   constructor(ctx: Context, config: Config) {
-    super(ctx, { ...DEFAULT_CONFIG, ...config }, 'github')
+    super(ctx, config, 'github')
 
     // Reuse the legacy schema verbatim so prod data + registered webhooks keep working.
     ctx.model.extend('user', {
@@ -58,13 +58,3 @@ export default class PluginGitHub extends BasePlugin<Config> {
     })
   }
 }
-
-export const Config: Schema<Config> = Schema.object({
-  path: Schema.string().default('/github'),
-  appId: Schema.string(),
-  appSecret: Schema.string(),
-  redirect: Schema.string(),
-  messagePrefix: Schema.string().default('[GitHub] '),
-  replyFooter: Schema.string().role('textarea').default(''),
-  replyTimeout: Schema.natural().role('ms').default(Time.hour),
-})
