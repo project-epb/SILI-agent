@@ -315,6 +315,7 @@ app.plugin(async function PluginCollectionThirdParty(ctx) {
     path: '/api/github',
     appId: env.TOKEN_GITHUB_APPID,
     appSecret: env.TOKEN_GITHUB_APPSECRET,
+    redirect: env.TOKEN_GITHUB_REDIRECT, // optional override; unset → derived from selfUrl (see applyOAuth)
     replyTimeout: 12 * Time.hour,
     replyFooter: '',
   })
