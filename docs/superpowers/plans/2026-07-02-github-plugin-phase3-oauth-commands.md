@@ -14,7 +14,7 @@
 - **用户侧行为 1:1 复刻旧插件**：所有回复字符串**逐字取自** `node_modules/koishi-plugin-github/lib/locales/zh-CN.json`（不自造；本计划给出关键 key→串作参考，实施者以该 JSON 为准）。命令名/别名/option/authority 与旧一致。
 - **数据层复用**（Phase 1 已建，不改 schema）：`user.github.{accessToken,refreshToken}`、`channel.github.webhooks: Record<repoLower, EventFilter>`、`github` 表 `{ id: hookId, name: repoLower, secret }`。订阅写入的 filter meta 为 `{}`（= 全事件启用）。
 - **签名/secret 兼容**：新建 webhook 时 `secret = Random.id()`（koishi），`config.url = ctx.server.config.selfUrl + config.path + '/webhook'`，`events: ['*']`，不设 `content_type`（GitHub 默认 form）——与存量一致。
-- **OAuth**：scope `admin:repo_hook,repo`；`redirect_uri` = **`config.redirect || (ctx.server.config.selfUrl + sanitize(config.path) + '/authorize')`**（`redirect` 为可选覆盖项；缺省时从 selfUrl 推导出与回调路由 `GET {path}/authorize` 一致的 URL——比旧插件的「留空靠 GitHub 回落登记 callback」更明确、常见情况零配置）。**同一个 `redirectUri` 值必须同时用于 authorize 链接与 code 交换**（GitHub 要求两处一致）。code 交换 = `POST https://github.com/login/oauth/access_token`（client_id/secret + code/state/redirect_uri 作 query，`Accept: application/json`）；401 自动 refresh 并回写 token；回调路由返回**裸状态码**（400/403/200，无 HTML）。
+- **OAuth**：scope `admin:repo_hook,repo`；`redirect_uri` = **`config.redirect || (ctx.server.config.selfUrl + sanitize(config.path) + '/authorize')`**（`redirect` 为可选覆盖项；缺省时从 selfUrl 推导出与回调路由 `GET {path}/authorize` 一致的 URL——比旧插件的「留空靠 GitHub 回落登记 callback」更明确、常见情况零配置）。**同一个 `redirectUri` 值必须同时用于 authorize 链接与 code 交换**（GitHub 要求两处一致）。code 交换 = `POST https://github.com/login/oauth/access_token`（client_id/secret + code/state/redirect_uri 作 query，`Accept: application/json`）；401 自动 refresh 并回写 token；回调路由**状态码仍为 400/403/200**，但**响应体返回一个干净自包含的 HTML 页面**（内联 CSS、无外部依赖、中文）——成功页显示「绑定成功，你现在可以安全地关闭此网页。」，失败页显示授权失败提示（升级旧插件的纯文本 ok/error）。
 - `repoRegExp = /^[\w.-]+\/[\w.-]+$/`；仓库名一律 `.toLowerCase()`。
 - Quester 错误状态读 `e.response?.status`（仓库先例：gelbooru/client.ts:98、comfy-ui/client.ts:47）。`ctx.http` 方法：`post(url, data, config)`、`get(url, config)`、`delete(url, config)`；config 支持 `{ params, headers, data }`（先例：gelbooru/comfy-ui client）。**实施者写 http.ts 前先扫一眼这两个 client 确认 Quester 用法。**
 - 注释用英文；测试在 `src/plugins/github/__tests__/`。别名 `~/*`→`src/plugins/*`。
@@ -271,6 +271,7 @@ git commit -m "feat(github): GitHubHttp ctx.http layer (token exchange, 401 refr
 - Produces:
   - `interface OAuthCallbackDeps { consumeState(state: string): number | undefined; exchangeCode(code: string, state: string): Promise<OAuthTokens>; storeTokens(userId: number, tokens: OAuthTokens): Promise<void> }`
   - `handleOAuthCallback(query: Record<string, any>, deps: OAuthCallbackDeps): Promise<number>`（返回 HTTP 状态码）
+  - `renderCallbackPage(status: number): string`（纯：状态码 → 自包含 HTML 页面，200=成功页 / 其它=失败页）
   - `applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void`（注册 `github.authorize`/`.auth` 命令 + `GET {path}/authorize` 路由；内部计算 `redirectUri = config.redirect || selfUrl + sanitize(path) + '/authorize'` 并同时用于 authorize 链接与 code 交换）
   - `buildAuthorizeUrl(clientId: string, redirectUri: string, state: string): string`（供命令与测试复用）
 
@@ -280,7 +281,7 @@ Create `src/plugins/github/__tests__/oauth.test.ts`:
 
 ```ts
 import { describe, it, expect, vi } from 'vitest'
-import { handleOAuthCallback, buildAuthorizeUrl } from '../oauth'
+import { handleOAuthCallback, buildAuthorizeUrl, renderCallbackPage } from '../oauth'
 
 describe('handleOAuthCallback', () => {
   const tokens = { access_token: 'AT', refresh_token: 'RT' }
@@ -320,6 +321,23 @@ describe('buildAuthorizeUrl', () => {
     expect(q.get('state')).toBe('ST')
     expect(q.get('redirect_uri')).toBe('https://sili.example/api/github/authorize')
     expect(q.get('scope')).toBe('admin:repo_hook,repo')
+  })
+})
+
+describe('renderCallbackPage', () => {
+  it('renders a success page for 200 with the safe-to-close message', () => {
+    const html = renderCallbackPage(200)
+    expect(html).toContain('<!DOCTYPE html>')
+    expect(html).toContain('绑定成功')
+    expect(html).toContain('你现在可以安全地关闭此网页。')
+  })
+  it('renders a failure page for non-200 statuses', () => {
+    for (const s of [400, 403]) {
+      const html = renderCallbackPage(s)
+      expect(html).toContain('<!DOCTYPE html>')
+      expect(html).toContain('授权失败')
+      expect(html).not.toContain('绑定成功')
+    }
   })
 })
 ```
@@ -371,6 +389,45 @@ export async function handleOAuthCallback(
   return 200
 }
 
+/** Pure: a clean self-contained HTML page for the OAuth callback (200 = success, else failure). */
+export function renderCallbackPage(status: number): string {
+  const ok = status === 200
+  const accent = ok ? '#2ea043' : '#cf222e'
+  const icon = ok ? '&#10003;' : '&#10005;' // ✓ / ✕
+  const title = ok ? '绑定成功' : '授权失败'
+  const message = ok
+    ? '你现在可以安全地关闭此网页。'
+    : '授权链接无效或已过期，请回到聊天中重新发起授权。'
+  return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub · ${title}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f6f8fa; color: #1f2328; }
+  @media (prefers-color-scheme: dark) { body { background: #0d1117; color: #e6edf3; } .card { background: #161b22; border-color: #30363d; } }
+  .card { background: #fff; border: 1px solid #d0d7de; border-radius: 12px; padding: 40px 48px;
+    text-align: center; max-width: 360px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .icon { width: 56px; height: 56px; line-height: 56px; border-radius: 50%; margin: 0 auto 20px;
+    font-size: 28px; color: #fff; background: ${accent}; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { margin: 0; font-size: 14px; opacity: .75; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${icon}</div>
+    <h1>${title}</h1>
+    <p>${message}</p>
+  </div>
+</body>
+</html>`
+}
+
 /** Register the authorize command + OAuth callback route. */
 export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void {
   const path = sanitize(config.path ?? '/github')
@@ -390,7 +447,7 @@ export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void
     })
 
   ctx.server.get(path + '/authorize', async (koa) => {
-    koa.status = await handleOAuthCallback(koa.query, {
+    const status = await handleOAuthCallback(koa.query, {
       consumeState: (s) => {
         const id = states[s]
         if (id === undefined) return undefined
@@ -404,11 +461,14 @@ export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void
           'github.refreshToken': t.refresh_token,
         }),
     })
+    koa.status = status
+    koa.type = 'html'
+    koa.body = renderCallbackPage(status)
   })
 }
 ```
 
-> 注：`states` map 为进程内内存（与旧插件一致）。OAuth 流程秒级完成，重启丢失可接受——用户重跑 `github.authorize` 即可。**实施者：`ctx.server.get` 回调参数对象名/`koa.query`/`koa.status` 的确切形状请对照 webhook.ts:63 的 `ctx.server.post`（同一 server 服务）确认。**
+> 注：`states` map 为进程内内存（与旧插件一致）。OAuth 流程秒级完成，重启丢失可接受——用户重跑 `github.authorize` 即可。**实施者：`ctx.server.get` 回调参数对象名/`koa.query`/`koa.status`/`koa.body`/`koa.type` 的确切形状请对照 webhook.ts:63 的 `ctx.server.post`（同一 server 服务）确认**——`ctx.server` 是 koa，`koa.body = html` + `koa.type = 'html'` 是标准 koa 用法，但请核实本 server 服务是否原样透传（若 `koa.type` 不认，用 `koa.set('content-type', 'text/html; charset=utf-8')`）。
 
 - [ ] **Step 4: 跑测试确认通过**
 
@@ -1077,7 +1137,7 @@ Create `.debug/github-plugin/phase3-smoke-checklist.md`（部署到有公网 cal
 前置：.env 设 TOKEN_GITHUB_APPID / TOKEN_GITHUB_APPSECRET。TOKEN_GITHUB_REDIRECT 可不设（缺省推导为 selfUrl + path + '/authorize'，需与 OAuth App 登记的 callback 一致；不一致才设它覆盖）。
 命令前缀按环境（生产 ! / 本地 ;）。
 
-1. 授权：`github.authorize` → 收到 "请点击下面的链接继续操作：" + 链接（链接里的 redirect_uri 应 = 推导值或你设的覆盖值）。浏览器打开 → GitHub 授权 → 回调返回 200（浏览器空白页/状态码，正常）。
+1. 授权：`github.authorize` → 收到 "请点击下面的链接继续操作：" + 链接（链接里的 redirect_uri 应 = 推导值或你设的覆盖值）。浏览器打开 → GitHub 授权 → 回调页显示干净的「绑定成功，你现在可以安全地关闭此网页。」（HTTP 200）。反例：直接访问 callback（无有效 state）→ 显示「授权失败」页（400/403）。
    - 验证：DB `user.github.accessToken` 已写入。
 2. 注册 webhook：`github.repos <你的测试仓库> -a` → "添加仓库成功！"；GitHub 仓库 Settings→Webhooks 出现新 hook，url = <selfUrl>/api/github/webhook。
    - 验证：DB `github` 表新增 { id, name, secret }。
