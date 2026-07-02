@@ -84,9 +84,27 @@ GitHub POST /api/github/webhook  (x-www-form-urlencoded)
 | **引用回复交互** | 引用一条推送消息后：`react` 加 emoji（+1/-1/laugh/confused/heart/hooray/rocket/eyes 8 种）、评论回复、close（关 issue/PR，可带评论）。靠 `history` 映射消息 id → GitHub 资源 url，`replyTimeout` 内有效 |
 | `github.user <name>` | **新增**，见下节。非阻塞优先级 |
 
-## 事件渲染器（用户侧 1:1，输出现代化为 satori JSX）
+## 事件渲染器（用户侧 1:1）
 
-复刻旧 `events.js` 实有的渲染：`push`、`issues`(opened/closed/reopened/transferred)、`issue_comment`、`pull_request_review`(submitted)、`pull_request_review_comment`、`commit_comment`、`fork`、`milestone`、`star`(created)。内容信息量与旧一致（标题/链接/作者/摘要），表现形式改 satori JSX。每渲染器纯函数（payload→JSX），可快照测试。
+复刻旧 `events.js` **全部**渲染（按 `x-github-event` 分派，单个渲染器内部 `switch(payload.action)`）：
+
+| event | 覆盖的 action / 说明 |
+|---|---|
+| `push` | 非 bot、跳过建删分支（Phase 1 已做） |
+| `issues` | opened / closed / reopened / transferred |
+| `issue_comment` | created / edited / deleted |
+| `commit_comment` | created / edited / deleted |
+| `pull_request_review_comment` | created / edited / deleted |
+| `pull_request_review` | submitted（有 body 才发） |
+| `pull_request` | opened / closed(含 merged) / reopened / review_requested / converted_to_draft / ready_for_review |
+| `create` / `delete` | 建 / 删 分支·标签 |
+| `fork` | — |
+| `milestone` | opened / closed |
+| `star` | created |
+
+- 每渲染器**纯函数** `(payload) => Fragment | null`，返回 `null` 跳过（bot 发起 / 无 body / 无关 action）。内容信息量与旧一致（作者/名称/标题/摘要）。**交互对象（link/react/reply/close…）属 Phase 4，Phase 2 渲染器只产出消息文本。**
+- **正文（issue/PR/comment body）纯文本转发**：不引 `koishi-plugin-markdown`、不做 md 渲染；仅 `cleanBody()` 去掉 `<!-- BOT-MESSAGE-FOOTER -->` 及其后内容、剥离独立 HTML 注释行、合并空行、trim。**超长按 `bodyMaxLength`（config，默认 500）截断加省略号**。
+- 每渲染器快照测试。
 
 ## `github.user` 卡片（新增，低优先）
 
