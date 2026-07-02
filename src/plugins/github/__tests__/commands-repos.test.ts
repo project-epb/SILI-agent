@@ -7,7 +7,7 @@ vi.mock('koishi', () => ({
   Random: { id: () => 'stub-secret' },
 }))
 
-import { resolveReposListReply, mapWebhookError, MSG } from '../commands'
+import { resolveReposListReply, mapWebhookError, describeHttpError, MSG } from '../commands'
 
 describe('resolveReposListReply', () => {
   it('joins registered repo names by newline', () => {
@@ -22,10 +22,26 @@ describe('mapWebhookError', () => {
   it('maps 404 to notFound', () => {
     expect(mapWebhookError(404)).toBe('notFound')
   })
+  it('maps 403 to forbidden', () => {
+    expect(mapWebhookError(403)).toBe('forbidden')
+  })
   it('maps anything else to failed', () => {
-    expect(mapWebhookError(403)).toBe('failed')
     expect(mapWebhookError(500)).toBe('failed')
     expect(mapWebhookError(undefined)).toBe('failed')
+  })
+})
+
+describe('describeHttpError', () => {
+  it('combines status and upstream message', () => {
+    expect(describeHttpError({ response: { status: 422, data: { message: 'Validation Failed' } } }))
+      .toBe('HTTP 422: Validation Failed')
+  })
+  it('falls back to status only when no message', () => {
+    expect(describeHttpError({ response: { status: 500 } })).toBe('HTTP 500')
+  })
+  it('returns empty string when no status', () => {
+    expect(describeHttpError({})).toBe('')
+    expect(describeHttpError(new Error('boom'))).toBe('')
   })
 })
 
@@ -36,7 +52,9 @@ describe('MSG repos strings (verbatim from old locale)', () => {
     expect(MSG.repoAddSucceeded).toBe('添加仓库成功！')
     expect(MSG.repoAddFailed).toBe('由于未知原因添加仓库失败。')
     expect(MSG.repoNotFound).toBe('仓库不存在或您无权访问。')
+    expect(MSG.forbidden).toBe('第三方访问受限，请尝试授权此应用。\nhttps://docs.github.com/articles/restricting-access-to-your-organization-s-data/')
     expect(MSG.repoDeleteUnchanged('a/b')).toBe('尚未添加过仓库 a/b。')
     expect(MSG.repoDeleteSucceeded).toBe('移除仓库成功！')
+    expect(MSG.repoDeleteFailed).toBe('由于未知原因移除仓库失败。')
   })
 })

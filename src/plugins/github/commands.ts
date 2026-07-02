@@ -22,8 +22,10 @@ export const MSG = {
   repoAddSucceeded: '添加仓库成功！',
   repoAddFailed: '由于未知原因添加仓库失败。',
   repoNotFound: '仓库不存在或您无权访问。',
+  forbidden: '第三方访问受限，请尝试授权此应用。\nhttps://docs.github.com/articles/restricting-access-to-your-organization-s-data/',
   repoDeleteUnchanged: (n: string) => `尚未添加过仓库 ${n}。`,
   repoDeleteSucceeded: '移除仓库成功！',
+  repoDeleteFailed: '由于未知原因移除仓库失败。',
 } as const
 
 /** Pure: the -l list reply. */
@@ -38,8 +40,19 @@ export function resolveReposListReply(names: string[]): string {
 }
 
 /** Pure: map a GitHub webhook-create error status to a reply key. */
-export function mapWebhookError(status: number | undefined): 'notFound' | 'failed' {
-  return status === 404 ? 'notFound' : 'failed'
+export function mapWebhookError(status: number | undefined): 'notFound' | 'forbidden' | 'failed' {
+  if (status === 404) return 'notFound'
+  if (status === 403) return 'forbidden'
+  return 'failed'
+}
+
+/** Pure: a human-readable suffix from a Quester/GitHub error (status + upstream message). */
+export function describeHttpError(e: any): string {
+  const status = e?.response?.status
+  const message = e?.response?.data?.message
+  if (status && message) return `HTTP ${status}: ${message}`
+  if (status) return `HTTP ${status}`
+  return ''
 }
 
 /** Minimal wrapper over the `github` table (hook registry). */
@@ -180,8 +193,10 @@ function applyReposCommand(
         } catch (e: any) {
           const key = mapWebhookError(e?.response?.status)
           if (key === 'notFound') return MSG.repoNotFound
+          if (key === 'forbidden') return MSG.forbidden
           ctx.logger('github').warn(e)
-          return MSG.repoAddFailed
+          const detail = describeHttpError(e)
+          return detail ? `添加仓库失败：${detail}` : MSG.repoAddFailed
         }
         await repoStore.create({ name: repo, id: data.id, secret })
         if (!options!.subscribe) return MSG.repoAddSucceeded
@@ -192,7 +207,13 @@ function applyReposCommand(
       // -d (delete webhook globally)
       const row = await repoStore.get(repo)
       if (!row) return MSG.repoDeleteUnchanged(repo)
-      await http.deleteWebhook(user, repo, row.id) // swallows 404 internally
+      try {
+        await http.deleteWebhook(user, repo, row.id) // swallows 404 internally
+      } catch (e: any) {
+        ctx.logger('github').warn(e)
+        const detail = describeHttpError(e)
+        return detail ? `移除仓库失败：${detail}` : MSG.repoDeleteFailed
+      }
       // remove the repo key from every channel's webhooks + drop the whole-repo subscription
       const channels = await ctx.database.get('channel', {}, ['id', 'platform', 'github'])
       await ctx.database.upsert(
