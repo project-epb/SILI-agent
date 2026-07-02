@@ -3,8 +3,9 @@ import { GitHubHttp, type GitHubUser } from '../http'
 
 // Minimal fake koishi Context: only the surface GitHubHttp touches.
 function makeCtx(overrides: any = {}) {
+  const http: any = Object.assign(vi.fn(), { post: vi.fn(), delete: vi.fn(), get: vi.fn() })
   return {
-    http: { post: vi.fn(), delete: vi.fn(), get: vi.fn() },
+    http,
     database: { set: vi.fn().mockResolvedValue(undefined) },
     server: { config: { selfUrl: 'https://sili.example' } },
     ...overrides,
@@ -134,5 +135,32 @@ describe('deleteWebhook', () => {
     ctx.http.delete.mockRejectedValue({ response: { status: 404 } })
     const http = new GitHubHttp(ctx, config)
     await expect(http.deleteWebhook(user(), 'org/repo', 42)).resolves.toBeUndefined()
+  })
+})
+
+describe('request (generic authed)', () => {
+  it('calls ctx.http(method, url, {data, headers}) with the auth header; extra headers merge over it', async () => {
+    const ctx = makeCtx()
+    ctx.http.mockResolvedValue({ ok: 1 })
+    const http = new GitHubHttp(ctx, config)
+    const out = await http.request(user(), 'POST', 'https://api.github.com/x', { a: 1 }, { accept: 'custom' })
+    expect(out).toEqual({ ok: 1 })
+    expect(ctx.http).toHaveBeenCalledWith('POST', 'https://api.github.com/x', {
+      data: { a: 1 },
+      headers: { authorization: 'token at0', accept: 'custom' },
+    })
+  })
+
+  it('refreshes the token on 401 and retries (via withAuth)', async () => {
+    const ctx = makeCtx()
+    ctx.http
+      .mockRejectedValueOnce({ response: { status: 401 } }) // first request
+      .mockResolvedValueOnce({ id: 9 }) // retried request
+    ctx.http.post.mockResolvedValueOnce({ access_token: 'AT2', refresh_token: 'RT2' }) // refresh getTokens
+    const http = new GitHubHttp(ctx, config)
+    const u = user()
+    const out = await http.request(u, 'PUT', 'https://api.github.com/y')
+    expect(out).toEqual({ id: 9 })
+    expect(u.github.accessToken).toBe('AT2')
   })
 })

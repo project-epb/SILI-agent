@@ -85,4 +85,22 @@ export class GitHubHttp {
       throw e
     }
   }
+
+  /** Generic authed request (401 auto-refresh via withAuth). Used by ReplyHandler,
+   * github.issue, github.star. Body is sent as JSON; extra headers merge over the auth
+   * headers (so e.g. the squirrel-girl accept can override the default). */
+  request<T = any>(
+    user: GitHubUser,
+    method: string,
+    url: string,
+    body?: any,
+    headers?: Record<string, string>
+  ): Promise<T> {
+    return this.withAuth(user, (token) =>
+      (this.ctx.http as any)(method, url, {
+        data: body,
+        headers: { ...authHeaders(token), ...headers },
+      })
+    )
+  }
 }
