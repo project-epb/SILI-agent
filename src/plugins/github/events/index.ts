@@ -1,7 +1,15 @@
 import type { EventRenderer } from '../types'
 import { renderPush } from './push'
+import {
+  renderCommitComment,
+  renderIssueComment,
+  renderPullRequestReviewComment,
+} from './comment'
 
-/** event name (x-github-event) -> renderer. Phase 1 ships push only. */
+/** event name (x-github-event) -> renderer. */
 export const renderers: Record<string, EventRenderer> = {
   push: renderPush,
+  commit_comment: renderCommitComment,
+  issue_comment: renderIssueComment,
+  pull_request_review_comment: renderPullRequestReviewComment,
 }
