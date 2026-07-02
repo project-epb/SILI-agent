@@ -29,3 +29,15 @@ export interface RenderOptions {
 /** Renders a parsed webhook payload into a chat message, or null to skip.
  * Renderers that don't need `opts` may omit the parameter. */
 export type EventRenderer = (payload: any, opts: RenderOptions) => Fragment | null
+
+/** OAuth token pair as returned by GitHub's access_token endpoint. */
+export interface OAuthTokens {
+  access_token: string
+  refresh_token: string
+}
+
+/** The subset of a koishi user this plugin reads/writes (userFields(['id','github'])). */
+export interface GitHubUser {
+  id: number
+  github: { accessToken: string; refreshToken: string }
+}
