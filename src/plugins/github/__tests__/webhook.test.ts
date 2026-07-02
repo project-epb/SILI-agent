@@ -25,7 +25,7 @@ const headers = (extra: Record<string, any> = {}) => ({
 })
 
 const deps: WebhookDeps = {
-  getSecret: async (id) => (id === 42 ? secret : undefined),
+  getHook: async (id) => (id === 42 ? { name: 'org/repo', secret } : undefined),
   targets: () => ['mock:1'],
 }
 

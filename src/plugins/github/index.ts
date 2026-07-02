@@ -54,7 +54,10 @@ export default class PluginGitHub extends BasePlugin<Config> {
     })
 
     applyWebhook(ctx, this.config, {
-      getSecret: async (hookId) => (await ctx.database.get('github', [hookId]))[0]?.secret,
+      getHook: async (hookId) => {
+        const [row] = await ctx.database.get('github', [hookId])
+        return row ? { name: row.name, secret: row.secret } : undefined
+      },
       targets: (repo, event, action) => this.store.targets(repo, event, action),
     })
   }

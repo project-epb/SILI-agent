@@ -3,7 +3,10 @@ import { describe, it, expect } from 'vitest'
 import { handleWebhook, type WebhookDeps } from '../webhook'
 
 const secret = 's3cr3t'
-const deps: WebhookDeps = { getSecret: async () => secret, targets: () => ['mock:1'] }
+const deps: WebhookDeps = {
+  getHook: async () => ({ name: 'org/repo', secret }),
+  targets: () => ['mock:1'],
+}
 
 // Build a signed urlencoded request for a given event + payload object.
 function sign(event: string, payloadObj: any) {

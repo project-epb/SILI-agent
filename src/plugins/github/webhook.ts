@@ -6,10 +6,12 @@ import type { Config, RenderOptions } from './types'
 const UNPARSED_BODY = Symbol.for('unparsedBody')
 
 export interface WebhookDeps {
-  /** Look up a webhook's shared secret by its GitHub hook id. */
-  getSecret(hookId: number): Promise<string | undefined>
+  /** Look up a webhook's stored repo name + secret by its GitHub hook id. */
+  getHook(hookId: number): Promise<{ name: string; secret: string } | undefined>
   /** Resolve subscribed cids for a repo + event (+ action). */
   targets(repo: string, event: string, action?: string): string[]
+  /** Migrate subscriptions when the repo was renamed (optional; no-op if absent). */
+  onRename?(hookId: number, oldName: string, newName: string, secret: string): Promise<void>
 }
 
 export interface WebhookResult {
@@ -44,12 +46,17 @@ export async function handleWebhook(
   const payload = safeParse(body?.payload)
   if (!event || !payload?.repository?.full_name) return { status: 400 }
 
-  const secret = await deps.getSecret(hookId)
-  if (!secret) return { status: 202 } // unknown hook: repos -a probe window
+  const hook = await deps.getHook(hookId)
+  if (!hook) return { status: 202 } // unknown hook: repos -a probe window
 
-  if (!(await isSignatureValid(secret, rawBody, signature))) return { status: 403 }
+  if (!(await isSignatureValid(hook.secret, rawBody, signature))) return { status: 403 }
 
   const repo = payload.repository.full_name.toLowerCase()
+  // Repo rename: the stored name no longer matches the incoming full_name. Migrate before
+  // resolving targets so the (renamed) subscription index is used. Only after a valid signature.
+  if (hook.name !== repo && deps.onRename) {
+    await deps.onRename(hookId, hook.name, repo, hook.secret)
+  }
   const targets = deps.targets(repo, event, payload.action)
   const render = renderers[event]
   const message = render ? render(payload, renderOptions) : null
