@@ -7,7 +7,6 @@ export const REPO_RE = /^[\w.-]+\/[\w.-]+$/
 
 /** Reply strings — verbatim from the old plugin's locales/zh-CN.json. Functions interpolate the repo name. */
 export const MSG = {
-  followLink: '请点击下面的链接继续操作：',
   listEmpty: '当前没有订阅的仓库。',
   privateContext: '当前不是群聊上下文。',
   repoExpected: '请输入仓库名。',
@@ -177,8 +176,9 @@ function applyReposCommand(
       if (!name) return MSG.repoExpected
       if (!REPO_RE.test(name)) return MSG.repoInvalid
       if (!s.user!.github?.accessToken) {
-        // 'github.require-auth' in the old locale.
-        await s.send('要使用此功能，请对机器人进行授权。输入你的 GitHub 用户名。')
+        // Reworded from the old 'github.require-auth' string: the old text said "enter your
+        // GitHub username", but the flow is now link-based OAuth (no username entry).
+        await s.send('要使用此功能，请先对机器人进行授权。')
         return s.execute({ name: 'github.authorize' })
       }
       const repo = name.toLowerCase()
