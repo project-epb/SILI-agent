@@ -8,13 +8,23 @@ import type { Config as GitHubConfig } from './types'
 // (koishi's interface+Schema idiom; aliased import avoids a merged-declaration clash).
 export type Config = GitHubConfig
 
+// koishi reads a plugin's Schema from a static/namespace member, not this sibling
+// module binding, so the exported `Config` Schema's `.default()`s are NOT applied
+// at runtime. Follow the SILI idiom (see mediawiki) and merge defaults manually.
+const DEFAULT_CONFIG: Config = {
+  path: '/github',
+  messagePrefix: '[GitHub] ',
+  replyFooter: '',
+  replyTimeout: Time.hour,
+}
+
 export default class PluginGitHub extends BasePlugin<Config> {
   static inject = ['database', 'server']
 
   private store = new SubscriptionStore()
 
   constructor(ctx: Context, config: Config) {
-    super(ctx, config, 'github')
+    super(ctx, { ...DEFAULT_CONFIG, ...config }, 'github')
 
     // Reuse the legacy schema verbatim so prod data + registered webhooks keep working.
     ctx.model.extend('user', {
@@ -39,10 +49,10 @@ export default class PluginGitHub extends BasePlugin<Config> {
           this.store.subscribe(repo, `${platform}:${id}`, webhooks[repo])
         }
       }
-      this.logger.info('github: subscription index rebuilt')
+      this.logger.info('subscription index rebuilt')
     })
 
-    applyWebhook(ctx, config, {
+    applyWebhook(ctx, this.config, {
       getSecret: async (hookId) => (await ctx.database.get('github', [hookId]))[0]?.secret,
       targets: (repo, event, action) => this.store.targets(repo, event, action),
     })
