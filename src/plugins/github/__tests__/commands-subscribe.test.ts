@@ -1,4 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+// koishi 包顶层会拉 loader 等运行时副作用，在 vitest 下加载失败；commands.ts 只在
+// applyCommands/applyReposCommand 里用到 Context/Random，被测的纯函数完全不碰它们，全 stub 即可。
+vi.mock('koishi', () => ({
+  Context: class {},
+  Random: { id: () => 'stub-secret' },
+}))
+
 import { REPO_RE, resolveListReply, MSG } from '../commands'
 
 describe('REPO_RE', () => {

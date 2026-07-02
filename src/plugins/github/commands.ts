@@ -32,6 +32,16 @@ export function resolveListReply(webhooks: Record<string, unknown> | undefined):
   return names.length ? names.sort().join('\n') : MSG.listEmpty
 }
 
+/** Pure: the no-option github.repos reply (list all registered repos). */
+export function resolveReposListReply(names: string[]): string {
+  return names.length ? names.join('\n') : MSG.reposEmpty
+}
+
+/** Pure: map a GitHub webhook-create error status to a reply key. */
+export function mapWebhookError(status: number | undefined): 'notFound' | 'failed' {
+  return status === 404 ? 'notFound' : 'failed'
+}
+
 /** Minimal wrapper over the `github` table (hook registry). */
 export interface RepoStore {
   has(name: string): Promise<boolean>
@@ -128,12 +138,74 @@ export function applyCommands(
   applyReposCommand(ctx, config, http, store, repoStore)
 }
 
-// Intentional empty stub — Task 4 replaces this with the real `github.repos` implementation.
-// Declared here so applyCommands compiles + wires it. Do NOT implement github.repos here.
+/** github.repos [name] — manage the global webhook registry (-a create / -d delete / -s also-subscribe). */
 function applyReposCommand(
-  _ctx: Context,
-  _config: Config,
-  _http: GitHubHttp,
-  _store: SubscriptionStore,
-  _repoStore: RepoStore
-): void {}
+  ctx: Context,
+  config: Config,
+  http: GitHubHttp,
+  store: SubscriptionStore,
+  repoStore: RepoStore
+): void {
+  const path = (config.path ?? '/github').replace(/\/$/, '')
+  const callbackUrl = () => ctx.server.config.selfUrl + path + '/webhook'
+
+  ctx
+    .command('github.repos [name]')
+    .userFields(['id', 'github'])
+    .option('add', '-a')
+    .option('delete', '-d')
+    .option('subscribe', '-s')
+    .action(async ({ session, options }, name) => {
+      const s = session!
+      if (!options!.add && !options!.delete) {
+        return resolveReposListReply(await repoStore.list())
+      }
+      // shared guards for -a / -d
+      if (!name) return MSG.repoExpected
+      if (!REPO_RE.test(name)) return MSG.repoInvalid
+      if (!s.user!.github?.accessToken) {
+        // 'github.require-auth' in the old locale.
+        await s.send('要使用此功能，请对机器人进行授权。输入你的 GitHub 用户名。')
+        return s.execute({ name: 'github.authorize' })
+      }
+      const repo = name.toLowerCase()
+      const user = { id: s.user!.id, github: s.user!.github }
+
+      if (options!.add) {
+        if (await repoStore.has(repo)) return MSG.repoAddUnchanged(repo)
+        const secret = Random.id()
+        let data: { id: number }
+        try {
+          data = await http.createWebhook(user, repo, { secret, callbackUrl: callbackUrl() })
+        } catch (e: any) {
+          const key = mapWebhookError(e?.response?.status)
+          if (key === 'notFound') return MSG.repoNotFound
+          ctx.logger('github').warn(e)
+          return MSG.repoAddFailed
+        }
+        await repoStore.create({ name: repo, id: data.id, secret })
+        if (!options!.subscribe) return MSG.repoAddSucceeded
+        // -s: chain into channel subscribe (github --add)
+        return s.execute({ name: 'github', args: [repo], options: { add: true } }, true)
+      }
+
+      // -d (delete webhook globally)
+      const row = await repoStore.get(repo)
+      if (!row) return MSG.repoDeleteUnchanged(repo)
+      await http.deleteWebhook(user, repo, row.id) // swallows 404 internally
+      // remove the repo key from every channel's webhooks + drop the whole-repo subscription
+      const channels = await ctx.database.get('channel', {}, ['id', 'platform', 'github'])
+      await ctx.database.upsert(
+        'channel',
+        channels
+          .filter(({ github }) => github?.webhooks?.[repo])
+          .map((c) => {
+            delete c.github.webhooks[repo]
+            return c
+          })
+      )
+      store.unsubscribe(repo)
+      await repoStore.remove(repo)
+      return MSG.repoDeleteSucceeded
+    })
+}
