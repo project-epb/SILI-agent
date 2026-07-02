@@ -99,9 +99,15 @@ export default class PluginGitHub extends BasePlugin<Config> {
       if (!session.quote) return next()
       const actions = history.get(session.quote.id)
       if (!actions) return next()
-      const { name, message } = parseReplyCommand(session.stripped.content.trim())
+      const body = session.stripped.content.trim()
+      if (!body) return next() // empty reply (bare @bot / whitespace) — don't post an empty comment
+      const { name, message } = parseReplyCommand(body)
       if (name === 'help') return formatHelp(Object.keys(actions))
-      const params = (actions as Record<string, any[]>)[name]
+      // Own-property check so inherited names (toString/constructor/...) miss instead
+      // of resolving to a truthy Function and throwing on the `...params` spread.
+      const params = Object.prototype.hasOwnProperty.call(actions, name)
+        ? (actions as Record<string, any[]>)[name]
+        : undefined
       if (!params) return next()
       // Middleware sessions carry no static user fields (Observed<never>); the github
       // field is attached at runtime by the attach-user hook above. Match the codebase
