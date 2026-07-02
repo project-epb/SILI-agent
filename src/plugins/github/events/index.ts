@@ -7,6 +7,13 @@ import {
   renderPullRequestReviewComment,
 } from './comment'
 import { renderPullRequest, renderPullRequestReview } from './pull-request'
+import {
+  renderCreate,
+  renderDelete,
+  renderFork,
+  renderMilestone,
+  renderStar,
+} from './misc'
 
 /** event name (x-github-event) -> renderer. */
 export const renderers: Record<string, EventRenderer> = {
@@ -17,4 +24,9 @@ export const renderers: Record<string, EventRenderer> = {
   pull_request_review_comment: renderPullRequestReviewComment,
   pull_request: renderPullRequest,
   pull_request_review: renderPullRequestReview,
+  create: renderCreate,
+  delete: renderDelete,
+  fork: renderFork,
+  milestone: renderMilestone,
+  star: renderStar,
 }
