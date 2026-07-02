@@ -2,9 +2,11 @@ import type { Context } from 'koishi'
 import { isSignatureValid } from './verify'
 import { renderers } from './events'
 import { buildActions, type ActionMap } from './actions'
+import { DedupStore } from './dedup'
 import type { Config, RenderOptions } from './types'
 
 const UNPARSED_BODY = Symbol.for('unparsedBody')
+const DEDUP_TTL = 10 * 60 * 1000 // 10min covers GitHub's retry window
 
 export interface WebhookDeps {
   /** Look up a webhook's stored repo name + secret by its GitHub hook id. */
@@ -71,18 +73,27 @@ export async function handleWebhook(
 /** Register the koa webhook route; broadcasts rendered messages to subscribers. */
 export function applyWebhook(ctx: Context, config: Config, deps: WebhookDeps): void {
   const prefix = config.messagePrefix ?? ''
+  const dedup = new DedupStore(ctx, DEDUP_TTL)
   ctx.server.post((config.path ?? '/github') + '/webhook', async (koa) => {
     const reqBody = koa.request.body as any
     const rawBody = reqBody?.[UNPARSED_BODY] as string | undefined
     const result = await handleWebhook(koa.headers, rawBody, reqBody, deps, {
       bodyMaxLength: config.bodyMaxLength ?? 500,
     })
+    // Respond immediately (incl. 200) — never await broadcast, or a slow QQ send would blow
+    // GitHub's 10s webhook timeout and trigger retries.
     koa.status = result.status
-    if (result.targets?.length && result.message != null) {
-      const content =
-        typeof result.message === 'string' ? prefix + result.message : [prefix, result.message]
-      const messageIds = await ctx.broadcast(result.targets, content as any)
-      if (result.actions && deps.recordHistory) deps.recordHistory(messageIds, result.actions)
-    }
+    if (result.status !== 200 || !result.targets?.length || result.message == null) return
+    const deliveryId = String(koa.headers['x-github-delivery'] ?? '')
+    if (!dedup.firstSeen(deliveryId)) return // duplicate delivery (GitHub retry): already 200, skip
+    const content =
+      typeof result.message === 'string' ? prefix + result.message : [prefix, result.message]
+    // fire-and-forget: 200 already sent; broadcast + record history run async.
+    ctx
+      .broadcast(result.targets, content as any)
+      .then((messageIds) => {
+        if (result.actions && deps.recordHistory) deps.recordHistory(messageIds, result.actions)
+      })
+      .catch((e) => ctx.logger('github').warn(e))
   })
 }
