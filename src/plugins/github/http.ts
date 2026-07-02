@@ -4,6 +4,7 @@ import type { Config, OAuthTokens, GitHubUser } from './types'
 export type { OAuthTokens, GitHubUser } from './types'
 
 const API = 'https://api.github.com'
+const RETRY_BACKOFF_MS = 500 // wait before retrying a transient network failure on token exchange
 const authHeaders = (token: string) => ({
   authorization: `token ${token}`,
   accept: 'application/vnd.github.v3+json',
@@ -13,12 +14,24 @@ const authHeaders = (token: string) => ({
 export class GitHubHttp {
   constructor(private ctx: Context, private config: Config) {}
 
-  /** Exchange an OAuth code (or refresh_token) for tokens. Params go on the query string. */
-  getTokens(params: Record<string, any>): Promise<OAuthTokens> {
-    return this.ctx.http.post('https://github.com/login/oauth/access_token', {}, {
-      params: { client_id: this.config.appId, client_secret: this.config.appSecret, ...params },
-      headers: { accept: 'application/json' },
-    })
+  /** Exchange an OAuth code (or refresh_token) for tokens. Creds + params go in the request
+   * BODY, never the query string — a failed-request log embeds the URL, so a query-string
+   * client_secret would leak into logs. On a network-layer failure (no HTTP response) retry
+   * once: GitHub connectivity from some hosts is flaky and a single retry absorbs transient
+   * TLS/connect timeouts. A real HTTP error (bad code → 4xx) is not retried. */
+  async getTokens(params: Record<string, any>): Promise<OAuthTokens> {
+    const body = { client_id: this.config.appId, client_secret: this.config.appSecret, ...params }
+    const post = (): Promise<OAuthTokens> =>
+      this.ctx.http.post('https://github.com/login/oauth/access_token', body, {
+        headers: { accept: 'application/json' },
+      })
+    try {
+      return await post()
+    } catch (e: any) {
+      if (e?.response) throw e // real HTTP error: retrying won't help
+      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS)) // transient network failure
+      return await post()
+    }
   }
 
   /** Fetch the authenticated user's profile (login = GitHub username). Fresh token, no refresh. */

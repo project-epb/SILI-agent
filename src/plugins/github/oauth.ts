@@ -1,6 +1,7 @@
 import { Context, Random } from 'koishi'
 import type { Config, OAuthTokens } from './types'
 import type { GitHubHttp } from './http'
+import { describeHttpError } from './commands'
 
 const sanitize = (p: string) => (p.endsWith('/') ? p.slice(0, -1) : p)
 
@@ -49,7 +50,9 @@ export function renderCallbackPage(status: number, username?: string): string {
   const safe = username ? String(username).replace(/[^\w-]/g, '') : ''
   const message = ok
     ? (safe ? `已绑定 @${safe}，你现在可以安全地关闭此网页。` : '你现在可以安全地关闭此网页。')
-    : '授权链接无效或已过期，请回到聊天中重新发起授权。'
+    : status >= 500
+      ? '授权过程出错，请回到聊天中稍后重试。'
+      : '授权链接无效或已过期，请回到聊天中重新发起授权。'
   return `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -101,29 +104,42 @@ export function applyOAuth(ctx: Context, config: Config, http: GitHubHttp): void
     })
 
   ctx.server.get(path + '/authorize', async (koa) => {
-    const result = await handleOAuthCallback(koa.query, {
-      consumeState: (s) => {
-        const id = states[s]
-        if (id === undefined) return undefined
-        delete states[s]
-        return id
-      },
-      exchangeCode: (code, state) => http.getTokens({ code, state, redirect_uri: redirectUri() }),
-      fetchUsername: async (accessToken) => {
-        try {
-          return (await http.getUser(accessToken)).login
-        } catch {
-          return undefined // fail-soft: OAuth still succeeds without the username
-        }
-      },
-      storeTokens: async (id, t, username) => {
-        await ctx.database.set('user', { id }, {
-          'github.accessToken': t.access_token,
-          'github.refreshToken': t.refresh_token,
-          ...(username ? { 'github.username': username } : {}),
-        })
-      },
-    })
+    let result: { status: number; username?: string }
+    try {
+      result = await handleOAuthCallback(koa.query, {
+        consumeState: (s) => {
+          const id = states[s]
+          if (id === undefined) return undefined
+          delete states[s]
+          return id
+        },
+        exchangeCode: (code, state) => http.getTokens({ code, state, redirect_uri: redirectUri() }),
+        fetchUsername: async (accessToken) => {
+          try {
+            return (await http.getUser(accessToken)).login
+          } catch {
+            return undefined // fail-soft: OAuth still succeeds without the username
+          }
+        },
+        storeTokens: async (id, t, username) => {
+          await ctx.database.set('user', { id }, {
+            'github.accessToken': t.access_token,
+            'github.refreshToken': t.refresh_token,
+            ...(username ? { 'github.username': username } : {}),
+          })
+        },
+      })
+    } catch (e: any) {
+      // exchangeCode / storeTokens threw (typically a GitHub network failure on token exchange).
+      // Log with context and still render our own failure page — never let the error bubble into
+      // a framework blank-500, which is what silently swallowed the diagnostics before.
+      ctx.logger('github').warn(
+        'OAuth callback failed (state=%s): %s',
+        koa.query.state,
+        describeHttpError(e) || e?.message
+      )
+      result = { status: 500 }
+    }
     koa.status = result.status
     koa.type = 'html'
     koa.body = renderCallbackPage(result.status, result.username)

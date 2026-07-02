@@ -83,4 +83,10 @@ describe('renderCallbackPage', () => {
       expect(html).not.toContain('绑定成功')
     }
   })
+  it('shows a retry-able message for 5xx (server/network error)', () => {
+    const html = renderCallbackPage(500)
+    expect(html).toContain('授权失败')
+    expect(html).toContain('稍后重试')
+    expect(html).not.toContain('已过期')
+  })
 })

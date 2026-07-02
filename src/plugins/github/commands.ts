@@ -45,12 +45,18 @@ export function mapWebhookError(status: number | undefined): 'notFound' | 'forbi
   return 'failed'
 }
 
-/** Pure: a human-readable suffix from a Quester/GitHub error (status + upstream message). */
+/** Pure: a human-readable suffix from a Quester/GitHub error. Prefers HTTP status + upstream
+ * message; for a network-layer failure (no HTTP response, e.g. `fetch failed`) surfaces the
+ * underlying cause code/message. Never returns the raw error `message` — undici embeds the
+ * request URL there, which can carry secrets. */
 export function describeHttpError(e: any): string {
   const status = e?.response?.status
   const message = e?.response?.data?.message
   if (status && message) return `HTTP ${status}: ${message}`
   if (status) return `HTTP ${status}`
+  const cause = e?.cause
+  if (cause?.code) return String(cause.code)
+  if (cause?.message) return String(cause.message)
   return ''
 }
 

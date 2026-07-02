@@ -14,20 +14,45 @@ const config = { appId: 'cid', appSecret: 'csec', path: '/api/github' } as any
 const user = (): GitHubUser => ({ id: 7, github: { accessToken: 'at0', refreshToken: 'rt0' } })
 
 describe('getTokens', () => {
-  it('posts to the access_token endpoint with client creds + params as query, Accept json', async () => {
+  it('posts to the access_token endpoint with client creds + params in the BODY, Accept json', async () => {
     const ctx = makeCtx()
     ctx.http.post.mockResolvedValue({ access_token: 'AT', refresh_token: 'RT' })
     const http = new GitHubHttp(ctx, config)
     const out = await http.getTokens({ code: 'C', state: 'S', redirect_uri: 'R' })
     expect(out).toEqual({ access_token: 'AT', refresh_token: 'RT' })
+    // creds live in the body, NOT the query string (a failed-request log would leak a query secret).
     expect(ctx.http.post).toHaveBeenCalledWith(
       'https://github.com/login/oauth/access_token',
-      {},
-      {
-        params: { client_id: 'cid', client_secret: 'csec', code: 'C', state: 'S', redirect_uri: 'R' },
-        headers: { accept: 'application/json' },
-      }
+      { client_id: 'cid', client_secret: 'csec', code: 'C', state: 'S', redirect_uri: 'R' },
+      { headers: { accept: 'application/json' } }
     )
+  })
+
+  it('retries once on a network-layer failure (no response), then succeeds', async () => {
+    vi.useFakeTimers()
+    try {
+      const ctx = makeCtx()
+      ctx.http.post
+        .mockRejectedValueOnce(Object.assign(new TypeError('fetch failed'), {
+          cause: { code: 'UND_ERR_CONNECT_TIMEOUT' },
+        }))
+        .mockResolvedValueOnce({ access_token: 'AT', refresh_token: 'RT' })
+      const http = new GitHubHttp(ctx, config)
+      const p = http.getTokens({ code: 'C' })
+      await vi.runAllTimersAsync() // advance the backoff without real waiting
+      expect(await p).toEqual({ access_token: 'AT', refresh_token: 'RT' })
+      expect(ctx.http.post).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not retry a real HTTP error (has response)', async () => {
+    const ctx = makeCtx()
+    ctx.http.post.mockRejectedValue({ response: { status: 400, data: { message: 'bad_verification_code' } } })
+    const http = new GitHubHttp(ctx, config)
+    await expect(http.getTokens({ code: 'C' })).rejects.toMatchObject({ response: { status: 400 } })
+    expect(ctx.http.post).toHaveBeenCalledTimes(1)
   })
 })
 

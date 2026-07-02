@@ -39,6 +39,19 @@ describe('describeHttpError', () => {
   it('falls back to status only when no message', () => {
     expect(describeHttpError({ response: { status: 500 } })).toBe('HTTP 500')
   })
+  it('surfaces the network-layer cause code when there is no HTTP response', () => {
+    expect(describeHttpError(Object.assign(new TypeError('fetch failed'), {
+      cause: { code: 'UND_ERR_CONNECT_TIMEOUT' },
+    }))).toBe('UND_ERR_CONNECT_TIMEOUT')
+  })
+  it('falls back to the cause message when the cause has no code', () => {
+    expect(describeHttpError({ cause: { message: 'connect ETIMEDOUT 140.82.0.0:443' } }))
+      .toBe('connect ETIMEDOUT 140.82.0.0:443')
+  })
+  it('never returns the raw error message (may embed the request URL / secrets)', () => {
+    // undici packs the full request URL into .message; returning it would leak query params.
+    expect(describeHttpError(new Error('fetch https://github.com/login/oauth/access_token?x=secret failed'))).toBe('')
+  })
   it('returns empty string when no status', () => {
     expect(describeHttpError({})).toBe('')
     expect(describeHttpError(new Error('boom'))).toBe('')
