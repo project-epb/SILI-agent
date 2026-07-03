@@ -92,21 +92,19 @@ export function buildActions(event: string, payload: any): ActionMap {
  */
 export function buildQuoteBody(event: string, payload: any, opts: RenderOptions): string {
   const max = opts.bodyMaxLength
+  // collapseBlankLines=false: preserve paragraph breaks so nested quote levels stay separated.
+  const body = (source: string | undefined) => cleanBody(source, max, false)
   switch (event) {
     case 'issue_comment':
     case 'commit_comment':
     case 'pull_request_review_comment':
-      return cleanBody(payload.comment?.body, max)
+      return body(payload.comment?.body)
     case 'issues':
-      return payload.action === 'opened'
-        ? cleanBody(payload.issue?.body, max)
-        : cleanBody(payload.issue?.title, max)
+      return body(payload.action === 'opened' ? payload.issue?.body : payload.issue?.title)
     case 'pull_request':
-      return payload.action === 'opened'
-        ? cleanBody(payload.pull_request?.body, max)
-        : cleanBody(payload.pull_request?.title, max)
+      return body(payload.action === 'opened' ? payload.pull_request?.body : payload.pull_request?.title)
     case 'pull_request_review':
-      return cleanBody(payload.review?.body, max)
+      return body(payload.review?.body)
     default:
       return ''
   }

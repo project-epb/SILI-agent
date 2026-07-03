@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 vi.mock('koishi', () => ({ Context: class {}, Random: { id: () => 'stub' } }))
 import { parseReplyCommand, formatHelp, buildQuotedComment, INDICATOR, ReplyHandler } from '../reply'
+import { buildQuoteBody } from '../actions'
 
 describe('parseReplyCommand', () => {
   it('treats .help / help / !help / /help (any case) as help', () => {
@@ -47,6 +48,32 @@ describe('buildQuotedComment', () => {
   it('empty footer → no trailing footer line', () => {
     const out = buildQuotedComment('q', 'r', '')
     expect(out.endsWith(INDICATOR)).toBe(true)
+  })
+  it('a blank quoted line becomes a bare ">" (no trailing space)', () => {
+    // '> a\n\n> b' has an empty middle line; it must quote to '>' not '> '.
+    const out = buildQuotedComment('> a\n\n> b', 'r', '')
+    expect(out.split('\n\n')[0]).toBe('> > a\n>\n> > b')
+  })
+})
+
+// Full quote-reply round-trip: buildQuotedComment posts a body to GitHub, GitHub echoes it
+// back as the next comment.body, buildQuoteBody cleans it into the next quotedText. Blank-line
+// separators between nested quote levels must survive so the rendered markdown stays nested.
+describe('nested quote round-trip', () => {
+  const opts = { bodyMaxLength: 500 }
+  const round = (quoted: string, reply: string) => {
+    const body = buildQuotedComment(quoted, reply, '')
+    const next = buildQuoteBody('issue_comment', { comment: { body } }, opts)
+    return { body, next }
+  }
+
+  it('keeps a blank separator at every level after three rounds', () => {
+    const r1 = round('from github', 'from qq')
+    const r2 = round(r1.next, '多重引用')
+    const r3 = round(r2.next, '继续引用')
+    expect(r3.body).toBe(
+      ['> > > from github', '> >', '> > from qq', '>', '> 多重引用', '', '继续引用', '', INDICATOR].join('\n')
+    )
   })
 })
 

@@ -132,11 +132,12 @@ describe('buildQuoteBody', () => {
     expect(buildQuoteBody('issue_comment', {}, opts)).toBe('')
   })
 
-  it('cuts at the footer INDICATOR so nested quotes accumulate cleanly across bot round-trips', () => {
-    // A bot-authored comment carries `> orig\n\nreply\n\n<INDICATOR>footer`; cleanBody drops
-    // the footer, leaving the already-nested quote for the next quote-reply to wrap again.
+  it('cuts at the footer INDICATOR but keeps blank lines so nested quotes stay separated', () => {
+    // A bot-authored comment carries `> orig\n\nreply\n\n<INDICATOR>footer`; the footer is
+    // dropped, but the blank line between the nested quote and the reply is PRESERVED — it is
+    // the paragraph separator the next quote-reply re-prefixes to keep the levels apart.
     const body = '> orig\n\nreply\n\n<!-- BOT-MESSAGE-FOOTER -->\nsent via SILI'
-    expect(buildQuoteBody('issue_comment', { comment: { body } }, opts)).toBe('> orig\nreply')
+    expect(buildQuoteBody('issue_comment', { comment: { body } }, opts)).toBe('> orig\n\nreply')
   })
 
   it('truncates to bodyMaxLength', () => {

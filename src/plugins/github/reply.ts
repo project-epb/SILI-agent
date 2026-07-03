@@ -44,7 +44,9 @@ export function buildQuotedComment(quotedText: string, userReply: string, footer
   const parts: string[] = []
   const quoted = quotedText.trim()
   if (quoted) {
-    parts.push(quoted.split('\n').map((line) => '> ' + line).join('\n'))
+    // A blank quoted line becomes a bare '>' (markdown quote-level separator, no
+    // trailing space); a non-empty line gets '> '. This keeps nested levels apart.
+    parts.push(quoted.split('\n').map((line) => (line.trim() ? '> ' + line : '>')).join('\n'))
     parts.push('') // blank line between quote and reply
   }
   parts.push(userReply)

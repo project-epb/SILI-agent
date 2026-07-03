@@ -16,6 +16,9 @@ describe('cleanBody', () => {
   it('collapses blank lines and trims', () => {
     expect(cleanBody('  a\n\n\n  b  ', 500)).toBe('a\n  b')
   })
+  it('preserves blank lines when collapseBlankLines is false (quote-reply body)', () => {
+    expect(cleanBody('a\n\nb', 500, false)).toBe('a\n\nb')
+  })
   it('truncates longer than maxLength with an ellipsis', () => {
     expect(cleanBody('abcdef', 3)).toBe('abc…')
   })
