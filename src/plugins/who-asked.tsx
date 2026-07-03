@@ -64,11 +64,14 @@ export default class PluginWhoAsked extends BasePlugin {
       })
 
     ctx.middleware(async (session, next) => {
-      await next()
+      // Post-processing middleware: run downstream first, then maybe answer "who asked".
+      // Forward the downstream result so a returned Fragment isn't swallowed.
+      const result = await next()
       const keywords = ['谁艾特我', '谁@我', '谁at我']
       if (keywords.some((keyword) => session.content.endsWith(keyword))) {
         session.execute({ name: 'whoasked' })
       }
+      return result
     })
   }
   private initDatabase() {
