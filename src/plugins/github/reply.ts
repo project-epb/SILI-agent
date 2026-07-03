@@ -10,18 +10,21 @@ export const INDICATOR = '<!-- BOT-MESSAGE-FOOTER -->'
 
 /** Pure: parse a quote-reply body into an action name + message. '.' is hard-coded
  * (NOT the bot command prefix) so the reply middleware bypasses the command system. */
-export function parseReplyCommand(body: string): { name: string; message: string } {
-  if (/^[.!/]?help$/i.test(body)) return { name: 'help', message: '' }
+export function parseReplyCommand(body: string): { name: string; message: string; quoted: boolean } {
+  if (/^[.!/]?help$/i.test(body)) return { name: 'help', message: '', quoted: false }
   if (body.startsWith('.')) {
     const name = body.slice(1).split(/\s/, 1)[0]
-    return { name, message: body.slice(1 + name.length).trim() }
+    const message = body.slice(1 + name.length).trim()
+    // Only an explicit `.reply` prepends the quoted original (`> ...`); other .commands don't.
+    return { name, message, quoted: name === 'reply' }
   }
+  // Plain text is a bare comment — voice an opinion in the issue, NOT a quoted reply to a person.
   const name = (REACTIONS as readonly string[]).includes(body) ? 'react' : 'reply'
-  return { name, message: body }
+  return { name, message: body, quoted: false }
 }
 
 const ACTION_HELP: Record<string, string> = {
-  reply: '.reply <文本> — 评论（直接打字即评论）',
+  reply: '.reply <文本> — 引用原消息并评论（直接打字则只评论、不引用）',
   react: '.react <emoji> — 加 reaction（直接发 emoji 名亦可）',
   link: '.link — 回显链接',
   close: '.close [文本] — 关闭 issue/PR（可带评论）',

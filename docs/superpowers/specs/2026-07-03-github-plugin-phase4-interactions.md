@@ -8,6 +8,7 @@ Phase 3（OAuth + 订阅命令 + 改名迁移）已在生产运行。Phase 4 补
 - 复刻旧插件除 `.shot` 外的全部临时指令，新增 `.help`。
 - `github.issue`、`github.star` 两条独立命令。
 - 两个增强：引用回复正文去噪、评论自动带上被引用原文的 markdown 引用上下文。
+  - 后续调整：引用上下文**仅 `.reply` 显式触发**；直接打字是 bare 评论（在 issue 里表态，非回复某人），`.close`/`.merge` 的意见同理不引用（针对主对话）。
 
 ## 范围
 
@@ -15,7 +16,8 @@ Phase 3（OAuth + 订阅命令 + 改名迁移）已在生产运行。Phase 4 补
 
 | 指令 | 作用 | 适用事件 |
 |---|---|---|
-| `.reply <文本>` | 评论（**无前缀默认**：非 emoji 文本即评论） | issue / PR / 各类 comment |
+| `.reply <文本>` | **引用**原消息并评论（`> 原文` + 文本） | issue / PR / 各类 comment |
+| 直接打字（无前缀默认） | **不引用**，直接在 issue 里发表评论（表个态，非回复某人） | 同上 |
 | `.react <emoji>` | 加 reaction（**无前缀默认**：8 种 emoji 名即 react） | issue / PR / comment |
 | `.link` | 回显事件链接 | 几乎所有事件 |
 | `.close [文本]` | 关闭 issue/PR，可带一句评论 | issues / pull_request |

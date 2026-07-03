@@ -6,21 +6,26 @@ import { buildQuoteBody } from '../actions'
 describe('parseReplyCommand', () => {
   it('treats .help / help / !help / /help (any case) as help', () => {
     for (const b of ['.help', 'help', '!help', '/help', 'HELP', '.Help']) {
-      expect(parseReplyCommand(b)).toEqual({ name: 'help', message: '' })
+      expect(parseReplyCommand(b)).toEqual({ name: 'help', message: '', quoted: false })
     }
   })
-  it('dot-prefixed → explicit action name + trailing message', () => {
-    expect(parseReplyCommand('.close 修好了')).toEqual({ name: 'close', message: '修好了' })
-    expect(parseReplyCommand('.link')).toEqual({ name: 'link', message: '' })
-    expect(parseReplyCommand('.merge feat: x')).toEqual({ name: 'merge', message: 'feat: x' })
+  it('dot-prefixed → explicit action name + trailing message (only .reply quotes)', () => {
+    expect(parseReplyCommand('.close 修好了')).toEqual({ name: 'close', message: '修好了', quoted: false })
+    expect(parseReplyCommand('.link')).toEqual({ name: 'link', message: '', quoted: false })
+    expect(parseReplyCommand('.merge feat: x')).toEqual({ name: 'merge', message: 'feat: x', quoted: false })
+  })
+  it('.reply quotes the original; plain text is a bare comment', () => {
+    expect(parseReplyCommand('.reply 我觉得可以')).toEqual({ name: 'reply', message: '我觉得可以', quoted: true })
+    expect(parseReplyCommand('.reply')).toEqual({ name: 'reply', message: '', quoted: true })
+    expect(parseReplyCommand('我觉得可以')).toEqual({ name: 'reply', message: '我觉得可以', quoted: false })
   })
   it('bare emoji name → react', () => {
-    expect(parseReplyCommand('+1')).toEqual({ name: 'react', message: '+1' })
-    expect(parseReplyCommand('rocket')).toEqual({ name: 'react', message: 'rocket' })
+    expect(parseReplyCommand('+1')).toEqual({ name: 'react', message: '+1', quoted: false })
+    expect(parseReplyCommand('rocket')).toEqual({ name: 'react', message: 'rocket', quoted: false })
   })
-  it('any other bare text → reply (default)', () => {
-    expect(parseReplyCommand('说得好')).toEqual({ name: 'reply', message: '说得好' })
-    expect(parseReplyCommand('help我看看')).toEqual({ name: 'reply', message: 'help我看看' })
+  it('any other bare text → reply (default), not quoted', () => {
+    expect(parseReplyCommand('说得好')).toEqual({ name: 'reply', message: '说得好', quoted: false })
+    expect(parseReplyCommand('help我看看')).toEqual({ name: 'reply', message: 'help我看看', quoted: false })
   })
 })
 

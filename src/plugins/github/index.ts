@@ -100,7 +100,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
       if (!entry) return next()
       const body = session.stripped.content.trim()
       if (!body) return next() // empty reply (bare @bot / whitespace) — don't post an empty comment
-      const { name, message } = parseReplyCommand(body)
+      const { name, message, quoted } = parseReplyCommand(body)
       // Mark handled the moment we take over: our actions hit the GitHub API via ctx.http
       // (not session.send) and resolve to undefined on success — without this flag the
       // FallbackHandler would see no result + the QQ-prepended @bot and fire `chat`.
@@ -128,8 +128,11 @@ export default class PluginGitHub extends BasePlugin<Config> {
       // idiom of `session.user as any` for reading such extended fields.
       const su = session.user as any
       const user = { id: su.id, github: su.github }
-      // entry.body is the pre-cleaned original body (header line already excluded).
-      const handler = new ReplyHandler(ctx, http, user, message, entry.body, footer)
+      // Quote the original (entry.body) ONLY for an explicit `.reply`; a plain-text comment,
+      // `.close <意见>`, `.merge`, etc. are bare — their message addresses the whole issue/PR,
+      // not the quoted comment. buildQuotedComment omits the quote block when quotedText is ''.
+      const quotedText = quoted ? entry.body : ''
+      const handler = new ReplyHandler(ctx, http, user, message, quotedText, footer)
       return (handler as any)[name](...params)
     })
   }
