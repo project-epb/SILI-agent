@@ -17,9 +17,16 @@ Runtime: **bun**（dev 与生产统一）。bun 同时是包管理器和运行�
 | `bun test` / `npx vitest run` | 跑全量测试一次 |
 | `bun test:watch` / `npx vitest` | watch 模式 |
 | `npx vitest run <path>` | 跑单个文件 / 目录 |
-| `npx tsc --noEmit -p .` | 类型检查（无单独的 lint script） |
+| `npx tsc --noEmit -p .` | 类型检查（见下方「已知 tsc 噪音」） |
+| `bun run format` | prettier 格式化 `src`（脚本已限定到 `src`，不碰根目录 docs/config）；`bun run format:check` 只校验不改 |
 
 测试在 `__tests__/` 子目录里，与被测代码同级 —— 大部分目录都自带一个（`src/plugins/llm/__tests__/`、`src/utils/__tests__/` 等）。
+
+## 代码风格 & 已知 tsc 噪音
+
+**格式化**：`.prettierrc.cjs` 配了 `@trivago/prettier-plugin-sort-imports`，import 有分组顺序（`dotenv → koishi → node: → @/ → ~/ → $utils/ → @koishijs/ → koishi- → 第三方 → 相对`，组间空行）。format 脚本只跑 `src`（根目录 docs/config 不归 prettier 管）。注意 `src` 里仍有一批历史文件未格式化，所以 **别整体跑 `bun run format`（会 reformat 历史文件、污染 diff）——推送前只格式化本次改动过的文件**，单独作为最后一笔提交，别混进功能 diff。
+
+**已知 tsc 噪音**：`npx tsc --noEmit` 会报若干 `ctx.plugin(...)` 的 `No overload matches this call`——koishi 4.9 前后一次较大的类型调整所致，命中的是几个停更的老第三方插件，**不影响实际运行**。别把它们当成自己改动引入的错误。
 
 ## 路径别名（tsconfig）
 

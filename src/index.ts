@@ -32,9 +32,11 @@ import PluginDatabaseAdmin from '~/dbadmin'
 import { PluginDebug } from '~/debug'
 import PluginDice from '~/dice'
 import PluginGelbooru from '~/gelbooru'
+import PluginGithub from '~/github'
 import PluginHljs from '~/hljs'
 import { PluginHomo } from '~/homo'
 import PluginLLM from '~/llm'
+import PluginMarkdown from '~/md'
 import PluginMediawiki from '~/mediawiki'
 import PluginMinecraft from '~/minecraft'
 import PluginMute from '~/mute'
@@ -88,7 +90,6 @@ import * as PluginDialogueAuthor from 'koishi-plugin-dialogue-author'
 import * as PluginDialogueContext from 'koishi-plugin-dialogue-context'
 import * as PluginDialogueFlow from 'koishi-plugin-dialogue-flow'
 import * as PluginDialogueRateLimit from 'koishi-plugin-dialogue-rate-limit'
-import PluginGithub from '~/github'
 import * as PluginImageSearch from 'koishi-plugin-image-search'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
 import * as PluginNovelAi from 'koishi-plugin-novelai'
@@ -317,7 +318,8 @@ app.plugin(async function PluginCollectionThirdParty(ctx) {
     appSecret: env.TOKEN_GITHUB_APPSECRET,
     redirect: env.TOKEN_GITHUB_REDIRECT, // optional override; unset → derived from selfUrl (see applyOAuth)
     replyTimeout: 6 * Time.hour,
-    replyFooter: '<sub>↪ by [SILI agent](https://github.com/project-epb/SILI-agent)</sub>',
+    replyFooter:
+      '<sub>↪ by [SILI agent](https://github.com/project-epb/SILI-agent)</sub>',
   })
   ctx.plugin(PluginImageSearch, {
     saucenaoApiKey: env.TOKEN_SAUCENAO_APIKEY,
@@ -397,6 +399,7 @@ app.plugin(function PluginCollectionSILICore(ctx) {
   ctx.plugin(PluginCanIUse)
   ctx.plugin(PluginDice)
   ctx.plugin(PluginHljs)
+  ctx.plugin(PluginMarkdown)
   ctx.plugin(PluginMinecraft)
   ctx.plugin(PluginMute)
   if (process.env.NOVELAI_USERNAME) {
