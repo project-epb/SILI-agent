@@ -170,13 +170,16 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
   #setupMiddlewares() {
     const ctx = this.ctx
     ctx.middleware(async (session, next) => {
-      await next()
+      // Post-processing middleware: run downstream first, then maybe expand a pixiv link.
+      // Forward the downstream result so a returned Fragment isn't swallowed.
+      const result = await next()
       const reg =
         /(?:(?:https?:)?\/\/)?(?:pixiv\.net|www\.pixiv\.net|pixiv\.js\.org)\/(?:en\/)?(?:artworks|i)\/(\d+)/i
       const pixivId = reg.exec(session.content as string)
       if (pixivId && pixivId[1]) {
         session.execute({ name: 'pixiv.illust', args: [pixivId[1]] })
       }
+      return result
     })
   }
 

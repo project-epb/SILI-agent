@@ -1,0 +1,88 @@
+import { createHmac } from 'node:crypto'
+import { describe, it, expect } from 'vitest'
+import { handleWebhook, type WebhookDeps } from '../webhook'
+import { buildActions } from '../actions'
+
+const secret = 's3cr3t'
+const payloadObj = {
+  repository: { full_name: 'Org/Repo' },
+  pusher: { name: 'alice' },
+  sender: { type: 'User' },
+  ref: 'refs/heads/main',
+  before: 'a'.repeat(40),
+  after: 'b'.repeat(40),
+  commits: [{ id: 'abcdef1', message: 'msg' }],
+}
+const json = JSON.stringify(payloadObj)
+const raw = 'payload=' + encodeURIComponent(json)
+const body = { payload: json }
+const sig = 'sha256=' + createHmac('sha256', secret).update(raw).digest('hex')
+
+const headers = (extra: Record<string, any> = {}) => ({
+  'x-github-event': 'push',
+  'x-github-hook-id': '42',
+  'x-hub-signature-256': sig,
+  ...extra,
+})
+
+const deps: WebhookDeps = {
+  getHook: async (id) => (id === 42 ? { name: 'org/repo', secret } : undefined),
+  targets: () => ['mock:1'],
+}
+
+describe('handleWebhook', () => {
+  it('200 + targets + message on a valid push', async () => {
+    const r = await handleWebhook(headers(), raw, body, deps)
+    expect(r.status).toBe(200)
+    expect(r.targets).toEqual(['mock:1'])
+    expect(r.message).toBe('alice pushed to Org/Repo:main\n[abcdef] msg')
+  })
+  it('403 on a bad signature', async () => {
+    const r = await handleWebhook(headers({ 'x-hub-signature-256': 'sha256=bad' }), raw, body, deps)
+    expect(r.status).toBe(403)
+  })
+  it('202 on an unknown hook id (no stored secret)', async () => {
+    const r = await handleWebhook(headers({ 'x-github-hook-id': '999' }), raw, body, deps)
+    expect(r.status).toBe(202)
+  })
+  it('400 when the payload cannot be parsed', async () => {
+    const r = await handleWebhook(headers(), 'payload=oops', { payload: 'oops{' }, deps)
+    expect(r.status).toBe(400)
+  })
+  it('200 with no targets when nobody is subscribed', async () => {
+    const r = await handleWebhook(headers(), raw, body, { ...deps, targets: () => [] })
+    expect(r.status).toBe(200)
+    expect(r.targets ?? []).toEqual([])
+  })
+
+  it('returns quick-reply actions for an interactive event on success', async () => {
+    const issuesPayload = {
+      repository: { full_name: 'Org/Repo' },
+      issue: {
+        url: 'https://api.github.com/repos/Org/Repo/issues/1',
+        html_url: 'https://github.com/Org/Repo/issues/1',
+        comments_url: 'https://api.github.com/repos/Org/Repo/issues/1/comments',
+        title: 'a bug',
+        number: 1,
+        body: 'oops',
+        user: { type: 'User' },
+      },
+      sender: { login: 'alice' },
+      action: 'opened',
+    }
+    const issuesJson = JSON.stringify(issuesPayload)
+    const issuesRaw = 'payload=' + encodeURIComponent(issuesJson)
+    const issuesSig = 'sha256=' + createHmac('sha256', secret).update(issuesRaw).digest('hex')
+    const r = await handleWebhook(
+      headers({ 'x-github-event': 'issues', 'x-hub-signature-256': issuesSig }),
+      issuesRaw,
+      { payload: issuesJson },
+      deps
+    )
+    expect(r.status).toBe(200)
+    expect(r.targets).toEqual(['mock:1'])
+    expect(r.actions).toEqual(buildActions('issues', issuesPayload))
+    // The quote body is the issue body (header line excluded) so a quote-reply prepends `> oops`.
+    expect(r.quoteBody).toBe('oops')
+  })
+})

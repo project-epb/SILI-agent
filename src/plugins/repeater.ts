@@ -176,72 +176,76 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
    */
   private handleRepeatChain(): void {
     this.ctx.middleware(async (session, next) => {
-      await next()
-
-      const { content, userId } = session
-      if (!content || !userId) return
-
-      const key = this.getStatusKey(session)
-      const state = this.statusStore.get(key)
-
-      if (!state) {
-        this.statusStore.set(key, this.makeState(content, userId))
-        return
-      }
-
-      // 内容变化 = 当前发言者打破了之前的复读链
-      if (state.content !== content) {
-        if (state.repeatTriggered) {
-          // 之前 bot 跟读过 → 概率质询打断者；无论命中都消费机会
-          const prob = this.queryProbAt(state, session)
-          if (Math.random() < prob) {
-            const msg = this.pickText(this.config.queryTexts, state, session)
-            if (msg) await session.send(msg)
-          }
-        }
-        // 整段结束，本条作为新链的第一条
-        this.statusStore.set(key, this.makeState(content, userId))
-        return
-      }
-
-      // 同内容累计
-      state.times += 1
-      state.users[userId] = (state.users[userId] || 0) + 1
-
-      // 守卫：≥3 次同内容才算复读
-      if (state.times < 3) return
-
-      // 跟读
-      if (
-        !state.repeatTriggered &&
-        state.times >= this.config.repeatStartAt
-      ) {
-        // 守卫：state.content 是 bot 打断/质询语料 → 不跟读，避免被
-        // 用户故意模仿 bot 说话骗跟读。state 自身仍然累计，下一条
-        // 不同内容来时正常重建 state。
-        if (state.matchedBuiltinText) return
-        if (Math.random() < this.repeatProbAt(state)) {
-          state.repeatTriggered = true
-          await session.send(state.content)
-        }
-        return
-      }
-
-      // 打断（必须先跟读过；每段最多一次）
-      if (
-        state.repeatTriggered &&
-        !state.interruptTriggered &&
-        state.times >= this.config.interruptStartAt
-      ) {
-        if (Math.random() < this.interruptProbAt(state)) {
-          state.interruptTriggered = true
-          const msg = this.pickText(this.config.interruptTexts, state, session)
-          if (msg) await session.send(msg)
-          // 整段结束，下次相同内容重新积累
-          this.statusStore.delete(key)
-        }
-      }
+      // Post-processing middleware: run downstream first, then advance the repeat state
+      // machine. Forward the downstream result so a returned Fragment isn't swallowed.
+      const result = await next()
+      await this.processRepeatChain(session)
+      return result
     })
+  }
+
+  /** Advance the per-channel repeat / interrupt / query state machine for one message. */
+  private async processRepeatChain(session: Session): Promise<void> {
+    const { content, userId } = session
+    if (!content || !userId) return
+
+    const key = this.getStatusKey(session)
+    const state = this.statusStore.get(key)
+
+    if (!state) {
+      this.statusStore.set(key, this.makeState(content, userId))
+      return
+    }
+
+    // 内容变化 = 当前发言者打破了之前的复读链
+    if (state.content !== content) {
+      if (state.repeatTriggered) {
+        // 之前 bot 跟读过 → 概率质询打断者；无论命中都消费机会
+        const prob = this.queryProbAt(state, session)
+        if (Math.random() < prob) {
+          const msg = this.pickText(this.config.queryTexts, state, session)
+          if (msg) await session.send(msg)
+        }
+      }
+      // 整段结束，本条作为新链的第一条
+      this.statusStore.set(key, this.makeState(content, userId))
+      return
+    }
+
+    // 同内容累计
+    state.times += 1
+    state.users[userId] = (state.users[userId] || 0) + 1
+
+    // 守卫：≥3 次同内容才算复读
+    if (state.times < 3) return
+
+    // 跟读
+    if (!state.repeatTriggered && state.times >= this.config.repeatStartAt) {
+      // 守卫：state.content 是 bot 打断/质询语料 → 不跟读，避免被
+      // 用户故意模仿 bot 说话骗跟读。state 自身仍然累计，下一条
+      // 不同内容来时正常重建 state。
+      if (state.matchedBuiltinText) return
+      if (Math.random() < this.repeatProbAt(state)) {
+        state.repeatTriggered = true
+        await session.send(state.content)
+      }
+      return
+    }
+
+    // 打断（必须先跟读过；每段最多一次）
+    if (
+      state.repeatTriggered &&
+      !state.interruptTriggered &&
+      state.times >= this.config.interruptStartAt
+    ) {
+      if (Math.random() < this.interruptProbAt(state)) {
+        state.interruptTriggered = true
+        const msg = this.pickText(this.config.interruptTexts, state, session)
+        if (msg) await session.send(msg)
+        // 整段结束，下次相同内容重新积累
+        this.statusStore.delete(key)
+      }
+    }
   }
 
   // 一些能够接龙的 QQ 表情
@@ -251,7 +255,9 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
     const SNAKES = [429, 430, 431]
 
     this.ctx.platform('onebot').middleware(async (session, next) => {
-      await next()
+      // Post-processing middleware: run downstream first, then maybe continue an emoji chain.
+      // Forward the downstream result so a returned Fragment isn't swallowed.
+      const result = await next()
 
       const faces = h.select(session.elements, 'face')
 
@@ -292,6 +298,7 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
           }
         }
       }
+      return result
     })
   }
 }

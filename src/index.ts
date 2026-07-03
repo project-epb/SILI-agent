@@ -88,7 +88,7 @@ import * as PluginDialogueAuthor from 'koishi-plugin-dialogue-author'
 import * as PluginDialogueContext from 'koishi-plugin-dialogue-context'
 import * as PluginDialogueFlow from 'koishi-plugin-dialogue-flow'
 import * as PluginDialogueRateLimit from 'koishi-plugin-dialogue-rate-limit'
-import PluginGithub from 'koishi-plugin-github'
+import PluginGithub from '~/github'
 import * as PluginImageSearch from 'koishi-plugin-image-search'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
 import * as PluginNovelAi from 'koishi-plugin-novelai'
@@ -315,8 +315,9 @@ app.plugin(async function PluginCollectionThirdParty(ctx) {
     path: '/api/github',
     appId: env.TOKEN_GITHUB_APPID,
     appSecret: env.TOKEN_GITHUB_APPSECRET,
-    replyTimeout: 12 * Time.hour,
-    replyFooter: '',
+    redirect: env.TOKEN_GITHUB_REDIRECT, // optional override; unset → derived from selfUrl (see applyOAuth)
+    replyTimeout: 6 * Time.hour,
+    replyFooter: '<sub>↪ by [SILI agent](https://github.com/project-epb/SILI-agent)</sub>',
   })
   ctx.plugin(PluginImageSearch, {
     saucenaoApiKey: env.TOKEN_SAUCENAO_APIKEY,

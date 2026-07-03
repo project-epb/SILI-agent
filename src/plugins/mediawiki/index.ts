@@ -323,12 +323,14 @@ export default class PluginMediawiki extends BasePlugin<Config> {
       })
 
     this.ctx.middleware(async (session, next) => {
-      await next()
+      // Post-processing middleware: run downstream first, then maybe expand [[wiki links]].
+      // Forward the downstream result so a returned Fragment isn't swallowed.
+      const result = await next()
       const titles = parseTitlesFromText(session.content || '')
-      if (!titles.length) {
-        return
+      if (titles.length) {
+        session.execute(`wiki -q ${titles.join('|')}`)
       }
-      session.execute(`wiki -q ${titles.join('|')}`)
+      return result
     })
 
     // @command wiki.connect
