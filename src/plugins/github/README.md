@@ -1,8 +1,5 @@
 # koishi-plugin-github
 
-[![npm](https://img.shields.io/npm/v/koishi-plugin-github?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-github)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
-
 将 GitHub 仓库事件推送到聊天频道，并支持**引用一条推送消息直接对相应资源进行操作**——评论、加 reaction、关闭、合并、回显链接等，无需离开聊天窗口。
 
 ## 特性
@@ -14,14 +11,6 @@
 - ✅ **签名校验**：每次投递按 `X-Hub-Signature-256`（HMAC-SHA256）校验，拒绝伪造请求。
 - ⚡ **即时响应**：收到 webhook 后立即返回 `200`，广播异步进行，避免触发 GitHub 的重投递；内置内存级去重防止重复推送。
 
-## 安装
-
-```bash
-npm install koishi-plugin-github
-```
-
-依赖服务：`database`、`server`、`http`。请确保已加载数据库插件与 [`@koishijs/plugin-server`](https://server.koishi.chat/)，并且 server 配置了可公网访问的 `selfUrl`（webhook 与 OAuth 回调都需要外部可达）。
-
 ## 前置准备
 
 1. 在 GitHub 创建一个 [OAuth App](https://github.com/settings/developers)。
@@ -32,16 +21,17 @@ npm install koishi-plugin-github
 
 ## 配置
 
-| 配置项 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `appId` | `string` | — | OAuth App 的 Client ID |
-| `appSecret` | `string` | — | OAuth App 的 Client Secret |
-| `path` | `string` | `/github` | webhook 与 OAuth 回调路由的基础路径 |
-| `redirect` | `string` | 自动推导 | OAuth 回调地址；留空时由 `selfUrl + path + /authorize` 推导 |
-| `messagePrefix` | `string` | `[GitHub] ` | 每条推送消息的前缀 |
-| `replyFooter` | `string` | `''` | 机器人代发评论时追加的签名（会附在评论末尾） |
-| `replyTimeout` | `number` (ms) | `3600000`（1 小时） | 引用回复的有效窗口，也是消息 → 操作映射的内存存活时间 |
-| `bodyMaxLength` | `number` | `500` | 消息中 issue / PR / 评论正文的截断长度，`0` 表示不截断 |
+
+| 配置项          | 类型          | 默认值              | 说明                                                       |
+| ----------------- | --------------- | --------------------- | ------------------------------------------------------------ |
+| `appId`         | `string`      | —                  | OAuth App 的 Client ID                                     |
+| `appSecret`     | `string`      | —                  | OAuth App 的 Client Secret                                 |
+| `path`          | `string`      | `/github`           | webhook 与 OAuth 回调路由的基础路径                        |
+| `redirect`      | `string`      | 自动推导            | OAuth 回调地址；留空时由`selfUrl + path + /authorize` 推导 |
+| `messagePrefix` | `string`      | `[GitHub] `         | 每条推送消息的前缀                                         |
+| `replyFooter`   | `string`      | `''`                | 机器人代发评论时追加的签名（会附在评论末尾）               |
+| `replyTimeout`  | `number` (ms) | `3600000`（1 小时） | 引用回复的有效窗口，也是消息 → 操作映射的内存存活时间     |
+| `bodyMaxLength` | `number`      | `500`               | 消息中 issue / PR / 评论正文的截断长度，`0` 表示不截断     |
 
 > webhook 接收路由为 `<path>/webhook`，OAuth 回调路由为 `<path>/authorize`。
 
@@ -69,31 +59,33 @@ github -d owner/repo      # 取消订阅
 
 在 `replyTimeout` 窗口内，**引用（quote）机器人推送的某条消息**并发送以下内容，即可对该消息对应的 GitHub 资源操作：
 
-| 输入 | 效果 |
-|---|---|
-| 直接输入文本 | 在对应 issue / PR 下发表评论（**不引用**原文，用于直接表态） |
-| 直接发送 emoji 名 | 加 reaction（支持 `+1` `-1` `laugh` `confused` `heart` `hooray` `rocket` `eyes`） |
-| `.reply <文本>` | **引用**原消息并评论（正文前带上 `> 原文`） |
-| `.react <emoji>` | 加 reaction |
-| `.link` | 回显该资源的链接 |
-| `.close [文本]` | 关闭 issue / PR，可附一句评论 |
-| `.base <分支>` | 修改 PR 的 base 分支 |
-| `.merge [标题]` | 合并 PR（merge commit） |
-| `.rebase [标题]` | 以 rebase 方式合并 PR |
-| `.squash [标题]` | 以 squash 方式合并 PR |
-| `.help` | 列出**当前这条消息**支持的快捷操作 |
+
+| 输入              | 效果                                                                             |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| 直接输入文本      | 在对应 issue / PR 下发表评论（**不引用**原文，用于直接表态）                     |
+| 直接发送 emoji 名 | 加 reaction（支持`+1` `-1` `laugh` `confused` `heart` `hooray` `rocket` `eyes`） |
+| `.reply <文本>`   | **引用**原消息并评论（正文前带上 `> 原文`）                                      |
+| `.react <emoji>`  | 加 reaction                                                                      |
+| `.link`           | 回显该资源的链接                                                                 |
+| `.close [文本]`   | 关闭 issue / PR，可附一句评论                                                    |
+| `.base <分支>`    | 修改 PR 的 base 分支                                                             |
+| `.merge [标题]`   | 合并 PR（merge commit）                                                          |
+| `.rebase [标题]`  | 以 rebase 方式合并 PR                                                            |
+| `.squash [标题]`  | 以 squash 方式合并 PR                                                            |
+| `.help`           | 列出**当前这条消息**支持的快捷操作                                               |
 
 不同事件支持的操作不同（例如 `.merge` 仅对 PR 有效）；对某条消息使用它不支持的操作时，会提示可用列表。所有写操作以引用者绑定的 GitHub 身份执行，未绑定时会引导其先授权。
 
 ## 命令参考
 
-| 命令 | 说明 |
-|---|---|
-| `github.authorize`（别名 `github.auth`） | 通过 OAuth 绑定 GitHub 账号 |
-| `github [repo]`（别名 `gh`） | 频道订阅管理：`-l` 列出、`-a` 订阅、`-d` 取消订阅 |
-| `github.repos [repo]` | webhook 注册管理：无参数列出已注册仓库、`-a` 注册、`-d` 删除、`-s` 注册后顺带订阅当前频道 |
-| `github.issue <title> [body] -r <repo>` | 新建一个 issue |
-| `github.star <repo>` | star 一个仓库 |
+
+| 命令                                     | 说明                                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `github.authorize`（别名 `github.auth`） | 通过 OAuth 绑定 GitHub 账号                                                               |
+| `github [repo]`（别名 `gh`）             | 频道订阅管理：`-l` 列出、`-a` 订阅、`-d` 取消订阅                                         |
+| `github.repos [repo]`                    | webhook 注册管理：无参数列出已注册仓库、`-a` 注册、`-d` 删除、`-s` 注册后顺带订阅当前频道 |
+| `github.issue <title> [body] -r <repo>`  | 新建一个 issue                                                                            |
+| `github.star <repo>`                     | star 一个仓库                                                                             |
 
 > 频道订阅相关的 `-a` / `-d` 默认需要 authority 2。
 
