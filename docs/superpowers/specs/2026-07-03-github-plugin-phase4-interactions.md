@@ -59,9 +59,9 @@ src/plugins/github/
 
 | 事件 (x-github-event / action) | ActionMap |
 |---|---|
-| `issue_comment` | `{ link:[html_url], react:[comment.url+'/reactions'], reply:[comments_url] }` |
+| `issue_comment` | `{ close:[issue.url, comments_url], link:[html_url], react:[comment.url+'/reactions'], reply:[comments_url] }` |
 | `commit_comment` | `{ link:[html_url], react:[comment.url+'/reactions'], reply:[`…/commits/${commit_id}/comments`, {path, position}] }` |
-| `pull_request_review_comment` | `{ link:[html_url], react:[comment.url+'/reactions'], reply:[`…/pulls/${number}/comments/${id}/replies`] }` |
+| `pull_request_review_comment` | `{ close:[pr.issue_url, pr.comments_url], link:[html_url], react:[comment.url+'/reactions'], reply:[`…/pulls/${number}/comments/${id}/replies`] }` |
 | `issues/*` (opened/closed/reopened/transferred) | `{ close:[issue.url, comments_url], link:[html_url], react:[issue.url+'/reactions'], reply:[comments_url] }` |
 | `pull_request/*` | `{ base:[pr.url], close:[issue_url, comments_url], link:[html_url], merge:[pr.url+'/merge'], rebase:[pr.url+'/merge'], squash:[pr.url+'/merge'], react:[issue_url+'/reactions'], reply:[comments_url] }` |
 | `pull_request_review/submitted` | `{ link:[html_url], reply:[comments_url] }` |
@@ -69,6 +69,8 @@ src/plugins/github/
 | `star` / `fork` / `milestone` / `create` / `delete` | `{}`（无交互） |
 
 来源逐字对应旧 `events.js` 的 `onComment`/`onIssue`/`onPullRequest`/各 handler，砍掉 `shot`、保留 `base/merge/rebase/squash`。`buildActions` 是纯函数（payload → ActionMap），可单测。
+
+> 增强（偏离旧插件）：`issue_comment` / `pull_request_review_comment` 额外提供 `close`——评论挂在可关闭的 issue/PR 上，payload 自带 `issue.url`(或 `pull_request.issue_url`) + `comments_url`，从评论通知直接关闭很自然。此外，对已跟踪的 github 推送用了**该消息类型不支持的显式 `.命令`** 时，回一句「不支持 + 可用列表」而非静默落到 chat。
 
 ## 触发解析规则（parseReplyCommand，纯函数）
 

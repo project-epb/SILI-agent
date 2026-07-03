@@ -10,12 +10,13 @@ describe('REACTIONS', () => {
 })
 
 describe('buildActions', () => {
-  it('issue_comment → link/react/reply', () => {
+  it('issue_comment → close/link/react/reply', () => {
     const payload = {
       comment: { html_url: 'H', url: 'https://api/c' },
-      issue: { comments_url: 'https://api/i/comments' },
+      issue: { url: 'https://api/i', comments_url: 'https://api/i/comments' },
     }
     expect(buildActions('issue_comment', payload)).toEqual({
+      close: ['https://api/i', 'https://api/i/comments'],
       link: ['H'],
       react: ['https://api/c/reactions'],
       reply: ['https://api/i/comments'],
@@ -34,13 +35,14 @@ describe('buildActions', () => {
     })
   })
 
-  it('pull_request_review_comment → reply targets the review-comment replies url', () => {
+  it('pull_request_review_comment → close/link/react/reply', () => {
     const payload = {
       repository: { full_name: 'o/r' },
-      pull_request: { number: 7 },
+      pull_request: { number: 7, issue_url: 'https://api/i', comments_url: 'https://api/i/comments' },
       comment: { html_url: 'H', url: 'https://api/c', id: 55 },
     }
     expect(buildActions('pull_request_review_comment', payload)).toEqual({
+      close: ['https://api/i', 'https://api/i/comments'],
       link: ['H'],
       react: ['https://api/c/reactions'],
       reply: ['https://api.github.com/repos/o/r/pulls/7/comments/55/replies'],

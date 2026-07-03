@@ -113,7 +113,15 @@ export default class PluginGitHub extends BasePlugin<Config> {
       const params = Object.prototype.hasOwnProperty.call(entry.actions, name)
         ? (entry.actions as Record<string, any[]>)[name]
         : undefined
-      if (!params) return next()
+      if (!params) {
+        // An explicit ".command" this message type doesn't support (e.g. .close on a push):
+        // tell the user the available actions rather than silently dropping to the chat handler.
+        if (body.startsWith('.')) {
+          session._handled = true
+          return `此消息不支持「.${name}」。\n` + formatHelp(Object.keys(entry.actions))
+        }
+        return next()
+      }
       session._handled = true
       // Middleware sessions carry no static user fields (Observed<never>); the github
       // field is attached at runtime by the attach-user hook above. Match the codebase

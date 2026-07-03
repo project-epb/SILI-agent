@@ -19,7 +19,10 @@ export function buildActions(event: string, payload: any): ActionMap {
   switch (event) {
     case 'issue_comment': {
       const { comment, issue } = payload
+      // A comment is on a closable issue/PR — issue.url PATCHes state=closed (works for both,
+      // a PR conversation comment is also an issue_comment event with issue.url = the issues API).
       return {
+        close: [issue.url, issue.comments_url],
         link: [comment.html_url],
         react: [comment.url + '/reactions'],
         reply: [issue.comments_url],
@@ -38,7 +41,10 @@ export function buildActions(event: string, payload: any): ActionMap {
     }
     case 'pull_request_review_comment': {
       const { comment, pull_request, repository } = payload
+      // The review comment is on a PR — issue_url PATCHes state=closed, comments_url takes the
+      // optional closing comment (same pair the pull_request event's close uses).
       return {
+        close: [pull_request.issue_url, pull_request.comments_url],
         link: [comment.html_url],
         react: [comment.url + '/reactions'],
         reply: [
