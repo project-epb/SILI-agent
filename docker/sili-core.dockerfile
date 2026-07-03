@@ -38,6 +38,11 @@ RUN \
     # Segoe UI Emoji
     wget https://upy.epb.wiki/fonts/seguiemj.ttf && \
     mv seguiemj.ttf /usr/share/fonts/truetype/ && \
+    # JetBrains Mono（英文等宽，代码块渲染用；CJK 仍走汉仪文黑）
+    wget https://upy.epb.wiki/fonts/JetBrainsMono-2.304.zip && \
+    unzip -q JetBrainsMono-2.304.zip -d JetBrainsMono && \
+    find JetBrainsMono -name '*.ttf' -exec mv {} /usr/share/fonts/truetype/ \; && \
+    rm -rf JetBrainsMono JetBrainsMono-2.304.zip && \
     # 刷新字体缓存
     fc-cache -fv
 

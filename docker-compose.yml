@@ -24,6 +24,8 @@ services:
       - ./tsconfig.json:/app/tsconfig.json
       - ./.npmrc:/app/.npmrc
       - ./.env:/app/.env
+      # 只读挂 .git 供 version 指令读取当前 commit hash（宿主 pull 后实时可见）
+      - ./.git:/app/.git:ro
       # koishi自带的data文件夹（comfyui workflows/guides 放 .volumns/core/comfyui/）
       - ./.volumns/core:/app/data
       # 缓存文件夹
