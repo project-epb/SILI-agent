@@ -316,8 +316,8 @@ app.plugin(async function PluginCollectionThirdParty(ctx) {
     appId: env.TOKEN_GITHUB_APPID,
     appSecret: env.TOKEN_GITHUB_APPSECRET,
     redirect: env.TOKEN_GITHUB_REDIRECT, // optional override; unset → derived from selfUrl (see applyOAuth)
-    replyTimeout: 12 * Time.hour,
-    replyFooter: '',
+    replyTimeout: 6 * Time.hour,
+    replyFooter: '<sub>↪ by [SILI agent](https://github.com/project-epb/SILI-agent)</sub>',
   })
   ctx.plugin(PluginImageSearch, {
     saucenaoApiKey: env.TOKEN_SAUCENAO_APIKEY,
