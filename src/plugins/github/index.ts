@@ -73,7 +73,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
         return row ? { name: row.name, secret: row.secret } : undefined
       },
       targets: (repo, event, action) => this.store.targets(repo, event, action),
-      recordHistory: (ids, actions) => history.record(ids, actions),
+      recordHistory: (ids, actions, body) => history.record(ids, actions, body),
       onRename: (hookId, oldName, newName, secret) =>
         migrateRepoRename(hookId, oldName, newName, secret, this.store, {
           setHookName: async (id, name, sec) => {
@@ -87,7 +87,6 @@ export default class PluginGitHub extends BasePlugin<Config> {
     })
 
     // ---- quick-reply interactions (quote a pushed message → act on the GitHub resource) ----
-    const prefix = this.config.messagePrefix ?? ''
     const footer = this.config.replyFooter ?? ''
 
     // Pull the github user field only when the quoted message is in history (needs a token).
@@ -97,26 +96,32 @@ export default class PluginGitHub extends BasePlugin<Config> {
 
     ctx.middleware((session, next) => {
       if (!session.quote) return next()
-      const actions = history.get(session.quote.id)
-      if (!actions) return next()
+      const entry = history.get(session.quote.id)
+      if (!entry) return next()
       const body = session.stripped.content.trim()
       if (!body) return next() // empty reply (bare @bot / whitespace) — don't post an empty comment
       const { name, message } = parseReplyCommand(body)
-      if (name === 'help') return formatHelp(Object.keys(actions))
+      // Mark handled the moment we take over: our actions hit the GitHub API via ctx.http
+      // (not session.send) and resolve to undefined on success — without this flag the
+      // FallbackHandler would see no result + the QQ-prepended @bot and fire `chat`.
+      if (name === 'help') {
+        session._handled = true
+        return formatHelp(Object.keys(entry.actions))
+      }
       // Own-property check so inherited names (toString/constructor/...) miss instead
       // of resolving to a truthy Function and throwing on the `...params` spread.
-      const params = Object.prototype.hasOwnProperty.call(actions, name)
-        ? (actions as Record<string, any[]>)[name]
+      const params = Object.prototype.hasOwnProperty.call(entry.actions, name)
+        ? (entry.actions as Record<string, any[]>)[name]
         : undefined
       if (!params) return next()
+      session._handled = true
       // Middleware sessions carry no static user fields (Observed<never>); the github
       // field is attached at runtime by the attach-user hook above. Match the codebase
       // idiom of `session.user as any` for reading such extended fields.
       const su = session.user as any
       const user = { id: su.id, github: su.github }
-      const quoted = session.quote.content ?? ''
-      const quotedText = quoted.startsWith(prefix) ? quoted.slice(prefix.length) : quoted
-      const handler = new ReplyHandler(ctx, http, user, message, quotedText, footer)
+      // entry.body is the pre-cleaned original body (header line already excluded).
+      const handler = new ReplyHandler(ctx, http, user, message, entry.body, footer)
       return (handler as any)[name](...params)
     })
   }

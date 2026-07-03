@@ -1,3 +1,6 @@
+import { cleanBody } from './events/util'
+import type { RenderOptions } from './types'
+
 /** The 8 reaction emoji GitHub accepts (squirrel-girl API), in canonical order. */
 export const REACTIONS = ['+1', '-1', 'laugh', 'confused', 'heart', 'hooray', 'rocket', 'eyes'] as const
 
@@ -76,5 +79,35 @@ export function buildActions(event: string, payload: any): ActionMap {
       return { link: [payload.compare] }
     default:
       return {}
+  }
+}
+
+/**
+ * Pure: the meaningful, user-authored body of an event — the text a quote-reply
+ * prepends as `> ...`. This is the SAME cleanBody the renderer shows, minus the
+ * generated header line ("X commented on issue #Y"), so nested `>` accumulates
+ * across bot round-trips (cleanBody cuts at the footer INDICATOR). Events with
+ * no user-authored body (state changes fall back to the title; push et al.
+ * return '').
+ */
+export function buildQuoteBody(event: string, payload: any, opts: RenderOptions): string {
+  const max = opts.bodyMaxLength
+  switch (event) {
+    case 'issue_comment':
+    case 'commit_comment':
+    case 'pull_request_review_comment':
+      return cleanBody(payload.comment?.body, max)
+    case 'issues':
+      return payload.action === 'opened'
+        ? cleanBody(payload.issue?.body, max)
+        : cleanBody(payload.issue?.title, max)
+    case 'pull_request':
+      return payload.action === 'opened'
+        ? cleanBody(payload.pull_request?.body, max)
+        : cleanBody(payload.pull_request?.title, max)
+    case 'pull_request_review':
+      return cleanBody(payload.review?.body, max)
+    default:
+      return ''
   }
 }

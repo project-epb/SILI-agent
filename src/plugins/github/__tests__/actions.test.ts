@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { buildActions, REACTIONS } from '../actions'
+import { buildActions, buildQuoteBody, REACTIONS } from '../actions'
+
+const opts = { bodyMaxLength: 500 }
 
 describe('REACTIONS', () => {
   it('is the 8 github reaction names in order', () => {
@@ -96,5 +98,48 @@ describe('buildActions', () => {
     expect(buildActions('star', {})).toEqual({})
     expect(buildActions('fork', {})).toEqual({})
     expect(buildActions('milestone', {})).toEqual({})
+  })
+})
+
+describe('buildQuoteBody', () => {
+  it('comment events → the comment body (no header line)', () => {
+    const payload = { comment: { body: 'looks good to me' } }
+    expect(buildQuoteBody('issue_comment', payload, opts)).toBe('looks good to me')
+    expect(buildQuoteBody('commit_comment', payload, opts)).toBe('looks good to me')
+    expect(buildQuoteBody('pull_request_review_comment', payload, opts)).toBe('looks good to me')
+  })
+
+  it('issues opened → the issue body; other actions → the title', () => {
+    const payload = { action: 'opened', issue: { body: 'the description', title: 'Bug' } }
+    expect(buildQuoteBody('issues', payload, opts)).toBe('the description')
+    expect(buildQuoteBody('issues', { action: 'closed', issue: { title: 'Bug', body: 'x' } }, opts)).toBe('Bug')
+  })
+
+  it('pull_request opened → the PR body; other actions → the title', () => {
+    expect(buildQuoteBody('pull_request', { action: 'opened', pull_request: { body: 'PR desc', title: 'T' } }, opts))
+      .toBe('PR desc')
+    expect(buildQuoteBody('pull_request', { action: 'closed', pull_request: { title: 'T', body: 'x' } }, opts))
+      .toBe('T')
+  })
+
+  it('pull_request_review → the review body', () => {
+    expect(buildQuoteBody('pull_request_review', { review: { body: 'nice work' } }, opts)).toBe('nice work')
+  })
+
+  it('push / unknown / missing fields → empty string', () => {
+    expect(buildQuoteBody('push', { compare: 'C' }, opts)).toBe('')
+    expect(buildQuoteBody('star', {}, opts)).toBe('')
+    expect(buildQuoteBody('issue_comment', {}, opts)).toBe('')
+  })
+
+  it('cuts at the footer INDICATOR so nested quotes accumulate cleanly across bot round-trips', () => {
+    // A bot-authored comment carries `> orig\n\nreply\n\n<INDICATOR>footer`; cleanBody drops
+    // the footer, leaving the already-nested quote for the next quote-reply to wrap again.
+    const body = '> orig\n\nreply\n\n<!-- BOT-MESSAGE-FOOTER -->\nsent via SILI'
+    expect(buildQuoteBody('issue_comment', { comment: { body } }, opts)).toBe('> orig\nreply')
+  })
+
+  it('truncates to bodyMaxLength', () => {
+    expect(buildQuoteBody('issue_comment', { comment: { body: 'abcdefghij' } }, { bodyMaxLength: 3 })).toBe('abc…')
   })
 })

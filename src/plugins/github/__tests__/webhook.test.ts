@@ -82,5 +82,7 @@ describe('handleWebhook', () => {
     expect(r.status).toBe(200)
     expect(r.targets).toEqual(['mock:1'])
     expect(r.actions).toEqual(buildActions('issues', issuesPayload))
+    // The quote body is the issue body (header line excluded) so a quote-reply prepends `> oops`.
+    expect(r.quoteBody).toBe('oops')
   })
 })

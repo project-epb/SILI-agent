@@ -1,7 +1,7 @@
 import type { Context } from 'koishi'
 import { isSignatureValid } from './verify'
 import { renderers } from './events'
-import { buildActions, type ActionMap } from './actions'
+import { buildActions, buildQuoteBody, type ActionMap } from './actions'
 import { DedupStore } from './dedup'
 import type { Config, RenderOptions } from './types'
 
@@ -15,8 +15,8 @@ export interface WebhookDeps {
   targets(repo: string, event: string, action?: string): string[]
   /** Migrate subscriptions when the repo was renamed (optional; no-op if absent). */
   onRename?(hookId: number, oldName: string, newName: string, secret: string): Promise<void>
-  /** Record broadcast message ids → quick-reply actions (optional; wired to HistoryStore). */
-  recordHistory?(messageIds: string[], actions: ActionMap): void
+  /** Record broadcast message ids → quick-reply context (optional; wired to HistoryStore). */
+  recordHistory?(messageIds: string[], actions: ActionMap, body: string): void
 }
 
 export interface WebhookResult {
@@ -24,6 +24,8 @@ export interface WebhookResult {
   targets?: string[]
   message?: import('koishi').Fragment
   actions?: ActionMap
+  /** The original body to quote (`> ...`) when a user quote-replies this message. */
+  quoteBody?: string
 }
 
 function safeParse(source: any): any {
@@ -67,7 +69,13 @@ export async function handleWebhook(
   const render = renderers[event]
   const message = render ? render(payload, renderOptions) : null
   if (!targets.length || message == null) return { status: 200 }
-  return { status: 200, targets, message, actions: buildActions(event, payload) }
+  return {
+    status: 200,
+    targets,
+    message,
+    actions: buildActions(event, payload),
+    quoteBody: buildQuoteBody(event, payload, renderOptions),
+  }
 }
 
 /** Register the koa webhook route; broadcasts rendered messages to subscribers. */
@@ -92,7 +100,9 @@ export function applyWebhook(ctx: Context, config: Config, deps: WebhookDeps): v
     ctx
       .broadcast(result.targets, content as any)
       .then((messageIds) => {
-        if (result.actions && deps.recordHistory) deps.recordHistory(messageIds, result.actions)
+        if (result.actions && deps.recordHistory) {
+          deps.recordHistory(messageIds, result.actions, result.quoteBody ?? '')
+        }
       })
       .catch((e) => ctx.logger('github').warn(e))
   })
