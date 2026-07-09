@@ -8,7 +8,7 @@
  * Memory is **not** included here — the agent fetches it on demand via the
  * `read_user_memory` tool. See the "关于这个用户的长期记忆" section below.
  */
-import type { Context } from 'koishi'
+import type { Context } from '@koishijs/core'
 
 import { PROTOCOL_MARKERS, PROTOCOL_TAGS } from '../utils/protocol'
 

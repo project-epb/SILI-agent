@@ -2,7 +2,7 @@
  * 鬼知道为什么不同的适配器返回的结果都不一样
  * 增加一些鲁棒性
  */
-import { Fragment, Session, Universal } from 'koishi'
+import { Fragment, Session, Universal } from '@koishijs/core'
 
 export function getUserIdFromSession(session: any): string {
   // @ts-ignore

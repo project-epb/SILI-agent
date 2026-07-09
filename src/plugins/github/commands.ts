@@ -1,4 +1,4 @@
-import { Context, Random } from 'koishi'
+import { Context, Random } from '@koishijs/core'
 import type { Config } from './types'
 import type { GitHubHttp } from './http'
 import type { SubscriptionStore } from './subscribe'

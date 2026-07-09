@@ -1,4 +1,4 @@
-import { Context, Logger } from 'koishi'
+import { Context, Logger } from '@koishijs/core'
 
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -6,7 +6,6 @@ import { resolve } from 'node:path'
 import Mint from 'mint-filter'
 
 const logger = new Logger('MintFilter')
-const __dirname = import.meta.dirname
 
 declare module 'koishi' {
   interface Context {
@@ -21,7 +20,7 @@ export default class MintFilterService {
   protected async start() {
     const start = Date.now()
     logger.info('filter build start')
-    const text = await readFile(resolve(__dirname, './badwords.ini'))
+    const text = await readFile(resolve(import.meta.dirname, './badwords.ini'))
       .then((val) => val.toString())
       .catch((e) => {
         this.ctx.logger('MintFilter').warn('Failed to load badwords.ini', e)

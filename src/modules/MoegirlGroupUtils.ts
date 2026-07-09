@@ -2,7 +2,7 @@
  * @name MgpGroupUtils
  * @desc 内部插件，萌娘百科B站粉丝群工具箱
  */
-import { Context, Session, Time, h, segment } from 'koishi'
+import { Context, Session, Time, h, segment } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 import { checkUserHasRole } from '@/utils/formatSession'

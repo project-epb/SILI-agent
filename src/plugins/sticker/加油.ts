@@ -1,4 +1,4 @@
-import { Context, Time, h } from 'koishi'
+import { Context, Time, h } from '@koishijs/core'
 
 import { BaseSticker } from './_base'
 

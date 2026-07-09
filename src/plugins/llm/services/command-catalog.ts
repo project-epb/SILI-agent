@@ -1,4 +1,4 @@
-import type { Context, Logger } from 'koishi'
+import type { Context, Logger } from '@koishijs/core'
 
 import {
   type CommandCatalogEntry,

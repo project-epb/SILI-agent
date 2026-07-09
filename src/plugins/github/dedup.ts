@@ -1,4 +1,4 @@
-import type { Context } from 'koishi'
+import type { Context } from '@koishijs/core'
 
 /** In-memory dedup of webhook deliveries by x-github-delivery id. GitHub retries a failed
  * delivery with the SAME id, so a first-seen check drops duplicate processing. Entries expire

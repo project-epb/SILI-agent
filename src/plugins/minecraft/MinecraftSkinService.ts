@@ -1,4 +1,4 @@
-import { Context, Service } from 'koishi'
+import { Context, Service } from '@koishijs/core'
 
 import { Fexios } from 'fexios'
 

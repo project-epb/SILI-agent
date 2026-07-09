@@ -1,4 +1,4 @@
-import { Context } from 'koishi'
+import { Context } from '@koishijs/core'
 
 import BasePlugin from './_boilerplate'
 

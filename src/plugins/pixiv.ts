@@ -4,7 +4,7 @@
  * @desc pixiv插画查看工具
  * @authority 1
  */
-import { Context, Time, h } from 'koishi'
+import { Context, Time, h } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

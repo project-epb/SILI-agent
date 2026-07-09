@@ -4,7 +4,7 @@
  * @desc 应答测试
  * @authority 1
  */
-import { Context, Random, Time } from 'koishi'
+import { Context, Random, Time } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

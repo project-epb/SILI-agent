@@ -1,4 +1,4 @@
-import { Context, Random, h } from 'koishi'
+import { Context, Random, h } from '@koishijs/core'
 
 import { BaseSticker } from './_base'
 

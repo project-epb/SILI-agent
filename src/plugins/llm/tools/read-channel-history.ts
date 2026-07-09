@@ -1,4 +1,4 @@
-import type { Bot } from 'koishi'
+import type { Bot } from '@koishijs/core'
 
 import type { ToolDefinition } from '../providers/_base'
 

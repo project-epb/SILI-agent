@@ -4,7 +4,7 @@
  * @desc 基本资料
  * @authority 1
  */
-import { Context, Session, User, h } from 'koishi'
+import { Context, Session, User, h } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

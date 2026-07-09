@@ -1,4 +1,4 @@
-import type { Context } from 'koishi'
+import type { Context } from '@koishijs/core'
 
 /**
  * Per-conversation monotonic turn-number allocator.

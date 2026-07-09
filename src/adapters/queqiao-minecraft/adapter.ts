@@ -1,4 +1,10 @@
-import { Adapter, type Context, Logger, Schema, type Session } from 'koishi'
+import {
+  Adapter,
+  type Context,
+  Logger,
+  Schema,
+  type Session,
+} from '@koishijs/core'
 
 import {
   type Pending,

@@ -2,7 +2,7 @@
  * @name FallbackHandler
  * @desc 内部插件，用于处理未匹配到任何指令的消息
  */
-import { Context, sleep } from 'koishi'
+import { Context, sleep } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

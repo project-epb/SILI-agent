@@ -1,4 +1,4 @@
-import { Context, version as KOISHI_VERSION, h } from 'koishi'
+import { Context, version as KOISHI_VERSION, h } from '@koishijs/core'
 
 import { MONO_FONT } from '@/services/html/fonts'
 

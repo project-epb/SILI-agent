@@ -1,5 +1,5 @@
-import { Context } from 'koishi'
-import type { Computed } from 'koishi'
+import { Context } from '@koishijs/core'
+import type { Computed } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

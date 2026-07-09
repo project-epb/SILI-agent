@@ -1,4 +1,4 @@
-import type { Context } from 'koishi'
+import type { Context } from '@koishijs/core'
 import type { Config, OAuthTokens, GitHubUser } from './types'
 
 export type { OAuthTokens, GitHubUser } from './types'

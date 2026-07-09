@@ -5,7 +5,7 @@
  * @desc 这是一个插件
  * @authority -
  */
-import { Context } from 'koishi'
+import { Context } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

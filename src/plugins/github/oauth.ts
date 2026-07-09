@@ -1,4 +1,4 @@
-import { Context, Random } from 'koishi'
+import { Context, Random } from '@koishijs/core'
 import type { Config, OAuthTokens } from './types'
 import type { GitHubHttp } from './http'
 import { describeHttpError } from './commands'

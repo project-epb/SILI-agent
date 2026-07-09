@@ -1,4 +1,4 @@
-import { Bot, type Context } from 'koishi'
+import { Bot, type Context } from '@koishijs/core'
 
 import type { Message, SendOptions, Upload } from '@satorijs/protocol'
 

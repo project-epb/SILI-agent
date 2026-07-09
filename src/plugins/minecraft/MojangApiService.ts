@@ -1,7 +1,7 @@
 /**
  * @link https://zh.minecraft.wiki/w/Mojang_API
  */
-import { Context, Service } from 'koishi'
+import { Context, Service } from '@koishijs/core'
 
 import { Fexios } from 'fexios'
 

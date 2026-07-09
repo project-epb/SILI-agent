@@ -5,7 +5,7 @@
  * @author Koishijs(机智的小鱼君) <dragon-fish@qq.com>
  * @license Apache-2.0
  */
-import { Context, Time, h } from 'koishi'
+import { Context, Time, h } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

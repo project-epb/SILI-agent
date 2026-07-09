@@ -1,4 +1,4 @@
-import type { Context } from 'koishi'
+import type { Context } from '@koishijs/core'
 import type { ActionMap } from './actions'
 
 /** A pushed message's quick-reply context: the actions it supports + the

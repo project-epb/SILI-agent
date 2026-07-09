@@ -1,5 +1,5 @@
-import { Context, h, randomId } from 'koishi'
-import type { Awaitable, Computed, Session } from 'koishi'
+import { Context, h, randomId } from '@koishijs/core'
+import type { Awaitable, Computed, Session } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

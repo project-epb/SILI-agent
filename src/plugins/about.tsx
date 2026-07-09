@@ -1,4 +1,4 @@
-import { Binding, Context, Session } from 'koishi'
+import { Binding, Context, Session } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

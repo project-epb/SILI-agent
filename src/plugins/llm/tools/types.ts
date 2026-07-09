@@ -1,4 +1,4 @@
-import type { Context, Logger, Session } from 'koishi'
+import type { Context, Logger, Session } from '@koishijs/core'
 
 import type { ToolDefinition } from '../providers/_base'
 

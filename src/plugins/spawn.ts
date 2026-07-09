@@ -1,4 +1,4 @@
-import { Context, Service, Time } from 'koishi'
+import { Context, Service, Time } from '@koishijs/core'
 
 import { ExecOptions, exec } from 'node:child_process'
 

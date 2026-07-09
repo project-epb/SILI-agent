@@ -4,7 +4,7 @@
  * @desc 指令队列
  * @authority 3
  */
-import { Context, sleep } from 'koishi'
+import { Context, sleep } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

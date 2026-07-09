@@ -1,4 +1,4 @@
-import { Context, Dict, Random, Session, h } from 'koishi'
+import { Context, Dict, Random, Session, h } from '@koishijs/core'
 
 import BasePlugin from './_boilerplate'
 

@@ -4,7 +4,7 @@
  * @desc 对 callme 插件的 hack
  * @authority -
  */
-import { Context, Time, segment } from 'koishi'
+import { Context, Time, segment } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

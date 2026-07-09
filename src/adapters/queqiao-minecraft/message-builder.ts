@@ -1,4 +1,4 @@
-import { Fragment, h } from 'koishi'
+import { Fragment, h } from '@koishijs/core'
 
 import type {
   MinecraftTextComponent,

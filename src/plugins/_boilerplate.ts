@@ -1,4 +1,4 @@
-import { Context, Logger, snakeCase } from 'koishi'
+import { Context, Logger, snakeCase } from '@koishijs/core'
 
 export default class BasePlugin<T = any> {
   #name: string

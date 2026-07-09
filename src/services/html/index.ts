@@ -1,4 +1,4 @@
-import { Context, Service, h } from 'koishi'
+import { Context, Service, h } from '@koishijs/core'
 
 import type { ScreenshotOptions, WaitForOptions } from 'puppeteer-core'
 import type { BundledLanguage } from 'shiki'

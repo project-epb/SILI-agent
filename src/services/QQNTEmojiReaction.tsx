@@ -1,4 +1,4 @@
-import { Context, Service, Session } from 'koishi'
+import { Context, Service, Session } from '@koishijs/core'
 
 declare module 'koishi' {
   interface Session {

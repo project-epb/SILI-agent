@@ -2,7 +2,7 @@
  * @name MessagesLogger
  * @desc 内部插件，收发消息记录日志
  */
-import { Context, Session } from 'koishi'
+import { Context, Session } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

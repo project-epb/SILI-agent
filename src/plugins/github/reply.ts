@@ -1,4 +1,4 @@
-import type { Context } from 'koishi'
+import type { Context } from '@koishijs/core'
 import { REACTIONS } from './actions'
 import type { GitHubHttp } from './http'
 import type { GitHubUser } from './types'

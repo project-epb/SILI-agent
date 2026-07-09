@@ -1,4 +1,4 @@
-import { Context, Session } from 'koishi'
+import { Context, Session } from '@koishijs/core'
 
 import { BulkMessageBuilder } from '@/utils/BulkMessageBuilder'
 

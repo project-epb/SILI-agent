@@ -4,7 +4,7 @@
  * @desc 让SILI修改自己的群名片
  * @authority 3
  */
-import { Context } from 'koishi'
+import { Context } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

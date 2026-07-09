@@ -4,7 +4,7 @@
  * @desc Fandom编辑者QQ群入群检测
  * @authority 1
  */
-import { Context, Session, segment } from 'koishi'
+import { Context, Session, segment } from '@koishijs/core'
 
 import crypto from 'node:crypto'
 

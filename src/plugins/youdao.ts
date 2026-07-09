@@ -4,7 +4,7 @@
  * @desc 有道翻译
  * @authority 1
  */
-import { Context } from 'koishi'
+import { Context } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

@@ -1,4 +1,4 @@
-import type { Fragment } from 'koishi'
+import type { Fragment } from '@koishijs/core'
 
 export interface Config {
   /** Base path of the GitHub service routes. Prod uses '/api/github'. */

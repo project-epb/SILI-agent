@@ -1,4 +1,4 @@
-import type { Logger } from 'koishi'
+import type { Logger } from '@koishijs/core'
 
 import type { ToolDefinition } from '../providers/_base'
 import {

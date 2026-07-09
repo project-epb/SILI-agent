@@ -3,14 +3,12 @@
  * @description Original work by @nulla2011 https://github.com/nulla2011/bluearchive-logo
  * @author dragon-fish (refactor)
  */
-import { Context, h } from 'koishi'
+import { Context, h } from '@koishijs/core'
 
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { BaseSticker } from '../_base'
-
-const __dirname = import.meta.dirname
 
 export default class 蔚蓝档案 extends BaseSticker {
   constructor(public ctx: Context) {
@@ -30,7 +28,7 @@ export default class 蔚蓝档案 extends BaseSticker {
   }
 
   async shot(leftText: string, rightText: string) {
-    const url = pathToFileURL(resolve(__dirname, 'index.html'))
+    const url = pathToFileURL(resolve(import.meta.dirname, 'index.html'))
     url.searchParams.set('leftText', leftText)
     url.searchParams.set('rightText', rightText)
 

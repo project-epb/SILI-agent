@@ -1,4 +1,4 @@
-import type { Context, Session } from 'koishi'
+import type { Context, Session } from '@koishijs/core'
 
 import {
   type CommandCatalogEntry,

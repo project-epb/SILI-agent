@@ -1,4 +1,4 @@
-import { Context, Logger, Session } from 'koishi'
+import { Context, Logger, Session } from '@koishijs/core'
 
 import { LLMProviderBase } from './providers/_base'
 import type {

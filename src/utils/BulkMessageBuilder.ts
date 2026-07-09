@@ -1,4 +1,4 @@
-import { Session, Universal, h } from 'koishi'
+import { Session, Universal, h } from '@koishijs/core'
 
 type MsgUser = Omit<Universal.User & Universal.GuildMember, 'id'>
 

@@ -1,4 +1,4 @@
-import type { Logger } from 'koishi'
+import type { Logger } from '@koishijs/core'
 
 /**
  * Live state for one in-flight chat turn. The `sendFromIndex` ref is

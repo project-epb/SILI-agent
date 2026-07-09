@@ -1,4 +1,4 @@
-import { camelize } from 'koishi'
+import { camelize } from '@koishijs/core'
 import type { EventFilter, RepoConfig } from './types'
 
 /**

@@ -1,4 +1,4 @@
-import { Context, h, interpolate } from 'koishi'
+import { Context, h, interpolate } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

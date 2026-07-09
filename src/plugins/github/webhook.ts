@@ -1,4 +1,4 @@
-import type { Context } from 'koishi'
+import type { Context } from '@koishijs/core'
 import { isSignatureValid } from './verify'
 import { renderers } from './events'
 import { buildActions, buildQuoteBody, type ActionMap } from './actions'
@@ -22,7 +22,7 @@ export interface WebhookDeps {
 export interface WebhookResult {
   status: number
   targets?: string[]
-  message?: import('koishi').Fragment
+  message?: import('@koishijs/core').Fragment
   actions?: ActionMap
   /** The original body to quote (`> ...`) when a user quote-replies this message. */
   quoteBody?: string

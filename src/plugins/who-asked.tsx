@@ -1,4 +1,4 @@
-import { Context, Session, Time, h } from 'koishi'
+import { Context, Session, Time, h } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 

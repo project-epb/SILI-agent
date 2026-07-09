@@ -1,4 +1,4 @@
-import { Context, Schema, Time } from 'koishi'
+import { Context, Schema, Time } from '@koishijs/core'
 import BasePlugin from '~/_boilerplate'
 import { SubscriptionStore } from './subscribe'
 import { applyWebhook } from './webhook'

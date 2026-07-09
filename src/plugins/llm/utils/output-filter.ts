@@ -1,8 +1,4 @@
-// Import directly from satori/element rather than re-exporting through
-// koishi: pulling `h` from 'koishi' drags in the @koishijs/loader entry
-// graph, which fails to construct under vitest. The runtime `h` is the
-// same Element namespace either way.
-import h from '@satorijs/element'
+import { h } from '@koishijs/core'
 
 import {
   type BBCodeElement,

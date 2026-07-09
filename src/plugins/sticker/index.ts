@@ -4,7 +4,7 @@
  * @desc 生成表情包
  * @authority 1
  */
-import { Context } from 'koishi'
+import { Context } from '@koishijs/core'
 
 import BasePlugin from '~/_boilerplate'
 
