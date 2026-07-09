@@ -26,9 +26,19 @@ export interface OverviewMetrics {
 export interface DashboardStats {
   range: number
   overview: OverviewMetrics & { prev: OverviewMetrics }
-  trend: Array<{ date: string; promptTokens: number; completionTokens: number; calls: number }>
+  trend: Array<{
+    date: string
+    promptTokens: number
+    completionTokens: number
+    calls: number
+  }>
   models: Array<{ model: string; calls: number; totalTokens: number }>
-  users: Array<{ id: number; name: string; totalTokens: number; conversations: number }>
+  users: Array<{
+    id: number
+    name: string
+    totalTokens: number
+    conversations: number
+  }>
 }
 
 const DAY = 86_400_000
@@ -38,6 +48,18 @@ function toLocalDate(time: number): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${m}-${day}`
+}
+
+// Local-midnight of the calendar day containing `time` (DST-safe; not fixed-ms).
+function startOfLocalDay(time: number): number {
+  const d = new Date(time)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+// Local-midnight of the next calendar day (crosses DST via calendar arithmetic).
+function nextLocalDay(time: number): number {
+  const d = new Date(time)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime()
 }
 
 // cachedTokens ⊂ promptTokens, reasoningTokens ⊂ completionTokens — never re-add.
@@ -86,23 +108,37 @@ export function aggregateStats(
   const previous = rows.filter((r) => r.time >= prevStart && r.time < curStart)
 
   // trend: bucket current window by local day, fill empty days with zeros
-  const byDay = new Map<string, { promptTokens: number; completionTokens: number; calls: number }>()
+  const byDay = new Map<
+    string,
+    { promptTokens: number; completionTokens: number; calls: number }
+  >()
   for (const r of current) {
     const key = toLocalDate(r.time)
-    const b = byDay.get(key) ?? { promptTokens: 0, completionTokens: 0, calls: 0 }
+    const b = byDay.get(key) ?? {
+      promptTokens: 0,
+      completionTokens: 0,
+      calls: 0,
+    }
     const t = rowTokens(r.usage)
     b.promptTokens += t.prompt
     b.completionTokens += t.completion
     b.calls += 1
     byDay.set(key, b)
   }
+  // Iterate on local calendar-day boundaries (not fixed 86_400_000ms steps): a
+  // fixed-ms step lands at the same wall-clock time each day and can skip a local
+  // calendar day across a DST transition, dropping a real day's rows from `trend`.
   const trend: DashboardStats['trend'] = []
-  const seen = new Set<string>()
-  for (let d = curStart; d <= now; d += DAY) {
-    const key = toLocalDate(d)
-    if (seen.has(key)) continue
-    seen.add(key)
-    trend.push({ date: key, ...(byDay.get(key) ?? { promptTokens: 0, completionTokens: 0, calls: 0 }) })
+  for (
+    let day = startOfLocalDay(curStart);
+    day <= now;
+    day = nextLocalDay(day)
+  ) {
+    const key = toLocalDate(day)
+    trend.push({
+      date: key,
+      ...(byDay.get(key) ?? { promptTokens: 0, completionTokens: 0, calls: 0 }),
+    })
   }
 
   const byModel = new Map<string, { calls: number; totalTokens: number }>()
@@ -118,13 +154,21 @@ export function aggregateStats(
 
   const byUser = new Map<number, { totalTokens: number; convs: Set<string> }>()
   for (const r of current) {
-    const u = byUser.get(r.conversation_owner) ?? { totalTokens: 0, convs: new Set<string>() }
+    const u = byUser.get(r.conversation_owner) ?? {
+      totalTokens: 0,
+      convs: new Set<string>(),
+    }
     u.totalTokens += rowTokens(r.usage).total
     u.convs.add(r.conversation_id)
     byUser.set(r.conversation_owner, u)
   }
   const users = [...byUser.entries()]
-    .map(([id, v]) => ({ id, name: nameOf(id), totalTokens: v.totalTokens, conversations: v.convs.size }))
+    .map(([id, v]) => ({
+      id,
+      name: nameOf(id),
+      totalTokens: v.totalTokens,
+      conversations: v.convs.size,
+    }))
     .sort((a, b) => b.totalTokens - a.totalTokens)
     .slice(0, 10)
 
