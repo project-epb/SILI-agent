@@ -281,13 +281,16 @@ function renderMsg(m) {
   if (m.role === 'assistant' && m.toolCalls)
     kids.push(fold('la-tool', `🔧 调用 ${toolNames(m.toolCalls)}`, prettyJson(m.toolCalls)))
   const label = m.role === 'user' ? '用户' : m.role === 'assistant' ? 'SILI' : m.role
+  const roleKids = [h('span', { class: 'la-msg-name' }, label)]
+  if (m.role === 'assistant' && m.model)
+    roleKids.push(h('span', { class: 'la-msg-model' }, m.model))
   const meta = [h('span', { class: 'la-msg-time' }, when(m.time))]
   if (m.role === 'assistant') {
     const t = msgTokens(m.usage)
     if (t) meta.push(t)
   }
   return h('div', { class: `la-msg la-msg-${m.role}` }, [
-    h('div', { class: 'la-msg-role' }, label),
+    h('div', { class: 'la-msg-role' }, roleKids),
     h('div', { class: 'la-bubble' }, kids),
     h('div', { class: 'la-msg-meta' }, meta),
   ])
