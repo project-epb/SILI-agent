@@ -65,6 +65,137 @@ function trendSvg(trend) {
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><polygon points="${t.join(' ')} ${base}" fill="var(--k-color-primary,#6a5acd)" fill-opacity="0.18"/><polygon points="${p.join(' ')} ${base}" fill="var(--k-color-primary,#6a5acd)" fill-opacity="0.35"/><polyline points="${t.join(' ')}" fill="none" stroke="var(--k-color-primary,#6a5acd)" stroke-width="1.5"/></svg>`
 }
 
+function utf8Len(s) {
+  return new TextEncoder().encode(s ?? '').length
+}
+
+// 长期记忆编辑卡片：进入总览时 memory-get 载入，实时字节计数对上限，
+// 超限标红并禁用保存；清空走 window.confirm 二次确认。隐私敏感。
+const MemoryCard = defineComponent({
+  name: 'LaMemoryCard',
+  props: { id: { type: Number, required: true } },
+  setup(props) {
+    const content = ref('')
+    const loaded = ref(false)
+    const saving = ref(false)
+    const clearing = ref(false)
+    const hardLimit = ref(3300)
+    const meta = ref(null)
+    const msg = ref('')
+
+    async function load() {
+      loaded.value = false
+      msg.value = ''
+      try {
+        const r = await send('llm-admin/memory-get', { id: props.id })
+        content.value = r.content ?? ''
+        hardLimit.value = r.hardLimit ?? 3300
+        meta.value = r
+      } catch (e) {
+        msg.value = e?.message ?? String(e)
+      } finally {
+        loaded.value = true
+      }
+    }
+    async function save() {
+      saving.value = true
+      msg.value = ''
+      try {
+        const r = await send('llm-admin/memory-save', {
+          id: props.id,
+          content: content.value,
+        })
+        if (r.ok) msg.value = `已保存（${r.byteSize} 字节）`
+        else msg.value = r.error || '保存失败'
+        if (r.ok) meta.value = { ...(meta.value || {}), byteSize: r.byteSize }
+      } catch (e) {
+        msg.value = e?.message ?? String(e)
+      } finally {
+        saving.value = false
+      }
+    }
+    async function clear() {
+      if (!window.confirm('确认清空该用户长期记忆？此操作不可撤销。')) return
+      clearing.value = true
+      msg.value = ''
+      try {
+        const r = await send('llm-admin/memory-clear', { id: props.id })
+        if (r.ok) {
+          content.value = ''
+          meta.value = null
+          msg.value = '已清空'
+        } else {
+          msg.value = '无记忆可清空'
+        }
+      } catch (e) {
+        msg.value = e?.message ?? String(e)
+      } finally {
+        clearing.value = false
+      }
+    }
+
+    onMounted(load)
+    watch(() => props.id, load)
+
+    return () => {
+      const KCard = resolveComponent('k-card')
+      const size = utf8Len(content.value)
+      const over = size > hardLimit.value
+      return h(KCard, { class: 'la-panel la-mem' }, {
+        default: () => [
+          h('div', { class: 'la-panel-title' }, '长期记忆 · 隐私敏感'),
+          !loaded.value
+            ? h('p', { class: 'la-dim' }, '加载中…')
+            : h('div', { class: 'la-mem-body' }, [
+                h('textarea', {
+                  class: ['la-mem-textarea', over ? 'over' : ''],
+                  value: content.value,
+                  spellcheck: 'false',
+                  placeholder: '（该用户暂无长期记忆，可在此写入）',
+                  onInput: (e) => (content.value = e.target.value),
+                }),
+                h('div', { class: 'la-mem-bar' }, [
+                  h(
+                    'span',
+                    { class: ['la-mem-count', over ? 'over' : ''] },
+                    `${size} / ${hardLimit.value} 字节`
+                  ),
+                  meta.value
+                    ? h(
+                        'span',
+                        { class: 'la-dim la-mem-updated' },
+                        `更新 ${meta.value.updateCount ?? 0} 次 · ${when(meta.value.lastUpdated)}`
+                      )
+                    : null,
+                ]),
+                h('div', { class: 'la-mem-actions' }, [
+                  h(
+                    'button',
+                    {
+                      class: 'la-btn',
+                      disabled: over || saving.value,
+                      onClick: save,
+                    },
+                    saving.value ? '保存中…' : '保存'
+                  ),
+                  h(
+                    'button',
+                    {
+                      class: 'la-btn la-mem-clear',
+                      disabled: clearing.value,
+                      onClick: clear,
+                    },
+                    clearing.value ? '清空中…' : '清空 ⚠'
+                  ),
+                  msg.value ? h('span', { class: 'la-mem-msg' }, msg.value) : null,
+                ]),
+              ]),
+        ],
+      })
+    }
+  },
+})
+
 function overviewView(o) {
   const KCard = resolveComponent('k-card')
   const cards = [
@@ -115,6 +246,7 @@ function overviewView(o) {
           : h('p', { class: 'la-dim' }, '（无数据）'),
       ],
     }),
+    h(MemoryCard, { id: o.id, key: o.id }),
   ])
 }
 

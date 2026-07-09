@@ -122,3 +122,24 @@
   background: var(--k-hover-bg, rgba(128,128,128,0.08)); font-size: 0.78rem; white-space: pre-wrap; word-break: break-word;
 }
 .la-reasoning pre { color: var(--k-text-light, #888); font-style: italic; }
+
+/* ---------- 长期记忆编辑卡片（隐私敏感） ---------- */
+.la-mem-body { display: flex; flex-direction: column; gap: 0.6rem; }
+.la-mem-textarea {
+  width: 100%; box-sizing: border-box; min-height: 160px; resize: vertical;
+  padding: 0.6rem 0.7rem; border-radius: 6px; font-size: 0.85rem; line-height: 1.5;
+  font-family: var(--k-font-mono, ui-monospace, monospace);
+  border: 1px solid var(--k-color-border, #d0d0d0);
+  background: var(--k-card-bg, #fff); color: inherit;
+}
+.la-mem-textarea.over { border-color: var(--k-color-danger, #e0533d); }
+.la-mem-bar { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.78rem; }
+.la-mem-count { color: var(--k-text-light, #999); }
+.la-mem-count.over { color: var(--k-color-danger, #e0533d); font-weight: 600; }
+.la-mem-updated { font-size: 0.75rem; }
+.la-mem-actions { display: flex; align-items: center; gap: 0.6rem; }
+.la-mem-clear {
+  background: none; color: var(--k-color-danger, #e0533d);
+  border: 1px solid var(--k-color-danger, #e0533d);
+}
+.la-mem-msg { font-size: 0.8rem; color: var(--k-text-light, #999); }

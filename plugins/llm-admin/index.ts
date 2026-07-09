@@ -6,6 +6,7 @@ import '@koishijs/console'
 
 import { type UserOverview, type UserUsageRow, aggregateUserOverview } from './aggregate-user'
 import { matchUser, paginate } from './filters'
+import { checkMemoryWrite, utf8ByteLength } from './memory-edit'
 import { turnWindow } from './turns'
 
 // ⚠ 隐私敏感：本插件暴露用户长期记忆与会话正文，authority 4（仅 sysop）门控所有
@@ -61,6 +62,21 @@ declare module '@koishijs/console' {
       limit?: number
       beforeTurn?: number | null
     }): { messages: ChatMsg[]; earliestTurn: number | null; hasMore: boolean }
+    // 隐私敏感：读也需 authority 4。content 绝不落服务端日志。
+    'llm-admin/memory-get'(payload: { id: number }): {
+      content: string
+      byteSize: number
+      updateCount: number
+      lastUpdated: number | null
+      platform: string | null
+      hardLimit: number
+    }
+    'llm-admin/memory-save'(payload: { id: number; content: string }): {
+      ok: boolean
+      byteSize: number
+      error?: string
+    }
+    'llm-admin/memory-clear'(payload: { id: number }): { ok: boolean }
   }
 }
 
@@ -266,6 +282,78 @@ export function apply(ctx: Context) {
         }
       })
       return { messages, earliestTurn: fromTurn, hasMore }
+    },
+    { authority: AUTH }
+  )
+
+  // ---- 长期记忆读/改/清（隐私敏感，仅 sysop；日志不落 content）----
+  // 记忆键：(platform, user_id)。前端只传 aid，故先按 user_id 查现有行拿 platform；
+  // 无现有行时从 binding 推断（onebot→qq 归一化）。
+  async function memoryRow(id: number) {
+    const rows = await db.get('openai_user_memory', { user_id: String(id) })
+    return rows[0] ?? null
+  }
+  async function memoryPlatform(id: number): Promise<string> {
+    const existing = await memoryRow(id)
+    if (existing?.platform) return existing.platform
+    const bindings = await db.get(
+      'binding',
+      { aid: id },
+      { fields: ['platform', 'bid'] }
+    )
+    const first = [...bindings].sort((x, y) => x.bid - y.bid)[0]
+    const p = first?.platform
+    return p === 'onebot' ? 'qq' : p || 'unknown'
+  }
+  // getMemoryHardLimit() 在 llm 插件里是 private，此处按同一策略自算
+  // （memory-fork.ts / index.tsx 均为 ceil(soft * 1.1)），避免上限漂移。
+  function memoryHardLimit(): number {
+    const soft = (ctx.llm as any).config?.memoryByteLimit ?? 3000
+    return Math.ceil(soft * 1.1)
+  }
+
+  ctx.console.addListener(
+    'llm-admin/memory-get',
+    async ({ id }) => {
+      const row = await memoryRow(id)
+      return {
+        content: row?.content ?? '',
+        byteSize: row?.byte_size ?? 0,
+        updateCount: row?.update_count ?? 0,
+        lastUpdated: row?.last_updated_at ?? null,
+        platform: row?.platform ?? null,
+        hardLimit: memoryHardLimit(),
+      }
+    },
+    { authority: AUTH }
+  )
+
+  ctx.console.addListener(
+    'llm-admin/memory-save',
+    async ({ id, content }) => {
+      const check = checkMemoryWrite(content, memoryHardLimit())
+      if (!check.ok) return check
+      const existing = await memoryRow(id)
+      const platform = existing?.platform ?? (await memoryPlatform(id))
+      // 保留 fork 节流元数据，避免打乱后台记忆调度
+      await ctx.llm.memory.set(
+        platform,
+        String(id),
+        content,
+        existing?.message_count_at_update ?? 0,
+        existing?.last_forked_conversation_id ?? ''
+      )
+      return { ok: true, byteSize: utf8ByteLength(content) }
+    },
+    { authority: AUTH }
+  )
+
+  ctx.console.addListener(
+    'llm-admin/memory-clear',
+    async ({ id }) => {
+      const platform = await memoryPlatform(id)
+      const ok = await ctx.llm.memory.delete(platform, String(id))
+      return { ok }
     },
     { authority: AUTH }
   )
