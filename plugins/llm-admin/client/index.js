@@ -1,4 +1,4 @@
-import { defineComponent, h, onMounted, ref, resolveComponent, watch } from '../vue.js'
+import { defineComponent, h, nextTick, onMounted, ref, resolveComponent, watch } from '../vue.js'
 import { useRoute, useRouter } from '../vue-router.js'
 import { send, store } from '../client.js'
 
@@ -141,10 +141,13 @@ function renderMsg(m) {
   ])
 }
 
-function chatView(msgs) {
+function chatView(msgs, scrollRef, onScroll, loadingMore) {
   if (msgs === null) return h('div', { class: 'la-dim la-chat-empty' }, '加载中…')
   if (!msgs.length) return h('div', { class: 'la-dim la-chat-empty' }, '（空会话）')
-  return h('div', { class: 'la-chat' }, msgs.map(renderMsg))
+  return h('div', { class: 'la-chat', ref: scrollRef, onScroll }, [
+    loadingMore ? h('div', { class: 'la-dim la-chat-more' }, '加载更早…') : null,
+    ...msgs.map(renderMsg),
+  ])
 }
 
 const Admin = defineComponent({
@@ -168,6 +171,11 @@ const Admin = defineComponent({
     const sessionOffset = ref(0)
     const sessionsMore = ref(false)
     const msgs = ref(null)
+    const MSG_PAGE = 20
+    const earliestTurn = ref(null)
+    const msgsHasMore = ref(false)
+    const loadingMoreMsgs = ref(false)
+    const chatEl = ref(null)
     const err = ref('')
     const ready = ref(false)
 
@@ -263,11 +271,53 @@ const Admin = defineComponent({
     }
     async function loadSession(conv) {
       msgs.value = null
+      earliestTurn.value = null
+      msgsHasMore.value = false
       try {
-        msgs.value = await send('llm-admin/session', { conversationId: conv })
+        const res = await send('llm-admin/session', {
+          conversationId: conv,
+          limit: MSG_PAGE,
+          beforeTurn: null,
+        })
+        msgs.value = res.messages
+        earliestTurn.value = res.earliestTurn
+        msgsHasMore.value = res.hasMore
+        // 渲染后定位到底部（聊天软件式：最新在下方）
+        await nextTick()
+        const el = chatEl.value
+        if (el) el.scrollTop = el.scrollHeight
       } catch (e) {
         err.value = e?.message ?? String(e)
       }
+    }
+    // 上滚加载更早：prepend 到头部并保持视觉位置不跳
+    async function loadMoreMsgs() {
+      const conv = cid()
+      if (conv == null || !msgsHasMore.value || loadingMoreMsgs.value) return
+      loadingMoreMsgs.value = true
+      err.value = ''
+      const el = chatEl.value
+      const prevHeight = el ? el.scrollHeight : 0
+      try {
+        const res = await send('llm-admin/session', {
+          conversationId: conv,
+          limit: MSG_PAGE,
+          beforeTurn: earliestTurn.value,
+        })
+        msgs.value = [...res.messages, ...(msgs.value || [])]
+        earliestTurn.value = res.earliestTurn ?? earliestTurn.value
+        msgsHasMore.value = res.hasMore
+        await nextTick()
+        if (el) el.scrollTop += el.scrollHeight - prevHeight
+      } catch (e) {
+        err.value = e?.message ?? String(e)
+      } finally {
+        loadingMoreMsgs.value = false
+      }
+    }
+    function onChatScroll(e) {
+      if (e.target.scrollTop < 60 && msgsHasMore.value && !loadingMoreMsgs.value)
+        loadMoreMsgs()
     }
 
     // 路由驱动的数据加载（真实 URL：?user=&session=）
@@ -413,7 +463,7 @@ const Admin = defineComponent({
       const right = h('div', { class: 'la-right' }, [
         err.value ? h('div', { class: 'la-err' }, err.value) : null,
         inSession
-          ? chatView(msgs.value)
+          ? chatView(msgs.value, chatEl, onChatScroll, loadingMoreMsgs.value)
           : o
             ? overviewView(o)
             : h('div', { class: 'la-dim' }, '加载中…'),

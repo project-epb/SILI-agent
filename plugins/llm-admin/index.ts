@@ -6,6 +6,7 @@ import '@koishijs/console'
 
 import { type UserOverview, type UserUsageRow, aggregateUserOverview } from './aggregate-user'
 import { matchUser, paginate } from './filters'
+import { turnWindow } from './turns'
 
 // ⚠ 隐私敏感：本插件暴露用户长期记忆与会话正文，authority 4（仅 sysop）门控所有
 // listener（读也拦），且服务端日志不落记忆/会话正文。这是原型 spike，正式版走 spec。
@@ -55,7 +56,11 @@ declare module '@koishijs/console' {
       limit?: number
       offset?: number
     }): { total: number; rows: SessionRow[] }
-    'llm-admin/session'(payload: { conversationId: string }): ChatMsg[]
+    'llm-admin/session'(payload: {
+      conversationId: string
+      limit?: number
+      beforeTurn?: number | null
+    }): { messages: ChatMsg[]; earliestTurn: number | null; hasMore: boolean }
   }
 }
 
@@ -185,13 +190,30 @@ export function apply(ctx: Context) {
     { authority: AUTH }
   )
 
-  // ---- 会话消息：chat 式回放 ----
+  // ---- 会话消息：chat 式回放（按 turn 窗口分页，前端无限上滚）----
   ctx.console.addListener(
     'llm-admin/session',
-    async ({ conversationId }) => {
-      const rows = (await db.get(
+    async ({ conversationId, limit = 20, beforeTurn = null }) => {
+      // 该会话所有 turn_number（升序去重）
+      const allRows = await db.get(
         'openai_chat',
         { conversation_id: conversationId },
+        { fields: ['turn_number'] }
+      )
+      const turns = [...new Set(allRows.map((r) => r.turn_number))].sort(
+        (a, b) => a - b
+      )
+      const { fromTurn, hasMore } = turnWindow(turns, limit, beforeTurn)
+      if (fromTurn == null)
+        return { messages: [], earliestTurn: null, hasMore: false }
+
+      const upper = beforeTurn == null ? Number.MAX_SAFE_INTEGER : beforeTurn
+      const rows = (await db.get(
+        'openai_chat',
+        {
+          conversation_id: conversationId,
+          turn_number: { $gte: fromTurn, $lt: upper },
+        },
         {
           fields: [
             'role',
@@ -218,7 +240,7 @@ export function apply(ctx: Context) {
         return (m ? m[1] : c).trim()
       }
 
-      return rows.map((r): ChatMsg => {
+      const messages = rows.map((r): ChatMsg => {
         if (r.role === 'user')
           return {
             time: r.time,
@@ -243,6 +265,7 @@ export function apply(ctx: Context) {
           toolCalls: r.tool_calls || undefined,
         }
       })
+      return { messages, earliestTurn: fromTurn, hasMore }
     },
     { authority: AUTH }
   )
