@@ -875,6 +875,76 @@ git commit -m "chore(llm-dashboard): prod plugins mount, import order, formattin
 
 ---
 
+### Task 8（可选，纯 IDE 类型糖）: 让 TS 认识 `../vue.js` / `../client.js`
+
+**目的：** 仅为编辑器里写 `client/*.js` 时有类型/自动补全；运行时零影响。不想要可整个跳过。
+
+**背景约束（别踩）：**
+- TS 的 `paths` 与 ambient `declare module` 只对**裸说明符**生效，无法映射相对路径 `../vue.js`。唯一办法是在解析位置放真 d.ts。
+- 不能改成裸 `import from 'vue'` 靠 console `transformImport` 重写——项目 prettier `semi: false`，而该正则要求 import 带结尾分号，改了也不会被重写。所以 `client/*.js` 保持 `../vue.js` / `../client.js` 写法。
+
+**Files:**
+- Modify: `plugins/llm-dashboard/package.json`（加 `vue` devDependency）
+- Create: `plugins/llm-dashboard/vue.d.ts`
+- Create: `plugins/llm-dashboard/client.d.ts`
+- Create: `plugins/llm-dashboard/tsconfig.json`
+
+- [ ] **Step 1: 装 vue 类型（轻量 devDep）**
+
+Run: `bun add -D vue --cwd plugins/llm-dashboard`
+（或手动在 `plugins/llm-dashboard/package.json` 加 `"devDependencies": { "vue": "^3.5.0" }` 后 `bun install`。）
+
+- [ ] **Step 2: 建伪包 d.ts（放在 client 的上一级，对上 `../vue.js` / `../client.js`）**
+
+Create `plugins/llm-dashboard/vue.d.ts`:
+
+```ts
+// Type shim for the console-provided ../vue.js pseudo-package.
+// TS (Bundler resolution) resolves the client's `../vue.js` import to this file.
+export * from 'vue'
+```
+
+Create `plugins/llm-dashboard/client.d.ts`:
+
+```ts
+// Type shim for the console-provided ../client.js pseudo-package
+// (@koishijs/client runtime). Hand-declare only what client/*.js uses so we
+// don't need to install the heavy @koishijs/client package.
+export function send(type: string, ...args: any[]): Promise<any>
+```
+
+- [ ] **Step 3: scoped tsconfig，让编辑器解析 client 的 js**
+
+Create `plugins/llm-dashboard/tsconfig.json`:
+
+```jsonc
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["client", "vue.d.ts", "client.d.ts", "index.ts", "aggregate.ts"]
+}
+```
+
+- [ ] **Step 4: 验证 IDE 解析**
+
+在编辑器打开 `plugins/llm-dashboard/client/index.js`，确认 `import { defineComponent, h, ref } from '../vue.js'` 与 `import { send } from '../client.js'` 不再报"找不到模块"，`send` / `h` 有类型提示。运行时不受影响：`docker compose restart core` 后页面照常。
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/llm-dashboard/package.json plugins/llm-dashboard/vue.d.ts plugins/llm-dashboard/client.d.ts plugins/llm-dashboard/tsconfig.json bun.lock
+git commit -m "chore(llm-dashboard): IDE type shims for ../vue.js & ../client.js pseudo-packages"
+```
+
+---
+
 ## 收尾（人类在环）
 
 - 全部 task 完成后，`git push`，按需开 PR（`feat/llm-dashboard` → master）。
