@@ -14,6 +14,8 @@ services:
       sili-network:
         aliases:
           - core.sili.local
+    # 生产环境使用 caddy 反代，并带有路径拦截
+    # 勿暴露此端口到公网，否则攻击者可伪造消息或控制 bot 发言
     # ports:
     #   - '3100:3100'
     volumes:
@@ -22,6 +24,7 @@ services:
       - ./package.json:/app/package.json
       - ./bun.lock:/app/bun.lock
       - ./tsconfig.json:/app/tsconfig.json
+      - ./plugins/:/app/plugins
       - ./.npmrc:/app/.npmrc
       - ./.env:/app/.env
       # 只读挂 .git 供 version 指令读取当前 commit hash（宿主 pull 后实时可见）
