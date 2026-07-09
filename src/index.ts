@@ -91,6 +91,7 @@ import * as PluginDialogueContext from 'koishi-plugin-dialogue-context'
 import * as PluginDialogueFlow from 'koishi-plugin-dialogue-flow'
 import * as PluginDialogueRateLimit from 'koishi-plugin-dialogue-rate-limit'
 import * as PluginImageSearch from 'koishi-plugin-image-search'
+import * as PluginLlmAdmin from 'koishi-plugin-llm-admin'
 import * as PluginLlmDashboard from 'koishi-plugin-llm-dashboard'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
 import * as PluginNovelAi from 'koishi-plugin-novelai'
@@ -310,6 +311,7 @@ app.plugin(function PluginCollectionConsole(ctx) {
   ctx.plugin(PluginStatus)
   ctx.plugin(PluginSandbox)
   ctx.plugin(PluginLlmDashboard)
+  ctx.plugin(PluginLlmAdmin)
 })
 
 // 第三方
