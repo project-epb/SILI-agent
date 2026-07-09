@@ -96,6 +96,48 @@ function userPanel(users) {
   )
 }
 
+function buildTrendSvg(trend) {
+  const W = 720
+  const H = 200
+  const pad = { l: 8, r: 8, t: 12, b: 20 }
+  const n = trend.length
+  const max = Math.max(1, ...trend.map((d) => d.promptTokens + d.completionTokens))
+  const iw = W - pad.l - pad.r
+  const ih = H - pad.t - pad.b
+  const x = (i) => pad.l + (n <= 1 ? iw / 2 : (i / (n - 1)) * iw)
+  const y = (v) => pad.t + ih - (v / max) * ih
+
+  const promptPts = trend.map((d, i) => `${x(i)},${y(d.promptTokens)}`)
+  const totalPts = trend.map((d, i) => `${x(i)},${y(d.promptTokens + d.completionTokens)}`)
+  const base = `${pad.l + iw},${pad.t + ih} ${pad.l},${pad.t + ih}`
+
+  const totalArea = `<polygon points="${totalPts.join(' ')} ${base}" fill="var(--k-color-primary,#6a5acd)" fill-opacity="0.18"/>`
+  const promptArea = `<polygon points="${promptPts.join(' ')} ${base}" fill="var(--k-color-primary,#6a5acd)" fill-opacity="0.35"/>`
+  const totalLine = `<polyline points="${totalPts.join(' ')}" fill="none" stroke="var(--k-color-primary,#6a5acd)" stroke-width="1.5"/>`
+
+  const first = trend[0]?.date ?? ''
+  const last = trend[n - 1]?.date ?? ''
+  const labels =
+    `<text x="${pad.l}" y="${H - 6}" font-size="11" fill="var(--k-text-light,#999)">${first}</text>` +
+    `<text x="${W - pad.r}" y="${H - 6}" font-size="11" text-anchor="end" fill="var(--k-text-light,#999)">${last}</text>`
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${totalArea}${promptArea}${totalLine}${labels}</svg>`
+}
+
+function trendPanel(trend) {
+  const KCard = resolveComponent('k-card')
+  return h(
+    KCard,
+    { class: 'ld-panel ld-trend' },
+    {
+      default: () => [
+        h('div', { class: 'ld-panel-title' }, '用量趋势（下层 prompt / 上层含 completion）'),
+        h('div', { class: 'ld-chart', innerHTML: buildTrendSvg(trend) }),
+      ],
+    }
+  )
+}
+
 const Dashboard = defineComponent({
   name: 'LlmDashboard',
   setup() {
@@ -163,6 +205,7 @@ const Dashboard = defineComponent({
           ? h(KCard, {}, { default: () => (loading.value ? '加载中…' : '（无数据）') })
           : h('div', { class: 'ld-grid' }, [
               overviewCards(s.overview),
+              trendPanel(s.trend),
               h('div', { class: 'ld-panels' }, [modelPanel(s.models), userPanel(s.users)]),
             ])
 
