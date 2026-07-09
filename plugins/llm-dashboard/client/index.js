@@ -40,6 +40,62 @@ function overviewCards(o) {
   )
 }
 
+function rankRows(items, maxKey, rows) {
+  const max = Math.max(1, ...items.map((it) => it[maxKey]))
+  return items.map((it) =>
+    h('div', { class: 'ld-rank-row' }, [
+      h('div', { class: 'ld-rank-bar', style: `width:${(it[maxKey] / max) * 100}%` }),
+      h('div', { class: 'ld-rank-content' }, rows(it)),
+    ])
+  )
+}
+
+function modelPanel(models) {
+  const KCard = resolveComponent('k-card')
+  return h(
+    KCard,
+    { class: 'ld-panel' },
+    {
+      default: () => [
+        h('div', { class: 'ld-panel-title' }, '各模型消耗'),
+        models.length
+          ? h(
+              'div',
+              { class: 'ld-ranks' },
+              rankRows(models, 'totalTokens', (m) => [
+                h('span', { class: 'ld-rank-name' }, m.model),
+                h('span', { class: 'ld-rank-metric' }, `${fmt(m.totalTokens)} tok · ${fmt(m.calls)} 次`),
+              ])
+            )
+          : h('p', { class: 'ld-empty' }, '（无数据）'),
+      ],
+    }
+  )
+}
+
+function userPanel(users) {
+  const KCard = resolveComponent('k-card')
+  return h(
+    KCard,
+    { class: 'ld-panel' },
+    {
+      default: () => [
+        h('div', { class: 'ld-panel-title' }, 'TOP 用户'),
+        users.length
+          ? h(
+              'div',
+              { class: 'ld-ranks' },
+              rankRows(users, 'totalTokens', (u) => [
+                h('span', { class: 'ld-rank-name' }, u.name),
+                h('span', { class: 'ld-rank-metric' }, `${fmt(u.totalTokens)} tok · ${fmt(u.conversations)} 会话`),
+              ])
+            )
+          : h('p', { class: 'ld-empty' }, '（无数据）'),
+      ],
+    }
+  )
+}
+
 const Dashboard = defineComponent({
   name: 'LlmDashboard',
   setup() {
@@ -105,7 +161,10 @@ const Dashboard = defineComponent({
         ? h(KCard, { class: 'ld-error' }, { default: () => '加载失败：' + error.value })
         : !s
           ? h(KCard, {}, { default: () => (loading.value ? '加载中…' : '（无数据）') })
-          : h('div', { class: 'ld-grid' }, [overviewCards(s.overview)])
+          : h('div', { class: 'ld-grid' }, [
+              overviewCards(s.overview),
+              h('div', { class: 'ld-panels' }, [modelPanel(s.models), userPanel(s.users)]),
+            ])
 
       return h(KLayout, null, { default: () => h('div', { class: 'ld-root' }, [toolbar, content]) })
     }
