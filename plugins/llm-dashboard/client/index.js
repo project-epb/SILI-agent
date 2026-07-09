@@ -1,5 +1,6 @@
 import { defineComponent, h, onMounted, ref, resolveComponent, watch } from '../vue.js'
-import { send, store } from '../client.js'
+import { useRouter } from '../vue-router.js'
+import { icons, send, store } from '../client.js'
 
 const RANGES = [
   { value: 7, label: '7 天' },
@@ -62,13 +63,21 @@ function overviewCards(o) {
   )
 }
 
-function rankRows(items, maxKey, rows) {
+function rankRows(items, maxKey, rows, onRowClick) {
   const max = Math.max(1, ...items.map((it) => it[maxKey]))
   return items.map((it) =>
-    h('div', { class: 'ld-rank-row', key: it.model ?? it.id }, [
-      h('div', { class: 'ld-rank-bar', style: `width:${(it[maxKey] / max) * 100}%` }),
-      h('div', { class: 'ld-rank-content' }, rows(it)),
-    ])
+    h(
+      'div',
+      {
+        class: ['ld-rank-row', onRowClick ? 'ld-rank-clickable' : ''],
+        key: it.model ?? it.id,
+        ...(onRowClick ? { onClick: () => onRowClick(it) } : {}),
+      },
+      [
+        h('div', { class: 'ld-rank-bar', style: `width:${(it[maxKey] / max) * 100}%` }),
+        h('div', { class: 'ld-rank-content' }, rows(it)),
+      ]
+    )
   )
 }
 
@@ -99,30 +108,39 @@ function modelPanel(models) {
   )
 }
 
-function userPanel(users) {
+function userPanel(users, onUserClick) {
   const KCard = resolveComponent('k-card')
   return h(
     KCard,
     { class: 'ld-panel' },
     {
       default: () => [
-        h('div', { class: 'ld-panel-title' }, 'TOP 用户'),
+        h(
+          'div',
+          { class: 'ld-panel-title' },
+          onUserClick ? 'TOP 用户 · 点击进入管理' : 'TOP 用户'
+        ),
         users.length
           ? h(
               'div',
               { class: 'ld-ranks' },
-              rankRows(users, 'totalTokens', (u) => [
-                h('span', { class: 'ld-rank-name' }, [
-                  u.name ? h('span', { class: 'ld-user-nick' }, u.name) : null,
-                  u.account ? h('span', { class: 'ld-user-acct' }, u.account) : null,
-                  h('span', { class: 'ld-user-uid' }, `(#${u.id})`),
-                ]),
-                h(
-                  'span',
-                  { class: 'ld-rank-metric' },
-                  `${fmtShort(u.totalTokens)} tok (入 ${fmtShort(u.promptTokens)} / 出 ${fmtShort(u.completionTokens)}) · ${fmt(u.conversations)} 会话`
-                ),
-              ])
+              rankRows(
+                users,
+                'totalTokens',
+                (u) => [
+                  h('span', { class: 'ld-rank-name' }, [
+                    u.name ? h('span', { class: 'ld-user-nick' }, u.name) : null,
+                    u.account ? h('span', { class: 'ld-user-acct' }, u.account) : null,
+                    h('span', { class: 'ld-user-uid' }, `(#${u.id})`),
+                  ]),
+                  h(
+                    'span',
+                    { class: 'ld-rank-metric' },
+                    `${fmtShort(u.totalTokens)} tok (入 ${fmtShort(u.promptTokens)} / 出 ${fmtShort(u.completionTokens)}) · ${fmt(u.conversations)} 会话`
+                  ),
+                ],
+                onUserClick
+              )
             )
           : h('p', { class: 'ld-empty' }, '（无数据）'),
       ],
@@ -202,6 +220,12 @@ const Dashboard = defineComponent({
       load()
     }
 
+    // 点 TOP 用户 → 跳到用户管理台并定位该用户（仅 sysop，见下方 authority 门）
+    const router = useRouter()
+    function openAdminUser(u) {
+      router.push({ path: '/llm-admin', query: { user: u.id } })
+    }
+
     onMounted(() => {
       if (store.user) load()
       else {
@@ -221,6 +245,8 @@ const Dashboard = defineComponent({
       const KLayout = resolveComponent('k-layout')
       const KCard = resolveComponent('k-card')
       const s = stats.value
+      // 管理台是 authority 4 仅 sysop；低权限用户不给可点入口，避免点了跳去被拦
+      const canAdmin = (store.user?.authority ?? 0) >= 4
 
       const toolbar = h('div', { class: 'ld-toolbar' }, [
         h(
@@ -244,7 +270,10 @@ const Dashboard = defineComponent({
           : h('div', { class: 'ld-grid' }, [
               overviewCards(s.overview),
               trendPanel(s.trend),
-              h('div', { class: 'ld-panels' }, [modelPanel(s.models), userPanel(s.users)]),
+              h('div', { class: 'ld-panels' }, [
+                modelPanel(s.models),
+                userPanel(s.users, canAdmin ? openAdminUser : null),
+              ]),
             ])
 
       return h(KLayout, null, { default: () => h('div', { class: 'ld-root' }, [toolbar, content]) })
@@ -253,11 +282,21 @@ const Dashboard = defineComponent({
 })
 
 export default (ctx) => {
+  // 侧栏图标：柱状图（用量），与用户管理台的人形图标区分
+  icons.register('llm-usage', {
+    render: () =>
+      h('svg', { viewBox: '0 0 24 24', fill: 'currentColor', xmlns: 'http://www.w3.org/2000/svg' }, [
+        h('rect', { x: 3, y: 12, width: 4, height: 8, rx: 1 }),
+        h('rect', { x: 10, y: 7, width: 4, height: 13, rx: 1 }),
+        h('rect', { x: 17, y: 3, width: 4, height: 17, rx: 1 }),
+      ]),
+  })
   ctx.page({
     path: '/llm-dashboard',
     name: 'LLM 用量',
     authority: 3,
     order: 100,
+    icon: 'llm-usage',
     component: Dashboard,
   })
 }

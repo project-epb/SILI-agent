@@ -1,6 +1,6 @@
 import { defineComponent, h, nextTick, onMounted, onUnmounted, ref, resolveComponent, watch } from '../vue.js'
 import { useRoute, useRouter } from '../vue-router.js'
-import { send, store } from '../client.js'
+import { icons, send, store } from '../client.js'
 
 function fmt(n) {
   return (n ?? 0).toLocaleString('en-US')
@@ -697,11 +697,20 @@ const Admin = defineComponent({
 })
 
 export default (ctx) => {
+  // 侧栏图标：人形（用户管理），与用量仪表盘的柱状图区分
+  icons.register('llm-admin-users', {
+    render: () =>
+      h('svg', { viewBox: '0 0 24 24', fill: 'currentColor', xmlns: 'http://www.w3.org/2000/svg' }, [
+        h('circle', { cx: 12, cy: 7.5, r: 4.5 }),
+        h('path', { d: 'M3.5 21 a8.5 8.5 0 0 1 17 0 z' }),
+      ]),
+  })
   ctx.page({
     path: '/llm-admin',
     name: 'LLM 用户管理',
     authority: 4,
     order: 90,
+    icon: 'llm-admin-users',
     component: Admin,
   })
 }
