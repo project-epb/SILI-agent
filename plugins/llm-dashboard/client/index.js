@@ -1,4 +1,4 @@
-import { defineComponent, h, onMounted, ref } from '../vue.js'
+import { defineComponent, h, onMounted, ref, resolveComponent } from '../vue.js'
 import { send } from '../client.js'
 
 const Dashboard = defineComponent({
@@ -23,14 +23,16 @@ const Dashboard = defineComponent({
     onMounted(() => load())
 
     return () => {
+      const KLayout = resolveComponent('k-layout')
+      const KCard = resolveComponent('k-card')
       const s = stats.value
       const body = error.value
         ? h('p', { style: 'color:var(--k-color-danger,#e05)' }, '加载失败：' + error.value)
         : !s
           ? h('p', loading.value ? '加载中…' : '（无数据）')
           : h('pre', { style: 'white-space:pre-wrap' }, JSON.stringify(s.overview, null, 2))
-      return h('k-layout', null, {
-        default: () => h('k-card', { style: 'margin:1.5rem' }, { default: () => body }),
+      return h(KLayout, null, {
+        default: () => h(KCard, { style: 'margin:1.5rem' }, { default: () => body }),
       })
     }
   },
