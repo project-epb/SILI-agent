@@ -310,6 +310,7 @@ const Admin = defineComponent({
     const chatEl = ref(null)
     const err = ref('')
     const ready = ref(false)
+    const rotating = ref(false)
 
     const uid = () => (route.query.user ? Number(route.query.user) : null)
     const cid = () => route.query.session || null
@@ -378,6 +379,28 @@ const Admin = defineComponent({
         sessionTotal.value = res.total
       } catch (e) {
         err.value = e?.message ?? String(e)
+      }
+    }
+    // 强制轮转：写操作，二次确认后 send，成功刷新会话列表（新会话应标「当前」）
+    async function rotate(e) {
+      e.stopPropagation() // 防冒泡触发头部「回总览」
+      const id = uid()
+      if (id == null || rotating.value) return
+      if (
+        !window.confirm(
+          '确认给该用户强制轮转 session？下条消息将从空白新会话开始。'
+        )
+      )
+        return
+      rotating.value = true
+      err.value = ''
+      try {
+        await send('llm-admin/rotate', { id })
+        await loadUser(id)
+      } catch (e2) {
+        err.value = e2?.message ?? String(e2)
+      } finally {
+        rotating.value = false
       }
     }
     async function loadMoreSessions() {
@@ -547,7 +570,18 @@ const Admin = defineComponent({
             onClick: backToOverview,
           },
           [
-            h('button', { class: 'la-back', onClick: (e) => { e.stopPropagation(); goSearch() } }, '← 返回搜索'),
+            h('div', { class: 'la-user-head-top' }, [
+              h('button', { class: 'la-back', onClick: (e) => { e.stopPropagation(); goSearch() } }, '← 返回搜索'),
+              h(
+                'button',
+                {
+                  class: 'la-btn la-rotate',
+                  disabled: rotating.value,
+                  onClick: rotate,
+                },
+                rotating.value ? '轮转中…' : '强制轮转 ⚠'
+              ),
+            ]),
             h('div', { class: 'la-user-ident' }, ident(headIdent)),
             h('div', { class: 'la-user-meta' }, o ? `${o.sessionCount} 个会话 · ${fmtShort(o.totalTokens)} tok` : '加载中…'),
             inSession ? h('div', { class: 'la-user-hint' }, '← 点此看用户总览') : null,

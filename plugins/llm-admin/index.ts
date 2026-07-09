@@ -77,6 +77,11 @@ declare module '@koishijs/console' {
       error?: string
     }
     'llm-admin/memory-clear'(payload: { id: number }): { ok: boolean }
+    // 写操作：强制轮转 session（纯新开，不压缩、不带 prev_session_id）。
+    'llm-admin/rotate'(payload: { id: number }): {
+      ok: true
+      conversationId: string
+    }
   }
 }
 
@@ -354,6 +359,41 @@ export function apply(ctx: Context) {
       const platform = await memoryPlatform(id)
       const ok = await ctx.llm.memory.delete(platform, String(id))
       return { ok }
+    },
+    { authority: AUTH }
+  )
+
+  // ---- 强制轮转 session（写操作，仅 sysop）----
+  // 纯新开：mint 一个新 conversation_id，建全新 openai_session（不传
+  // prevSessionId → prev_session_id 落空串，非压缩派生），把 user 的
+  // openai_last_conversation_id 指向它，并同步在飞的 activeChats entry
+  // （若该用户此刻正有 chat 在跑），避免打断进来读到旧 id 又分歧。
+  // 复刻 commands/chat.tsx 的 idle-rotate 路径，但主动触发、且不做 summary。
+  // 日志只记 id / 新旧 conversation_id，绝不落会话正文。
+  ctx.console.addListener(
+    'llm-admin/rotate',
+    async ({ id }) => {
+      const newId = crypto.randomUUID()
+      const platform = await memoryPlatform(id)
+      await ctx.llm.sessions.create({
+        conversationId: newId,
+        conversationOwner: id,
+        platform,
+        userId: String(id),
+        userFirstMsg: '', // fresh blank session; no seeded utterance
+      })
+      await db.set('user', { id }, {
+        openai_last_conversation_id: newId,
+      } as any)
+      // activeChats 按 owner id 键；有在飞 chat 则把它写向新会话
+      const active = ctx.llm.activeChats.get(id)
+      if (active) active.conversationId = newId
+      ctx.logger('llm-admin').info(
+        '[rotate] user #%d rotated to fresh session %s',
+        id,
+        newId
+      )
+      return { ok: true, conversationId: newId }
     },
     { authority: AUTH }
   )

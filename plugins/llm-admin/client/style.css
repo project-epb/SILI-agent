@@ -45,9 +45,22 @@
 .la-user-head.clickable { cursor: pointer; }
 .la-user-head.clickable:hover { background: var(--k-hover-bg, rgba(128,128,128,0.06)); }
 .la-user-hint { font-size: 0.72rem; color: var(--k-color-primary, #6a5acd); margin-top: 0.35rem; }
+.la-user-head-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.6rem; margin-bottom: 0.5rem;
+}
 .la-back {
   background: none; border: none; color: var(--k-color-primary, #6a5acd);
-  cursor: pointer; padding: 0; font-size: 0.85rem; margin-bottom: 0.5rem;
+  cursor: pointer; padding: 0; font-size: 0.85rem;
+}
+/* 强制轮转：写操作，警示色（danger 边框 + 文字，透明底） */
+.la-rotate {
+  padding: 0.3rem 0.7rem; font-size: 0.78rem;
+  background: none; color: var(--k-color-danger, #e0533d);
+  border: 1px solid var(--k-color-danger, #e0533d);
+}
+.la-rotate:hover:not(:disabled) {
+  background: var(--k-color-danger, #e0533d); color: #fff;
 }
 .la-user-ident { font-size: 1.05rem; margin-bottom: 0.25rem; }
 .la-user-meta { font-size: 0.8rem; color: var(--k-text-light, #999); }
