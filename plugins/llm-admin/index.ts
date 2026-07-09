@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import '@koishijs/console'
 
 import { type UserOverview, type UserUsageRow, aggregateUserOverview } from './aggregate-user'
+import { matchUser, paginate } from './filters'
 
 // ⚠ 隐私敏感：本插件暴露用户长期记忆与会话正文，authority 4（仅 sysop）门控所有
 // listener（读也拦），且服务端日志不落记忆/会话正文。这是原型 spike，正式版走 spec。
@@ -43,9 +44,17 @@ type ChatMsg = { time: number } & (
 
 declare module '@koishijs/console' {
   interface Events {
-    'llm-admin/search'(payload: { q: string }): AdminUser[]
+    'llm-admin/search'(payload: {
+      q: string
+      limit?: number
+      offset?: number
+    }): { total: number; users: AdminUser[] }
     'llm-admin/overview'(payload: { id: number }): UserOverview | null
-    'llm-admin/sessions'(payload: { id: number }): SessionRow[]
+    'llm-admin/sessions'(payload: {
+      id: number
+      limit?: number
+      offset?: number
+    }): { total: number; rows: SessionRow[] }
     'llm-admin/session'(payload: { conversationId: string }): ChatMsg[]
   }
 }
@@ -74,8 +83,7 @@ export function apply(ctx: Context) {
   // ---- 搜索：#id 精确 / platform:pid 子串 / 昵称子串 ----
   ctx.console.addListener(
     'llm-admin/search',
-    async ({ q }) => {
-      const query = (q ?? '').trim().toLowerCase()
+    async ({ q, limit = 50, offset = 0 }) => {
       // 候选池 = 有过会话的用户
       const sessions = await db.get(
         'openai_session',
@@ -84,21 +92,16 @@ export function apply(ctx: Context) {
       )
       const ids = [...new Set(sessions.map((s) => s.conversation_owner))]
       const { nameMap, acctMap } = await resolveIdentities(ids)
-      const all: AdminUser[] = ids.map((id) => ({
-        id,
-        name: nameMap.get(id) || '',
-        account: acctMap.get(id) || '',
-      }))
-      const matched = !query
-        ? all
-        : all.filter(
-            (u) =>
-              `#${u.id}` === query ||
-              String(u.id) === query ||
-              u.account.toLowerCase().includes(query) ||
-              u.name.toLowerCase().includes(query)
-          )
-      return matched.sort((a, b) => a.id - b.id).slice(0, 50)
+      const all: AdminUser[] = ids
+        .map((id) => ({
+          id,
+          name: nameMap.get(id) || '',
+          account: acctMap.get(id) || '',
+        }))
+        .filter((u) => matchUser(u, q))
+        .sort((a, b) => a.id - b.id)
+      const { total, page } = paginate(all, limit, offset)
+      return { total, users: page }
     },
     { authority: AUTH }
   )
@@ -128,7 +131,7 @@ export function apply(ctx: Context) {
   // ---- 会话列表：按最后活跃倒序 ----
   ctx.console.addListener(
     'llm-admin/sessions',
-    async ({ id }) => {
+    async ({ id, limit = 30, offset = 0 }) => {
       const rows = await db.get(
         'openai_session',
         { conversation_owner: id },
@@ -148,26 +151,36 @@ export function apply(ctx: Context) {
         { fields: ['openai_last_conversation_id'] }
       )
       const currentConv = (user[0] as any)?.openai_last_conversation_id ?? ''
-      // 每会话轮数（去重 turn_number）
-      const result: SessionRow[] = []
-      for (const s of rows) {
-        const chatRows = await db.get(
-          'openai_chat',
-          { conversation_id: s.conversation_id },
-          { fields: ['turn_number'] }
-        )
-        const turns = new Set(chatRows.map((c) => c.turn_number)).size
-        result.push({
-          conversationId: s.conversation_id,
-          title: s.user_first_msg || '(空)',
-          startedAt: s.started_at,
-          lastUsedAt: s.last_used_at,
-          isCurrent: s.conversation_id === currentConv,
-          isCompacted: !!s.prev_session_id,
-          turns,
-        })
+
+      const sorted = [...rows].sort((a, b) => b.last_used_at - a.last_used_at)
+      const { total, page } = paginate(sorted, limit, offset)
+
+      // 只对当前页 conversation_id 批量查一次轮数，避免 N+1
+      const convIds = page.map((s) => s.conversation_id)
+      const turnRows = convIds.length
+        ? await db.get(
+            'openai_chat',
+            { conversation_id: convIds },
+            { fields: ['conversation_id', 'turn_number'] }
+          )
+        : []
+      const turnSet = new Map<string, Set<number>>()
+      for (const t of turnRows) {
+        const set = turnSet.get(t.conversation_id) ?? new Set<number>()
+        set.add(t.turn_number)
+        turnSet.set(t.conversation_id, set)
       }
-      return result.sort((a, b) => b.lastUsedAt - a.lastUsedAt)
+
+      const out: SessionRow[] = page.map((s) => ({
+        conversationId: s.conversation_id,
+        title: s.user_first_msg || '(空)',
+        startedAt: s.started_at,
+        lastUsedAt: s.last_used_at,
+        isCurrent: s.conversation_id === currentConv,
+        isCompacted: !!s.prev_session_id,
+        turns: turnSet.get(s.conversation_id)?.size ?? 0,
+      }))
+      return { total, rows: out }
     },
     { authority: AUTH }
   )

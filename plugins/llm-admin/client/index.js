@@ -153,11 +153,20 @@ const Admin = defineComponent({
     const route = useRoute()
     const router = useRouter()
 
+    const SEARCH_PAGE = 50
+    const SESSION_PAGE = 30
+
     const q = ref('')
     const results = ref(null)
+    const searchTotal = ref(0)
+    const searchOffset = ref(0)
+    const searchingMore = ref(false)
     const searching = ref(false)
     const overview = ref(null)
     const sessions = ref(null)
+    const sessionTotal = ref(0)
+    const sessionOffset = ref(0)
+    const sessionsMore = ref(false)
     const msgs = ref(null)
     const err = ref('')
     const ready = ref(false)
@@ -167,13 +176,39 @@ const Admin = defineComponent({
 
     async function doSearch() {
       searching.value = true
+      searchOffset.value = 0
       err.value = ''
       try {
-        results.value = await send('llm-admin/search', { q: q.value })
+        const res = await send('llm-admin/search', {
+          q: q.value,
+          limit: SEARCH_PAGE,
+          offset: 0,
+        })
+        results.value = res.users
+        searchTotal.value = res.total
       } catch (e) {
         err.value = e?.message ?? String(e)
       } finally {
         searching.value = false
+      }
+    }
+    async function loadMoreSearch() {
+      searchingMore.value = true
+      err.value = ''
+      try {
+        const offset = searchOffset.value + SEARCH_PAGE
+        const res = await send('llm-admin/search', {
+          q: q.value,
+          limit: SEARCH_PAGE,
+          offset,
+        })
+        searchOffset.value = offset
+        results.value = [...(results.value || []), ...res.users]
+        searchTotal.value = res.total
+      } catch (e) {
+        err.value = e?.message ?? String(e)
+      } finally {
+        searchingMore.value = false
       }
     }
 
@@ -190,11 +225,40 @@ const Admin = defineComponent({
     async function loadUser(id) {
       overview.value = null
       sessions.value = null
+      sessionOffset.value = 0
+      sessionTotal.value = 0
       try {
         overview.value = await send('llm-admin/overview', { id })
-        sessions.value = await send('llm-admin/sessions', { id })
+        const res = await send('llm-admin/sessions', {
+          id,
+          limit: SESSION_PAGE,
+          offset: 0,
+        })
+        sessions.value = res.rows
+        sessionTotal.value = res.total
       } catch (e) {
         err.value = e?.message ?? String(e)
+      }
+    }
+    async function loadMoreSessions() {
+      const id = uid()
+      if (id == null) return
+      sessionsMore.value = true
+      err.value = ''
+      try {
+        const offset = sessionOffset.value + SESSION_PAGE
+        const res = await send('llm-admin/sessions', {
+          id,
+          limit: SESSION_PAGE,
+          offset,
+        })
+        sessionOffset.value = offset
+        sessions.value = [...(sessions.value || []), ...res.rows]
+        sessionTotal.value = res.total
+      } catch (e) {
+        err.value = e?.message ?? String(e)
+      } finally {
+        sessionsMore.value = false
       }
     }
     async function loadSession(conv) {
@@ -266,13 +330,24 @@ const Admin = defineComponent({
         results.value === null
           ? h('p', { class: 'la-dim' }, '输入后搜索，或留空点搜索列出全部聊过的用户。')
           : results.value.length
-            ? h(
-                'div',
-                { class: 'la-result-list' },
-                results.value.map((u) =>
+            ? h('div', { class: 'la-result-list' }, [
+                ...results.value.map((u) =>
                   h('div', { class: 'la-result', onClick: () => openUser(u.id) }, ident(u))
-                )
-              )
+                ),
+                results.value.length < searchTotal.value
+                  ? h(
+                      'button',
+                      {
+                        class: 'la-btn la-more',
+                        disabled: searchingMore.value,
+                        onClick: loadMoreSearch,
+                      },
+                      searchingMore.value
+                        ? '加载中…'
+                        : `加载更多（${results.value.length}/${searchTotal.value}）`
+                    )
+                  : null,
+              ])
             : h('p', { class: 'la-dim' }, '（无匹配用户）'),
       ])
     }
@@ -300,23 +375,38 @@ const Admin = defineComponent({
           sessions.value === null
             ? [h('p', { class: 'la-dim' }, '加载中…')]
             : sessions.value.length
-              ? sessions.value.map((s) =>
-                  h(
-                    'div',
-                    {
-                      class: ['la-session', cid() === s.conversationId ? 'active' : ''],
-                      onClick: () => openSession(s.conversationId),
-                    },
-                    [
-                      h('div', { class: 'la-session-title' }, [
-                        s.isCurrent ? h('span', { class: 'la-badge la-badge-cur' }, '当前') : null,
-                        s.isCompacted ? h('span', { class: 'la-badge' }, '压缩') : null,
-                        h('span', {}, s.title),
-                      ]),
-                      h('div', { class: 'la-session-meta' }, `${when(s.lastUsedAt)} · ${s.turns} 轮`),
-                    ]
-                  )
-                )
+              ? [
+                  ...sessions.value.map((s) =>
+                    h(
+                      'div',
+                      {
+                        class: ['la-session', cid() === s.conversationId ? 'active' : ''],
+                        onClick: () => openSession(s.conversationId),
+                      },
+                      [
+                        h('div', { class: 'la-session-title' }, [
+                          s.isCurrent ? h('span', { class: 'la-badge la-badge-cur' }, '当前') : null,
+                          s.isCompacted ? h('span', { class: 'la-badge' }, '压缩') : null,
+                          h('span', {}, s.title),
+                        ]),
+                        h('div', { class: 'la-session-meta' }, `${when(s.lastUsedAt)} · ${s.turns} 轮`),
+                      ]
+                    )
+                  ),
+                  sessions.value.length < sessionTotal.value
+                    ? h(
+                        'button',
+                        {
+                          class: 'la-btn la-more',
+                          disabled: sessionsMore.value,
+                          onClick: loadMoreSessions,
+                        },
+                        sessionsMore.value
+                          ? '加载中…'
+                          : `加载更多（${sessions.value.length}/${sessionTotal.value}）`
+                      )
+                    : null,
+                ]
               : [h('p', { class: 'la-dim' }, '（无会话）')]
         ),
       ])
