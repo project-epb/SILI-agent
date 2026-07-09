@@ -33,11 +33,14 @@
 .la-uid { color: var(--k-text-light, #999); font-size: 0.85em; }
 
 /* ---------- 详情：master-detail ---------- */
-.la-detail { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
+.la-detail { flex: 1; min-height: 0; position: relative; display: grid; grid-template-columns: 320px 1fr; }
 .la-left {
   min-height: 0; display: flex; flex-direction: column;
   border-right: 1px solid var(--k-color-border, #eee);
 }
+/* 详情栏外壳：宽屏是右侧 split view 面板；窄屏变从右滑入的导航层（见文末媒体查询） */
+.la-detail-pane { min-height: 0; display: flex; flex-direction: column; }
+.la-pane-bar { display: none; } /* 宽屏无导航栏 */
 .la-user-head {
   padding: 1rem; border-bottom: 1px solid var(--k-color-border, #eee);
   position: sticky; top: 0; background: var(--k-page-bg, var(--k-card-bg, #fff)); z-index: 1;
@@ -87,7 +90,7 @@
 }
 .la-badge-cur { background: var(--k-color-primary, #6a5acd); color: #fff; }
 
-.la-right { min-height: 0; overflow-y: auto; padding: 1.2rem; display: flex; flex-direction: column; }
+.la-right { flex: 1; min-height: 0; overflow-y: auto; padding: 1.2rem; display: flex; flex-direction: column; }
 
 /* ---------- 总览 ---------- */
 .la-overview { display: flex; flex-direction: column; gap: 1rem; }
@@ -162,3 +165,48 @@
   border: 1px solid var(--k-color-danger, #e0533d);
 }
 .la-mem-msg { font-size: 0.8rem; color: var(--k-text-light, #999); }
+
+/* ---------- 窄屏：iOS split view 折叠成导航栈 ---------- */
+/* 宽屏 = 会话列表 + 详情并排；窄屏 = 会话列表打底，详情层从右滑入覆盖，顶部返回栏 */
+@media (max-width: 720px) {
+  /* 列表铺满；详情层 absolute 覆盖其上。overflow:hidden 裁掉滑出屏幕的详情层，
+     否则 translateX(100%) 会撑出横向滚动、把头部按钮挤出视口 */
+  .la-detail { grid-template-columns: 1fr; overflow: hidden; }
+  .la-left { border-right: none; }
+
+  /* 会话列表顶部的用户区可点 → 打开总览层 */
+  .la-user-head.la-head-tap { cursor: pointer; }
+  .la-user-head.la-head-tap::after {
+    content: '›'; position: absolute; right: 0.9rem; top: 50%; transform: translateY(-50%);
+    color: var(--k-color-primary, #6a5acd); font-size: 1.2rem; line-height: 1;
+  }
+  .la-user-head { position: relative; }
+
+  /* 详情层：从右滑入的覆盖层 */
+  .la-detail-pane {
+    position: absolute; inset: 0; z-index: 20;
+    background: var(--k-page-bg, var(--k-card-bg, #fff));
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  }
+  .la-detail-pane.la-pane-open { transform: translateX(0); }
+
+  /* 顶部导航栏：返回 + 标题 */
+  .la-pane-bar {
+    display: flex; align-items: center; gap: 0.6rem; flex: none;
+    padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--k-color-border, #eee);
+    background: var(--k-page-bg, var(--k-card-bg, #fff));
+  }
+  .la-pane-back {
+    background: none; border: none; cursor: pointer; padding: 0.2rem 0;
+    color: var(--k-color-primary, #6a5acd); font-size: 0.9rem; white-space: nowrap;
+  }
+  .la-pane-title {
+    font-weight: 600; font-size: 0.9rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .la-right { padding: 1rem; }
+  .la-cards { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); } /* 卡片更紧凑 */
+}
