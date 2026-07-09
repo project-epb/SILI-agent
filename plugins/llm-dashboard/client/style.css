@@ -17,6 +17,7 @@
 }
 .ld-card-label { font-size: 0.85rem; color: var(--k-text-light, #888); }
 .ld-card-value { font-size: 1.6rem; font-weight: 600; margin: 0.25rem 0; }
+.ld-card-sub { font-size: 0.75rem; color: var(--k-text-light, #888); margin-bottom: 0.2rem; }
 .ld-delta { font-size: 0.8rem; }
 .ld-up { color: #e0533d; }
 .ld-down { color: #2ca05a; }
@@ -34,8 +35,13 @@
 }
 .ld-rank-content { position: relative; display: flex; justify-content: space-between; gap: 1rem; font-size: 0.9rem; }
 .ld-rank-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ld-rank-name > span + span { margin-left: 0.35rem; }
+.ld-user-nick { font-weight: 600; }
+.ld-user-acct { color: var(--k-text-normal, #666); }
+.ld-user-uid { color: var(--k-text-light, #999); font-size: 0.85em; }
 .ld-rank-metric { color: var(--k-text-light, #888); white-space: nowrap; }
 .ld-empty { color: var(--k-text-light, #999); }
 .ld-chart { width: 100%; line-height: 0; }
 .ld-chart svg { display: block; width: 100%; height: 180px; }
+.ld-chart-axis { display: flex; justify-content: space-between; margin-top: 0.25rem; font-size: 0.72rem; color: var(--k-text-light, #999); }
 .ld-error { color: var(--k-color-danger, #e0533d); }

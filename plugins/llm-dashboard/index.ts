@@ -52,9 +52,29 @@ export function apply(ctx: Context) {
           )
         : []
       const nameMap = new Map(users.map((u) => [u.id, u.name]))
-      const nameOf = (id: number) => nameMap.get(id) || `#${id}`
 
-      return aggregateStats(rows, rangeDays, now, nameOf)
+      // Resolve each owner's first platform binding (platform:pid) for the TOP-user
+      // panel — a bare koishi user id isn't enough to tell who someone is.
+      const bindings = ownerIds.length
+        ? await ctx.database.get(
+            'binding',
+            { aid: ownerIds },
+            { fields: ['aid', 'platform', 'pid', 'bid'] }
+          )
+        : []
+      const accountMap = new Map<number, string>()
+      for (const b of [...bindings].sort((a, b) => a.bid - b.bid)) {
+        // Lowest bid wins → deterministic "first" binding across refreshes.
+        if (!accountMap.has(b.aid))
+          accountMap.set(b.aid, `${b.platform}:${b.pid}`)
+      }
+
+      const identityOf = (id: number) => ({
+        name: nameMap.get(id) || '',
+        account: accountMap.get(id) || '',
+      })
+
+      return aggregateStats(rows, rangeDays, now, identityOf)
     },
     { authority: 3 }
   )

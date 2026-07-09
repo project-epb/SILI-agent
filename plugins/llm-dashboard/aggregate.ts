@@ -19,6 +19,8 @@ export interface OverviewMetrics {
   totalTokens: number
   promptTokens: number
   completionTokens: number
+  // cachedTokens ⊂ promptTokens — display-only insight, never part of totalTokens.
+  cachedTokens: number
   activeUsers: number
   conversations: number
 }
@@ -32,10 +34,17 @@ export interface DashboardStats {
     completionTokens: number
     calls: number
   }>
-  models: Array<{ model: string; calls: number; totalTokens: number }>
+  models: Array<{
+    model: string
+    calls: number
+    totalTokens: number
+    promptTokens: number
+    completionTokens: number
+  }>
   users: Array<{
     id: number
     name: string
+    account: string
     totalTokens: number
     conversations: number
   }>
@@ -63,17 +72,20 @@ function nextLocalDay(time: number): number {
 }
 
 // cachedTokens ⊂ promptTokens, reasoningTokens ⊂ completionTokens — never re-add.
+// `cached` is surfaced only as a display-only breakdown, not summed into total.
 function rowTokens(u: ChatUsage | null) {
   const prompt = u?.promptTokens ?? 0
   const completion = u?.completionTokens ?? 0
+  const cached = u?.cachedTokens ?? 0
   const total = u?.totalTokens ?? prompt + completion
-  return { prompt, completion, total }
+  return { prompt, completion, cached, total }
 }
 
 function overviewOf(rows: UsageRow[]): OverviewMetrics {
   let totalTokens = 0
   let promptTokens = 0
   let completionTokens = 0
+  let cachedTokens = 0
   const users = new Set<number>()
   const convs = new Set<string>()
   for (const r of rows) {
@@ -81,6 +93,7 @@ function overviewOf(rows: UsageRow[]): OverviewMetrics {
     totalTokens += t.total
     promptTokens += t.prompt
     completionTokens += t.completion
+    cachedTokens += t.cached
     users.add(r.conversation_owner)
     convs.add(r.conversation_id)
   }
@@ -89,6 +102,7 @@ function overviewOf(rows: UsageRow[]): OverviewMetrics {
     totalTokens,
     promptTokens,
     completionTokens,
+    cachedTokens,
     activeUsers: users.size,
     conversations: convs.size,
   }
@@ -98,7 +112,7 @@ export function aggregateStats(
   rows: UsageRow[],
   rangeDays: number,
   now: number,
-  nameOf: (id: number) => string
+  identityOf: (id: number) => { name: string; account: string }
 ): DashboardStats {
   const windowMs = rangeDays * DAY
   const curStart = now - windowMs
@@ -141,11 +155,27 @@ export function aggregateStats(
     })
   }
 
-  const byModel = new Map<string, { calls: number; totalTokens: number }>()
+  const byModel = new Map<
+    string,
+    {
+      calls: number
+      totalTokens: number
+      promptTokens: number
+      completionTokens: number
+    }
+  >()
   for (const r of current) {
-    const m = byModel.get(r.model) ?? { calls: 0, totalTokens: 0 }
+    const m = byModel.get(r.model) ?? {
+      calls: 0,
+      totalTokens: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+    }
+    const t = rowTokens(r.usage)
     m.calls += 1
-    m.totalTokens += rowTokens(r.usage).total
+    m.totalTokens += t.total
+    m.promptTokens += t.prompt
+    m.completionTokens += t.completion
     byModel.set(r.model, m)
   }
   const models = [...byModel.entries()]
@@ -163,12 +193,16 @@ export function aggregateStats(
     byUser.set(r.conversation_owner, u)
   }
   const users = [...byUser.entries()]
-    .map(([id, v]) => ({
-      id,
-      name: nameOf(id),
-      totalTokens: v.totalTokens,
-      conversations: v.convs.size,
-    }))
+    .map(([id, v]) => {
+      const idt = identityOf(id)
+      return {
+        id,
+        name: idt.name,
+        account: idt.account,
+        totalTokens: v.totalTokens,
+        conversations: v.convs.size,
+      }
+    })
     .sort((a, b) => b.totalTokens - a.totalTokens)
     .slice(0, 10)
 

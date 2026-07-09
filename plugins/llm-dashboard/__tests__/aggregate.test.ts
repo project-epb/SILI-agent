@@ -16,7 +16,11 @@ function row(partial: Partial<UsageRow> = {}): UsageRow {
   }
 }
 
-const nameOf = (id: number) => ({ 1: 'Alice', 2: 'Bob' })[id] ?? `#${id}`
+const identityOf = (id: number) =>
+  ({
+    1: { name: 'Alice', account: 'onebot:1001' },
+    2: { name: 'Bob', account: 'onebot:2002' },
+  })[id] ?? { name: '', account: '' }
 
 describe('aggregateStats', () => {
   it('aggregates the current-window overview', () => {
@@ -26,17 +30,24 @@ describe('aggregateStats', () => {
         row({
           conversation_owner: 2,
           conversation_id: 'c2',
-          usage: { promptTokens: 200, completionTokens: 100, totalTokens: 300 },
+          usage: {
+            promptTokens: 200,
+            completionTokens: 100,
+            totalTokens: 300,
+            cachedTokens: 80,
+          },
         }),
       ],
       7,
       now,
-      nameOf
+      identityOf
     )
     expect(stats.overview.calls).toBe(2)
     expect(stats.overview.totalTokens).toBe(450)
     expect(stats.overview.promptTokens).toBe(300)
     expect(stats.overview.completionTokens).toBe(150)
+    // cachedTokens is summed for display but never folded into totalTokens.
+    expect(stats.overview.cachedTokens).toBe(80)
     expect(stats.overview.activeUsers).toBe(2)
     expect(stats.overview.conversations).toBe(2)
   })
@@ -46,7 +57,7 @@ describe('aggregateStats', () => {
       [row({ time: now - DAY }), row({ time: now - 9 * DAY })],
       7,
       now,
-      nameOf
+      identityOf
     )
     expect(stats.overview.calls).toBe(1)
     expect(stats.overview.prev.calls).toBe(1)
@@ -55,27 +66,40 @@ describe('aggregateStats', () => {
   it('ranks models by total tokens descending', () => {
     const stats = aggregateStats(
       [
-        row({ model: 'gpt-4o', usage: { totalTokens: 100 } }),
-        row({ model: 'claude-sonnet-4-6', usage: { totalTokens: 500 } }),
-        row({ model: 'gpt-4o', usage: { totalTokens: 100 } }),
+        row({
+          model: 'gpt-4o',
+          usage: { promptTokens: 80, completionTokens: 20, totalTokens: 100 },
+        }),
+        row({
+          model: 'claude-sonnet-4-6',
+          usage: { promptTokens: 400, completionTokens: 100, totalTokens: 500 },
+        }),
+        row({
+          model: 'gpt-4o',
+          usage: { promptTokens: 80, completionTokens: 20, totalTokens: 100 },
+        }),
       ],
       7,
       now,
-      nameOf
+      identityOf
     )
     expect(stats.models[0]).toEqual({
       model: 'claude-sonnet-4-6',
       calls: 1,
       totalTokens: 500,
+      promptTokens: 400,
+      completionTokens: 100,
     })
     expect(stats.models[1]).toEqual({
       model: 'gpt-4o',
       calls: 2,
       totalTokens: 200,
+      promptTokens: 160,
+      completionTokens: 40,
     })
   })
 
-  it('ranks top users with names and distinct conversation counts', () => {
+  it('ranks top users with identity (name + account) and distinct conversation counts', () => {
     const stats = aggregateStats(
       [
         row({
@@ -96,18 +120,36 @@ describe('aggregateStats', () => {
       ],
       7,
       now,
-      nameOf
+      identityOf
     )
     expect(stats.users[0]).toEqual({
       id: 1,
       name: 'Alice',
+      account: 'onebot:1001',
       totalTokens: 200,
       conversations: 2,
     })
     expect(stats.users[1]).toEqual({
       id: 2,
       name: 'Bob',
+      account: 'onebot:2002',
       totalTokens: 50,
+      conversations: 1,
+    })
+  })
+
+  it('leaves name/account empty for owners the resolver cannot identify', () => {
+    const stats = aggregateStats(
+      [row({ conversation_owner: 99, usage: { totalTokens: 10 } })],
+      7,
+      now,
+      identityOf
+    )
+    expect(stats.users[0]).toEqual({
+      id: 99,
+      name: '',
+      account: '',
+      totalTokens: 10,
       conversations: 1,
     })
   })
@@ -117,25 +159,25 @@ describe('aggregateStats', () => {
       [row({ usage: { promptTokens: 30, completionTokens: 20 } })],
       7,
       now,
-      nameOf
+      identityOf
     )
     expect(stats.overview.totalTokens).toBe(50)
   })
 
   it('handles null usage rows without throwing', () => {
-    const stats = aggregateStats([row({ usage: null })], 7, now, nameOf)
+    const stats = aggregateStats([row({ usage: null })], 7, now, identityOf)
     expect(stats.overview.calls).toBe(1)
     expect(stats.overview.totalTokens).toBe(0)
   })
 
   it('emits a continuous daily trend whose calls sum to the window total', () => {
-    const stats = aggregateStats([row({ time: now - DAY })], 7, now, nameOf)
+    const stats = aggregateStats([row({ time: now - DAY })], 7, now, identityOf)
     expect(stats.trend.length).toBeGreaterThanOrEqual(7)
     expect(stats.trend.reduce((s, d) => s + d.calls, 0)).toBe(1)
   })
 
   it('trend dates are strictly consecutive calendar days (no gaps, no duplicates)', () => {
-    const stats = aggregateStats([row({ time: now - DAY })], 7, now, nameOf)
+    const stats = aggregateStats([row({ time: now - DAY })], 7, now, identityOf)
     // Parse YYYY-MM-DD as a local calendar day and assert each next = prev + 1 day.
     const asDay = (s: string) => {
       const [y, m, d] = s.split('-').map(Number)
@@ -166,7 +208,7 @@ describe('aggregateStats', () => {
       row({ time: now - 3 * DAY }),
       row({ time: now - 5 * DAY }),
     ]
-    const stats = aggregateStats(rows, 7, now, nameOf)
+    const stats = aggregateStats(rows, 7, now, identityOf)
 
     // Every row falls on a distinct-or-shared local day inside the window.
     const total = stats.trend.reduce((s, d) => s + d.calls, 0)

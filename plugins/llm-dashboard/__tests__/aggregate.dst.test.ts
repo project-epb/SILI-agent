@@ -21,7 +21,11 @@ function row(partial: Partial<UsageRow> = {}): UsageRow {
   }
 }
 
-const nameOf = (id: number) => ({ 1: 'Alice', 2: 'Bob' })[id] ?? `#${id}`
+const identityOf = (id: number) =>
+  ({ 1: { name: 'Alice', account: 'onebot:1001' } })[id] ?? {
+    name: '',
+    account: '',
+  }
 
 describe('aggregateStats DST', () => {
   let prevTZ: string | undefined
@@ -60,7 +64,7 @@ describe('aggregateStats DST', () => {
     const rows: UsageRow[] = []
     for (let t = curStart; t <= dstNow; t += DAY) rows.push(row({ time: t }))
 
-    const stats = aggregateStats(rows, 7, dstNow, nameOf)
+    const stats = aggregateStats(rows, 7, dstNow, identityOf)
 
     // Consecutive calendar days, no gaps, no duplicates.
     for (let i = 1; i < stats.trend.length; i++) {
