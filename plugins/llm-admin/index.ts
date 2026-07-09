@@ -4,7 +4,11 @@ import { resolve } from 'node:path'
 
 import '@koishijs/console'
 
-import { type UserOverview, type UserUsageRow, aggregateUserOverview } from './aggregate-user'
+import {
+  type UserOverview,
+  type UserUsageRow,
+  aggregateUserOverview,
+} from './aggregate-user'
 import { matchUser, paginate } from './filters'
 import { checkMemoryWrite, utf8ByteLength } from './memory-edit'
 import { turnWindow } from './turns'
@@ -51,7 +55,7 @@ declare module '@koishijs/console' {
       limit?: number
       offset?: number
     }): { total: number; users: AdminUser[] }
-    'llm-admin/overview'(payload: { id: number }): UserOverview | null
+    'llm-admin/overview'(payload: { id: number }): UserOverview
     'llm-admin/sessions'(payload: {
       id: number
       limit?: number
@@ -148,8 +152,17 @@ export function apply(ctx: Context) {
         { fields: ['id'] }
       )
 
-      const identity = { id, name: nameMap.get(id) || '', account: acctMap.get(id) || '' }
-      return aggregateUserOverview(rows, sessionsOfUser.length, identity, Date.now())
+      const identity = {
+        id,
+        name: nameMap.get(id) || '',
+        account: acctMap.get(id) || '',
+      }
+      return aggregateUserOverview(
+        rows,
+        sessionsOfUser.length,
+        identity,
+        Date.now()
+      )
     },
     { authority: AUTH }
   )
@@ -388,11 +401,9 @@ export function apply(ctx: Context) {
       // activeChats 按 owner id 键；有在飞 chat 则把它写向新会话
       const active = ctx.llm.activeChats.get(id)
       if (active) active.conversationId = newId
-      ctx.logger('llm-admin').info(
-        '[rotate] user #%d rotated to fresh session %s',
-        id,
-        newId
-      )
+      ctx
+        .logger('llm-admin')
+        .info('[rotate] user #%d rotated to fresh session %s', id, newId)
       return { ok: true, conversationId: newId }
     },
     { authority: AUTH }

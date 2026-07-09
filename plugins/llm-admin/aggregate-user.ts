@@ -34,7 +34,12 @@ function tok(u: Usage | null) {
   const prompt = u?.promptTokens ?? 0
   const completion = u?.completionTokens ?? 0
   const cached = u?.cachedTokens ?? 0
-  return { prompt, completion, cached, total: u?.totalTokens ?? prompt + completion }
+  return {
+    prompt,
+    completion,
+    cached,
+    total: u?.totalTokens ?? prompt + completion,
+  }
 }
 
 function localDate(time: number): string {
@@ -59,7 +64,10 @@ export function aggregateUserOverview(
   let lastActive: number | null = null
   const byModel = new Map<string, { calls: number; totalTokens: number }>()
   const since = now - rangeDays * DAY
-  const byDay = new Map<string, { promptTokens: number; completionTokens: number }>()
+  const byDay = new Map<
+    string,
+    { promptTokens: number; completionTokens: number }
+  >()
 
   for (const r of rows) {
     const t = tok(r.usage)
@@ -83,9 +91,16 @@ export function aggregateUserOverview(
   }
 
   const trend: UserOverview['trend'] = []
-  for (let d = new Date(since); d.getTime() <= now; d.setDate(d.getDate() + 1)) {
+  for (
+    let d = new Date(since);
+    d.getTime() <= now;
+    d.setDate(d.getDate() + 1)
+  ) {
     const key = localDate(d.getTime())
-    trend.push({ date: key, ...(byDay.get(key) ?? { promptTokens: 0, completionTokens: 0 }) })
+    trend.push({
+      date: key,
+      ...(byDay.get(key) ?? { promptTokens: 0, completionTokens: 0 }),
+    })
   }
 
   return {

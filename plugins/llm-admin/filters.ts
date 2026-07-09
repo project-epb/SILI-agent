@@ -12,7 +12,11 @@ export function matchUser(
   )
 }
 
-export function paginate<T>(arr: T[], limit: number, offset: number): { total: number; page: T[] } {
+export function paginate<T>(
+  arr: T[],
+  limit: number,
+  offset: number
+): { total: number; page: T[] } {
   const off = Math.max(0, offset | 0)
   const lim = Math.max(0, limit | 0)
   return { total: arr.length, page: arr.slice(off, off + lim) }
