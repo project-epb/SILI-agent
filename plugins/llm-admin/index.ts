@@ -4,11 +4,12 @@ import { resolve } from 'node:path'
 
 import '@koishijs/console'
 
+import { type UserOverview, type UserUsageRow, aggregateUserOverview } from './aggregate-user'
+
 // ⚠ 隐私敏感：本插件暴露用户长期记忆与会话正文，authority 4（仅 sysop）门控所有
 // listener（读也拦），且服务端日志不落记忆/会话正文。这是原型 spike，正式版走 spec。
 
 const AUTH = 4
-const DAY = 86_400_000
 
 export const name = 'llm-admin'
 export const inject = ['console', 'database', 'llm']
@@ -18,18 +19,6 @@ interface AdminUser {
   id: number
   name: string
   account: string
-}
-interface UserOverview extends AdminUser {
-  sessionCount: number
-  firstActive: number | null
-  lastActive: number | null
-  calls: number
-  totalTokens: number
-  promptTokens: number
-  completionTokens: number
-  cachedTokens: number
-  models: Array<{ model: string; calls: number; totalTokens: number }>
-  trend: Array<{ date: string; promptTokens: number; completionTokens: number }>
 }
 interface SessionRow {
   conversationId: string
@@ -59,32 +48,6 @@ declare module '@koishijs/console' {
     'llm-admin/sessions'(payload: { id: number }): SessionRow[]
     'llm-admin/session'(payload: { conversationId: string }): ChatMsg[]
   }
-}
-
-interface Usage {
-  promptTokens?: number
-  completionTokens?: number
-  totalTokens?: number
-  cachedTokens?: number
-}
-// cachedTokens ⊂ promptTokens — 展示用，不计入 total。
-function tok(u: Usage | null) {
-  const prompt = u?.promptTokens ?? 0
-  const completion = u?.completionTokens ?? 0
-  const cached = u?.cachedTokens ?? 0
-  return {
-    prompt,
-    completion,
-    cached,
-    total: u?.totalTokens ?? prompt + completion,
-  }
-}
-
-function localDate(time: number): string {
-  const d = new Date(time)
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${m}-${day}`
 }
 
 export function apply(ctx: Context) {
@@ -149,83 +112,15 @@ export function apply(ctx: Context) {
         'openai_chat',
         { conversation_owner: id, role: 'assistant' },
         { fields: ['time', 'model', 'usage'] }
-      )) as unknown as Array<{
-        time: number
-        model: string
-        usage: Usage | null
-      }>
+      )) as unknown as UserUsageRow[]
       const sessionsOfUser = await db.get(
         'openai_session',
         { conversation_owner: id },
         { fields: ['id'] }
       )
 
-      let totalTokens = 0
-      let promptTokens = 0
-      let completionTokens = 0
-      let cachedTokens = 0
-      let firstActive: number | null = null
-      let lastActive: number | null = null
-      const byModel = new Map<string, { calls: number; totalTokens: number }>()
-      const now = Date.now()
-      const since = now - 30 * DAY
-      const byDay = new Map<
-        string,
-        { promptTokens: number; completionTokens: number }
-      >()
-
-      for (const r of rows) {
-        const t = tok(r.usage)
-        totalTokens += t.total
-        promptTokens += t.prompt
-        completionTokens += t.completion
-        cachedTokens += t.cached
-        if (firstActive === null || r.time < firstActive) firstActive = r.time
-        if (lastActive === null || r.time > lastActive) lastActive = r.time
-        const m = byModel.get(r.model) ?? { calls: 0, totalTokens: 0 }
-        m.calls += 1
-        m.totalTokens += t.total
-        byModel.set(r.model, m)
-        if (r.time >= since) {
-          const key = localDate(r.time)
-          const b = byDay.get(key) ?? { promptTokens: 0, completionTokens: 0 }
-          b.promptTokens += t.prompt
-          b.completionTokens += t.completion
-          byDay.set(key, b)
-        }
-      }
-
-      const trend: UserOverview['trend'] = []
-      for (
-        let d = new Date(since);
-        d.getTime() <= now;
-        d.setDate(d.getDate() + 1)
-      ) {
-        const key = localDate(d.getTime())
-        trend.push({
-          date: key,
-          ...(byDay.get(key) ?? { promptTokens: 0, completionTokens: 0 }),
-        })
-      }
-
-      const overview: UserOverview = {
-        id,
-        name: nameMap.get(id) || '',
-        account: acctMap.get(id) || '',
-        sessionCount: sessionsOfUser.length,
-        firstActive,
-        lastActive,
-        calls: rows.length,
-        totalTokens,
-        promptTokens,
-        completionTokens,
-        cachedTokens,
-        models: [...byModel.entries()]
-          .map(([model, v]) => ({ model, ...v }))
-          .sort((a, b) => b.totalTokens - a.totalTokens),
-        trend,
-      }
-      return overview
+      const identity = { id, name: nameMap.get(id) || '', account: acctMap.get(id) || '' }
+      return aggregateUserOverview(rows, sessionsOfUser.length, identity, Date.now())
     },
     { authority: AUTH }
   )
