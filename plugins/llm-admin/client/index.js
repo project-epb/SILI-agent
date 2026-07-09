@@ -1,4 +1,4 @@
-import { defineComponent, h, nextTick, onMounted, ref, resolveComponent, watch } from '../vue.js'
+import { defineComponent, h, nextTick, onMounted, onUnmounted, ref, resolveComponent, watch } from '../vue.js'
 import { useRoute, useRouter } from '../vue-router.js'
 import { send, store } from '../client.js'
 
@@ -250,6 +250,21 @@ function overviewView(o) {
   ])
 }
 
+// agent 消息的 token 消耗徽标：↑输入 ↓输出（有缓存则 ⚡缓存），hover 看精确值。
+// cachedTokens ⊂ promptTokens，仅展示不叠加。
+function msgTokens(u) {
+  if (!u) return null
+  const prompt = u.promptTokens ?? 0
+  const completion = u.completionTokens ?? 0
+  const cached = u.cachedTokens ?? 0
+  const total = u.totalTokens ?? prompt + completion
+  if (!total && !prompt && !completion) return null
+  const parts = [`↑${fmtShort(prompt)}`, `↓${fmtShort(completion)}`]
+  if (cached) parts.push(`⚡${fmtShort(cached)}`)
+  const title = `输入 ${fmt(prompt)} · 输出 ${fmt(completion)} · 缓存 ${fmt(cached)} · 合计 ${fmt(total)}`
+  return h('span', { class: 'la-msg-tokens', title }, parts.join(' '))
+}
+
 function renderMsg(m) {
   if (m.role === 'tool') {
     // 工具结果：吵，默认折叠
@@ -266,17 +281,24 @@ function renderMsg(m) {
   if (m.role === 'assistant' && m.toolCalls)
     kids.push(fold('la-tool', `🔧 调用 ${toolNames(m.toolCalls)}`, prettyJson(m.toolCalls)))
   const label = m.role === 'user' ? '用户' : m.role === 'assistant' ? 'SILI' : m.role
+  const meta = [h('span', { class: 'la-msg-time' }, when(m.time))]
+  if (m.role === 'assistant') {
+    const t = msgTokens(m.usage)
+    if (t) meta.push(t)
+  }
   return h('div', { class: `la-msg la-msg-${m.role}` }, [
     h('div', { class: 'la-msg-role' }, label),
     h('div', { class: 'la-bubble' }, kids),
-    h('div', { class: 'la-msg-time' }, when(m.time)),
+    h('div', { class: 'la-msg-meta' }, meta),
   ])
 }
 
-function chatView(msgs, scrollRef, onScroll, loadingMore) {
+function chatView(msgs, sentinelRef, loadingMore) {
   if (msgs === null) return h('div', { class: 'la-dim la-chat-empty' }, '加载中…')
   if (!msgs.length) return h('div', { class: 'la-dim la-chat-empty' }, '（空会话）')
-  return h('div', { class: 'la-chat', ref: scrollRef, onScroll }, [
+  // 顶部哨兵：滚动容器是 .la-right，IntersectionObserver 盯这个哨兵进视口触发上滚加载。
+  return h('div', { class: 'la-chat' }, [
+    h('div', { class: 'la-chat-top', ref: sentinelRef }),
     loadingMore ? h('div', { class: 'la-dim la-chat-more' }, '加载更早…') : null,
     ...msgs.map(renderMsg),
   ])
@@ -307,7 +329,9 @@ const Admin = defineComponent({
     const earliestTurn = ref(null)
     const msgsHasMore = ref(false)
     const loadingMoreMsgs = ref(false)
-    const chatEl = ref(null)
+    const chatEl = ref(null) // 滚动容器 = .la-right（滚动条贴面板最右缘）
+    const sentinelEl = ref(null) // .la-chat 顶部哨兵，供 IntersectionObserver 触发上滚加载
+    let msgObserver = null
     const err = ref('')
     const ready = ref(false)
     const rotating = ref(false)
@@ -437,10 +461,11 @@ const Admin = defineComponent({
         msgs.value = res.messages
         earliestTurn.value = res.earliestTurn
         msgsHasMore.value = res.hasMore
-        // 渲染后定位到底部（聊天软件式：最新在下方）
+        // 渲染后定位到底部（聊天软件式：最新在下方），再挂哨兵 observer
         await nextTick()
         const el = chatEl.value
         if (el) el.scrollTop = el.scrollHeight
+        setupMsgObserver()
       } catch (e) {
         err.value = e?.message ?? String(e)
       }
@@ -470,10 +495,28 @@ const Admin = defineComponent({
         loadingMoreMsgs.value = false
       }
     }
-    function onChatScroll(e) {
-      if (e.target.scrollTop < 60 && msgsHasMore.value && !loadingMoreMsgs.value)
-        loadMoreMsgs()
+    // 无限上滚：IntersectionObserver 盯顶部哨兵，进视口（root=.la-right，提前 80px）就加载更早。
+    // 比 scroll 监听更地道：无需猜阈值、无高频事件；防跳仍靠 loadMoreMsgs 里的 scrollHeight 补偿。
+    function setupMsgObserver() {
+      teardownMsgObserver()
+      const root = chatEl.value
+      const target = sentinelEl.value
+      if (!root || !target || typeof IntersectionObserver === 'undefined') return
+      msgObserver = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) loadMoreMsgs()
+        },
+        { root, rootMargin: '80px 0px 0px 0px', threshold: 0 }
+      )
+      msgObserver.observe(target)
     }
+    function teardownMsgObserver() {
+      if (msgObserver) {
+        msgObserver.disconnect()
+        msgObserver = null
+      }
+    }
+    onUnmounted(teardownMsgObserver)
 
     // 路由驱动的数据加载（真实 URL：?user=&session=）
     watch(
@@ -485,6 +528,8 @@ const Admin = defineComponent({
         if (u == null) {
           loadedUser = loadedConv = null
           overview.value = sessions.value = msgs.value = null
+          msgsHasMore.value = false
+          teardownMsgObserver()
           return
         }
         if (loadedUser !== u) {
@@ -499,6 +544,8 @@ const Admin = defineComponent({
         } else {
           loadedConv = null
           msgs.value = null
+          msgsHasMore.value = false
+          teardownMsgObserver()
         }
       },
       { immediate: true }
@@ -626,10 +673,10 @@ const Admin = defineComponent({
               : [h('p', { class: 'la-dim' }, '（无会话）')]
         ),
       ])
-      const right = h('div', { class: 'la-right' }, [
+      const right = h('div', { class: 'la-right', ref: chatEl }, [
         err.value ? h('div', { class: 'la-err' }, err.value) : null,
         inSession
-          ? chatView(msgs.value, chatEl, onChatScroll, loadingMoreMsgs.value)
+          ? chatView(msgs.value, sentinelEl, loadingMoreMsgs.value)
           : o
             ? overviewView(o)
             : h('div', { class: 'la-dim' }, '加载中…'),

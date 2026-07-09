@@ -107,16 +107,22 @@
 .la-model-row { display: flex; justify-content: space-between; gap: 1rem; }
 
 /* ---------- chat 回放 ---------- */
+/* 滚动容器是 .la-right（滚动条贴面板最右缘）；.la-chat 只负责居中排版，不自带滚动 */
 .la-chat {
-  flex: 1; min-height: 0; overflow-y: auto;
   display: flex; flex-direction: column; gap: 0.8rem;
   width: 100%; max-width: 900px; margin: 0 auto;
 }
+.la-chat-top { height: 1px; flex: none; } /* 顶部哨兵，IntersectionObserver 目标 */
 .la-chat-empty { padding: 2rem; text-align: center; }
 .la-chat-more { text-align: center; font-size: 0.78rem; padding: 0.3rem 0; }
 .la-msg { display: flex; flex-direction: column; gap: 0.2rem; }
 .la-msg-role { font-size: 0.72rem; color: var(--k-text-light, #999); }
-.la-msg-time { font-size: 0.68rem; color: var(--k-text-light, #999); margin-top: 0.15rem; }
+.la-msg-meta { display: flex; gap: 0.5rem; align-items: baseline; margin-top: 0.15rem; flex-wrap: wrap; }
+.la-msg-time { font-size: 0.68rem; color: var(--k-text-light, #999); }
+.la-msg-tokens {
+  font-size: 0.68rem; color: var(--k-text-light, #999);
+  font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+}
 .la-bubble {
   padding: 0.6rem 0.85rem; border-radius: 10px; font-size: 0.9rem; line-height: 1.5;
   border: 1px solid var(--k-color-border, #eee); background: var(--k-card-bg, #fff);
