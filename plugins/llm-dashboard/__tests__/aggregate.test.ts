@@ -68,15 +68,30 @@ describe('aggregateStats', () => {
       [
         row({
           model: 'gpt-4o',
-          usage: { promptTokens: 80, completionTokens: 20, totalTokens: 100 },
+          usage: {
+            promptTokens: 80,
+            completionTokens: 20,
+            totalTokens: 100,
+            cachedTokens: 40,
+          },
         }),
         row({
           model: 'claude-sonnet-4-6',
-          usage: { promptTokens: 400, completionTokens: 100, totalTokens: 500 },
+          usage: {
+            promptTokens: 400,
+            completionTokens: 100,
+            totalTokens: 500,
+            cachedTokens: 200,
+          },
         }),
         row({
           model: 'gpt-4o',
-          usage: { promptTokens: 80, completionTokens: 20, totalTokens: 100 },
+          usage: {
+            promptTokens: 80,
+            completionTokens: 20,
+            totalTokens: 100,
+            cachedTokens: 40,
+          },
         }),
       ],
       7,
@@ -89,6 +104,7 @@ describe('aggregateStats', () => {
       totalTokens: 500,
       promptTokens: 400,
       completionTokens: 100,
+      cachedTokens: 200,
     })
     expect(stats.models[1]).toEqual({
       model: 'gpt-4o',
@@ -96,6 +112,7 @@ describe('aggregateStats', () => {
       totalTokens: 200,
       promptTokens: 160,
       completionTokens: 40,
+      cachedTokens: 80,
     })
   })
 
@@ -105,17 +122,17 @@ describe('aggregateStats', () => {
         row({
           conversation_owner: 1,
           conversation_id: 'a',
-          usage: { totalTokens: 100 },
+          usage: { promptTokens: 70, completionTokens: 30, totalTokens: 100 },
         }),
         row({
           conversation_owner: 1,
           conversation_id: 'b',
-          usage: { totalTokens: 100 },
+          usage: { promptTokens: 70, completionTokens: 30, totalTokens: 100 },
         }),
         row({
           conversation_owner: 2,
           conversation_id: 'c',
-          usage: { totalTokens: 50 },
+          usage: { promptTokens: 40, completionTokens: 10, totalTokens: 50 },
         }),
       ],
       7,
@@ -127,6 +144,8 @@ describe('aggregateStats', () => {
       name: 'Alice',
       account: 'onebot:1001',
       totalTokens: 200,
+      promptTokens: 140,
+      completionTokens: 60,
       conversations: 2,
     })
     expect(stats.users[1]).toEqual({
@@ -134,6 +153,8 @@ describe('aggregateStats', () => {
       name: 'Bob',
       account: 'onebot:2002',
       totalTokens: 50,
+      promptTokens: 40,
+      completionTokens: 10,
       conversations: 1,
     })
   })
@@ -150,6 +171,8 @@ describe('aggregateStats', () => {
       name: '',
       account: '',
       totalTokens: 10,
+      promptTokens: 0,
+      completionTokens: 0,
       conversations: 1,
     })
   })

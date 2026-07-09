@@ -19,6 +19,12 @@ function fmtShort(n) {
   return String(Math.round(n))
 }
 
+// 缓存命中率：cached ⊂ prompt，无输入时无从计算显示 "—"
+function cacheRate(cached, prompt) {
+  if (!prompt) return '—'
+  return `${Math.round(((cached ?? 0) / prompt) * 100)}%`
+}
+
 // 环比：返回 { text, cls }
 function delta(cur, prev) {
   if (!prev) return cur > 0 ? { text: '↑ 新增', cls: 'up' } : { text: '—', cls: 'flat' }
@@ -83,7 +89,7 @@ function modelPanel(models) {
                 h(
                   'span',
                   { class: 'ld-rank-metric' },
-                  `${fmtShort(m.totalTokens)} tok (入 ${fmtShort(m.promptTokens)} / 出 ${fmtShort(m.completionTokens)}) · ${fmt(m.calls)} 次`
+                  `${fmtShort(m.totalTokens)} tok (入 ${fmtShort(m.promptTokens)} / 出 ${fmtShort(m.completionTokens)} · 缓存 ${cacheRate(m.cachedTokens, m.promptTokens)}) · ${fmt(m.calls)} 次`
                 ),
               ])
             )
@@ -111,7 +117,11 @@ function userPanel(users) {
                   u.account ? h('span', { class: 'ld-user-acct' }, u.account) : null,
                   h('span', { class: 'ld-user-uid' }, `(#${u.id})`),
                 ]),
-                h('span', { class: 'ld-rank-metric' }, `${fmtShort(u.totalTokens)} tok · ${fmt(u.conversations)} 会话`),
+                h(
+                  'span',
+                  { class: 'ld-rank-metric' },
+                  `${fmtShort(u.totalTokens)} tok (入 ${fmtShort(u.promptTokens)} / 出 ${fmtShort(u.completionTokens)}) · ${fmt(u.conversations)} 会话`
+                ),
               ])
             )
           : h('p', { class: 'ld-empty' }, '（无数据）'),

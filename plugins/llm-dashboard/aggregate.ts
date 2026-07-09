@@ -40,12 +40,16 @@ export interface DashboardStats {
     totalTokens: number
     promptTokens: number
     completionTokens: number
+    // cachedTokens ⊂ promptTokens — cache rate = cachedTokens / promptTokens.
+    cachedTokens: number
   }>
   users: Array<{
     id: number
     name: string
     account: string
     totalTokens: number
+    promptTokens: number
+    completionTokens: number
     conversations: number
   }>
 }
@@ -162,6 +166,7 @@ export function aggregateStats(
       totalTokens: number
       promptTokens: number
       completionTokens: number
+      cachedTokens: number
     }
   >()
   for (const r of current) {
@@ -170,25 +175,40 @@ export function aggregateStats(
       totalTokens: 0,
       promptTokens: 0,
       completionTokens: 0,
+      cachedTokens: 0,
     }
     const t = rowTokens(r.usage)
     m.calls += 1
     m.totalTokens += t.total
     m.promptTokens += t.prompt
     m.completionTokens += t.completion
+    m.cachedTokens += t.cached
     byModel.set(r.model, m)
   }
   const models = [...byModel.entries()]
     .map(([model, v]) => ({ model, ...v }))
     .sort((a, b) => b.totalTokens - a.totalTokens)
 
-  const byUser = new Map<number, { totalTokens: number; convs: Set<string> }>()
+  const byUser = new Map<
+    number,
+    {
+      totalTokens: number
+      promptTokens: number
+      completionTokens: number
+      convs: Set<string>
+    }
+  >()
   for (const r of current) {
     const u = byUser.get(r.conversation_owner) ?? {
       totalTokens: 0,
+      promptTokens: 0,
+      completionTokens: 0,
       convs: new Set<string>(),
     }
-    u.totalTokens += rowTokens(r.usage).total
+    const t = rowTokens(r.usage)
+    u.totalTokens += t.total
+    u.promptTokens += t.prompt
+    u.completionTokens += t.completion
     u.convs.add(r.conversation_id)
     byUser.set(r.conversation_owner, u)
   }
@@ -200,6 +220,8 @@ export function aggregateStats(
         name: idt.name,
         account: idt.account,
         totalTokens: v.totalTokens,
+        promptTokens: v.promptTokens,
+        completionTokens: v.completionTokens,
         conversations: v.convs.size,
       }
     })
