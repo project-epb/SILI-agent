@@ -80,6 +80,13 @@
         "yml-register": "^1.2.5",
       },
     },
+    "plugins/llm-dashboard": {
+      "name": "koishi-plugin-llm-dashboard",
+      "version": "0.0.0",
+      "peerDependencies": {
+        "koishi": "^4.18.0",
+      },
+    },
   },
   "packages": {
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.86.1", "https://registry.npmmirror.com/@anthropic-ai/sdk/-/sdk-0.86.1.tgz", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-Q32GUFCVMmTJrVQC4bQOG2mA8rGNuYWJP8ODufxl3g5Awy1VjY5wy0Xm+mC++i5rBkZMvxhzOR9MNTW7IvIAmw=="],
@@ -1139,6 +1146,8 @@
     "koishi-plugin-github": ["koishi-plugin-github@5.5.1", "https://registry.npmmirror.com/koishi-plugin-github/-/koishi-plugin-github-5.5.1.tgz", { "dependencies": { "@octokit/webhooks-types": "5.8.0", "koishi-plugin-markdown": "1.1.1" }, "peerDependencies": { "koishi": "4.18.0" } }, "sha512-MUbkKVCduefoIndKU7MbAiwXizYjGdmOXHeUWaH+gFs8Mts0TRroHD17x/PYRH3ogAzvVuug8XowQoYZFVG9aA=="],
 
     "koishi-plugin-image-search": ["koishi-plugin-image-search@4.3.2", "https://registry.npmmirror.com/koishi-plugin-image-search/-/koishi-plugin-image-search-4.3.2.tgz", { "dependencies": { "cheerio": "1.0.0-rc.12", "iqdb-client": "1.1.0", "nhentai-api": "3.4.3" }, "peerDependencies": { "koishi": "4.18.0" } }, "sha512-D/toPepRFR2Ta9k8iUVc3Hhu0hxVlpuFjUOq+aVqYy9fdHrzoDKDmD4fgZga8ox/gMrzYKNcsIAWioA97LA6JQ=="],
+
+    "koishi-plugin-llm-dashboard": ["koishi-plugin-llm-dashboard@workspace:plugins/llm-dashboard"],
 
     "koishi-plugin-manosaba-memes": ["koishi-plugin-manosaba-memes@0.4.1", "https://registry.npmmirror.com/koishi-plugin-manosaba-memes/-/koishi-plugin-manosaba-memes-0.4.1.tgz", { "peerDependencies": { "koishi": "^4.18.9" } }, "sha512-mqh53ue7jlBxVBvW5Ux4Xwz/J7Sn7clVXhQrqm1OBFVQ+Dxe9HbczTmyTDKj8cPLDktVBrHEpYUflvC8WlUTFA=="],
 

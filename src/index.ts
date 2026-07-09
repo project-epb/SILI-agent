@@ -103,6 +103,8 @@ import * as PluginSwitch from 'koishi-plugin-switch'
 import PluginHTTP from '@cordisjs/plugin-http'
 import { executablePath } from 'puppeteer'
 
+import * as PluginLlmDashboard from 'koishi-plugin-llm-dashboard'
+
 const PROD = process.env.NODE_ENV === 'production'
 
 // Setup .env
@@ -308,6 +310,7 @@ app.plugin(function PluginCollectionConsole(ctx) {
   ctx.plugin(PluginLogger)
   ctx.plugin(PluginStatus)
   ctx.plugin(PluginSandbox)
+  ctx.plugin(PluginLlmDashboard)
 })
 
 // 第三方
