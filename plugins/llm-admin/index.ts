@@ -353,6 +353,17 @@ export function apply(ctx: Context) {
       if (!check.ok) return check
       const existing = await memoryRow(id)
       const platform = existing?.platform ?? (await memoryPlatform(id))
+      // Orphan guard: with no binding and no existing memory row, platform
+      // falls back to 'unknown'. The llm runtime resolves a real platform (e.g.
+      // 'qq') for live sessions, so an 'unknown' row would never be read back —
+      // a silent orphan write. Reject with a diagnosable reason instead.
+      if (platform === 'unknown')
+        return {
+          ok: false,
+          byteSize: utf8ByteLength(content),
+          error:
+            '无法解析该用户的平台（无 binding 且无现有记忆行），写入将成为不会被读取的孤儿记忆行，已拒绝保存',
+        }
       // 保留 fork 节流元数据，避免打乱后台记忆调度
       await ctx.llm.memory.set(
         platform,
@@ -369,6 +380,9 @@ export function apply(ctx: Context) {
   ctx.console.addListener(
     'llm-admin/memory-clear',
     async ({ id }) => {
+      // memoryPlatform is existing-first internally (queries memoryRow before
+      // falling back to bindings), so this matches memory-save's platform
+      // resolution — no need to re-express the `existing?.platform ?? ...` form.
       const platform = await memoryPlatform(id)
       const ok = await ctx.llm.memory.delete(platform, String(id))
       return { ok }
