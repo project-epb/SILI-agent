@@ -1,0 +1,10 @@
+{
+  "name": "koishi-plugin-llm-admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "LLM per-user admin console for SILI (memory / session management)",
+  "main": "index.ts",
+  "peerDependencies": {
+    "koishi": "^4.18.0"
+  }
+}

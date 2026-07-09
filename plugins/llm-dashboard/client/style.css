@@ -30,6 +30,8 @@
 @media (max-width: 900px) { .ld-panels { grid-template-columns: 1fr; } }
 .ld-ranks { display: flex; flex-direction: column; gap: 0.3rem; }
 .ld-rank-row { position: relative; padding: 0.4rem 0.6rem; border-radius: 4px; overflow: hidden; }
+.ld-rank-clickable { cursor: pointer; transition: background 0.12s; }
+.ld-rank-clickable:hover { background: var(--k-hover-bg, rgba(128, 128, 128, 0.1)); }
 .ld-rank-bar {
   position: absolute; inset: 0 auto 0 0; background: var(--k-color-primary, #6a5acd);
   opacity: 0.14; border-radius: 4px;
