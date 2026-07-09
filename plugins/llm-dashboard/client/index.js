@@ -13,10 +13,12 @@ function fmt(n) {
 
 // 环比：返回 { text, cls }
 function delta(cur, prev) {
-  if (!prev) return { text: '—', cls: 'flat' }
+  if (!prev) return cur > 0 ? { text: '↑ 新增', cls: 'up' } : { text: '—', cls: 'flat' }
   const pct = ((cur - prev) / prev) * 100
   const sign = pct > 0 ? '↑' : pct < 0 ? '↓' : ''
-  return { text: `${sign} ${Math.abs(pct).toFixed(0)}%`, cls: pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat' }
+  const abs = Math.abs(pct)
+  const num = abs > 0 && abs < 0.5 ? '< 1%' : `${abs.toFixed(0)}%`
+  return { text: `${sign} ${num}`, cls: pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat' }
 }
 
 function overviewCards(o) {
@@ -43,7 +45,7 @@ function overviewCards(o) {
 function rankRows(items, maxKey, rows) {
   const max = Math.max(1, ...items.map((it) => it[maxKey]))
   return items.map((it) =>
-    h('div', { class: 'ld-rank-row' }, [
+    h('div', { class: 'ld-rank-row', key: it.model ?? it.id }, [
       h('div', { class: 'ld-rank-bar', style: `width:${(it[maxKey] / max) * 100}%` }),
       h('div', { class: 'ld-rank-content' }, rows(it)),
     ])

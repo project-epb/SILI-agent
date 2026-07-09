@@ -38,5 +38,4 @@
 .ld-empty { color: var(--k-text-light, #999); }
 .ld-chart { width: 100%; line-height: 0; }
 .ld-chart svg { display: block; width: 100%; height: 180px; }
-.ld-trend .ld-chart { line-height: 0; }
 .ld-error { color: var(--k-color-danger, #e0533d); }
