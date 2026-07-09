@@ -12,6 +12,8 @@
 
 - 运行时是 **bun**；后端 TS 直接跑、**不构建**；前端是手写浏览器 ESM，**不构建**。
 - 前端 entry 只能引 `../vue.js` / `../client.js` / `../vue-router.js` / `../vueuse.js`（console 注入的伪包）+ 同目录相对文件。
+- **（已验证，务必遵守）render 里用 console 全局组件（`k-layout` / `k-card`）必须先 `resolveComponent('k-layout')` 得到组件对象再 `h(KLayout, ...)`。绝不能写字符串标签 `h('k-layout', ...)`——Vue render 里字符串当原生元素、slots 对象被丢弃、整页空白，且生产版 Vue 不报警告。`resolveComponent` 从 `'../vue.js'` 引入。本计划下方各 client 代码若出现 `h('k-layout'/'k-card', ...)` 字符串写法，一律按此改。**
+- **（已验证，务必遵守）带 `authority` 的 listener 的首个 `send` 必须等 console 鉴权就绪再发，否则整页重载后 WS 重新鉴权未完成、首个 send 抢跑 `client.auth` → 返回 `unauthorized`（页面显示"加载失败：unauthorized"）。做法：`import { store } from '../client.js'`，初始加载改为等 `store.user` 就绪：`onMounted(() => { if (store.user) load(); else { const stop = watch(() => store.user, (u) => { if (u) { stop(); load() } }) } })`（`watch` 从 `'../vue.js'` 引入）。此逻辑在 Task 3 的 `load` 处落地。**
 - `addEntry` 必须指向 `resolve(ctx.baseDir, 'node_modules/koishi-plugin-llm-dashboard/client')`（路径含 `node_modules` 才不会被 console 的 403 守卫拦）。
 - `ctx.database.get` 投影语法是 **`{ fields: [...] }`**（不是裸数组）。
 - usage 聚合陷阱：`cachedTokens` 已含在 `promptTokens` 内、`reasoningTokens` 已含在 `completionTokens` 内，**不重复相加**；各字段可能 undefined，用 `?? 0`；`totalTokens` 缺失时回退 `prompt + completion`。
@@ -455,7 +457,7 @@ export default (ctx) => {
 }
 ```
 
-（注：`k-layout` / `k-card` 用字符串标签名即可，console 已全局注册；无需 `resolveComponent`。上面 `KLayout` 占位变量可删，保留不影响。为清爽起见实现时删掉那行。）
+（**修正**：`k-layout` / `k-card` **必须** `resolveComponent` —— 见 Global Constraints。上面示例代码的 `h('k-layout', ...)` / `h('k-card', ...)` 字符串写法是错的，实现时改为：`import { defineComponent, h, onMounted, ref, resolveComponent } from '../vue.js'`，render 内 `const KLayout = resolveComponent('k-layout'); const KCard = resolveComponent('k-card')`，再 `h(KLayout, null, { default: () => h(KCard, ...) })`。删掉 `KLayout = h('div')` 占位行。）
 
 - [ ] **Step 3: 重启并在浏览器验证真实数据**
 
