@@ -108,7 +108,7 @@ export default class PluginReboot extends BasePlugin {
   }
 
   async readLogFile(file: LogFile): Promise<string | null> {
-    const path = resolve(__dirname, '../../', file)
+    const path = resolve(import.meta.dirname, '../../', file)
     try {
       const content = (await readFile(path)).toString()
       return content.trim() || null
@@ -117,7 +117,7 @@ export default class PluginReboot extends BasePlugin {
     }
   }
   async writeLogFile(file: LogFile, content: string) {
-    const path = resolve(__dirname, '../../', file)
+    const path = resolve(import.meta.dirname, '../../', file)
     await writeFile(path, content)
   }
   async removeLogFile(file: LogFile) {

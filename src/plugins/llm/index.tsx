@@ -598,7 +598,7 @@ export default class PluginLLM extends BasePlugin<Config> {
 
   static readPromptFile(file: string) {
     try {
-      return readFileSync(resolve(__dirname, `./prompts/${file}`), {
+      return readFileSync(resolve(import.meta.dirname, `./prompts/${file}`), {
         encoding: 'utf-8',
       })
         .toString()

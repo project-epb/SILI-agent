@@ -20,7 +20,7 @@ export default class 梅因说 extends BaseSticker {
         if (!session) return
 
         content = (content || '……').slice(0, 233)
-        const url = pathToFileURL(resolve(__dirname, 'index.html'))
+        const url = pathToFileURL(resolve(import.meta.dirname, 'index.html'))
         url.searchParams.set('content', content)
 
         return this.ctx.html

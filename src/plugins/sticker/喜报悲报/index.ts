@@ -5,8 +5,6 @@ import { pathToFileURL } from 'node:url'
 
 import { BaseSticker } from '../_base'
 
-const __dirname = import.meta.dirname
-
 enum NewsType {
   good_news = 'good_news',
   bad_news = 'bad_news',
@@ -34,7 +32,7 @@ export default class 喜报悲报 extends BaseSticker {
   }
 
   async shot(type: NewsType, content: string) {
-    const url = pathToFileURL(resolve(__dirname, 'index.html'))
+    const url = pathToFileURL(resolve(import.meta.dirname, 'index.html'))
     url.searchParams.set('type', type)
     url.searchParams.set('content', content)
 

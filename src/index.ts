@@ -108,11 +108,11 @@ const PROD = process.env.NODE_ENV === 'production'
 // Setup .env
 setupDotEnv()
 setupDotEnv({
-  path: resolve(__dirname, '..', PROD ? '.env.production' : '.env.development'),
+  path: resolve(import.meta.dirname, '..', PROD ? '.env.production' : '.env.development'),
   override: true,
 })
 setupDotEnv({
-  path: resolve(__dirname, '..', '.env.local'),
+  path: resolve(import.meta.dirname, '..', '.env.local'),
   override: true,
 })
 const { env } = process
