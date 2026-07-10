@@ -281,13 +281,16 @@ function renderMsg(m) {
   if (m.role === 'assistant' && m.toolCalls)
     kids.push(fold('la-tool', `🔧 调用 ${toolNames(m.toolCalls)}`, prettyJson(m.toolCalls)))
   const label = m.role === 'user' ? '用户' : m.role === 'assistant' ? 'SILI' : m.role
+  const roleKids = [h('span', { class: 'la-msg-name' }, label)]
+  if (m.role === 'assistant' && m.model)
+    roleKids.push(h('span', { class: 'la-msg-model' }, m.model))
   const meta = [h('span', { class: 'la-msg-time' }, when(m.time))]
   if (m.role === 'assistant') {
     const t = msgTokens(m.usage)
     if (t) meta.push(t)
   }
   return h('div', { class: `la-msg la-msg-${m.role}` }, [
-    h('div', { class: 'la-msg-role' }, label),
+    h('div', { class: 'la-msg-role' }, roleKids),
     h('div', { class: 'la-bubble' }, kids),
     h('div', { class: 'la-msg-meta' }, meta),
   ])
@@ -384,6 +387,18 @@ const Admin = defineComponent({
       if (cid()) router.push({ path: '/llm-admin', query: { user: uid() } })
     }
     const goSearch = () => router.push({ path: '/llm-admin', query: {} })
+
+    // 窄屏「导航栈」：会话列表打底，详情从右滑入覆盖。宽屏是并排 split view，此状态被忽略。
+    // 聊天层走 ?session 路由；总览层因宽屏常驻右栏、窄屏才需显式打开，用本地 overviewOpen。
+    const overviewOpen = ref(false)
+    const onHeadClick = () => {
+      if (cid()) backToOverview()
+      else overviewOpen.value = true
+    }
+    const closePane = () => {
+      if (cid()) backToOverview()
+      else overviewOpen.value = false
+    }
 
     let loadedUser = null
     let loadedConv = null
@@ -523,6 +538,7 @@ const Admin = defineComponent({
       () => [ready.value, route.query.user, route.query.session],
       () => {
         if (!ready.value) return
+        overviewOpen.value = false // 任何路由变化都收起窄屏总览覆盖层
         const u = uid()
         const c = cid()
         if (u == null) {
@@ -612,9 +628,9 @@ const Admin = defineComponent({
         h(
           'div',
           {
-            class: ['la-user-head', inSession ? 'clickable' : ''],
-            title: inSession ? '点此返回用户总览' : '',
-            onClick: backToOverview,
+            class: ['la-user-head', inSession ? 'clickable' : 'la-head-tap'],
+            title: inSession ? '点此返回用户总览' : '点此查看用户总览',
+            onClick: onHeadClick,
           },
           [
             h('div', { class: 'la-user-head-top' }, [
@@ -673,15 +689,26 @@ const Admin = defineComponent({
               : [h('p', { class: 'la-dim' }, '（无会话）')]
         ),
       ])
-      const right = h('div', { class: 'la-right', ref: chatEl }, [
-        err.value ? h('div', { class: 'la-err' }, err.value) : null,
-        inSession
-          ? chatView(msgs.value, sentinelEl, loadingMoreMsgs.value)
-          : o
-            ? overviewView(o)
-            : h('div', { class: 'la-dim' }, '加载中…'),
+      const paneOpen = inSession || overviewOpen.value
+      const paneTitle = inSession
+        ? sessions.value?.find((s) => s.conversationId === cid())?.title || '会话回放'
+        : '用户总览'
+      const pane = h('div', { class: ['la-detail-pane', paneOpen ? 'la-pane-open' : ''] }, [
+        // 窄屏导航栏（宽屏 CSS 隐藏）：返回 + 标题
+        h('div', { class: 'la-pane-bar' }, [
+          h('button', { class: 'la-pane-back', onClick: closePane }, '← 返回'),
+          h('div', { class: 'la-pane-title' }, paneTitle),
+        ]),
+        h('div', { class: 'la-right', ref: chatEl }, [
+          err.value ? h('div', { class: 'la-err' }, err.value) : null,
+          inSession
+            ? chatView(msgs.value, sentinelEl, loadingMoreMsgs.value)
+            : o
+              ? overviewView(o)
+              : h('div', { class: 'la-dim' }, '加载中…'),
+        ]),
       ])
-      return h('div', { class: 'la-detail' }, [left, right])
+      return h('div', { class: 'la-detail' }, [left, pane])
     }
 
     return () => {

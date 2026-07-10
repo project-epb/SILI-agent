@@ -46,6 +46,7 @@ type ChatMsg = { time: number } & (
       reasoning?: string
       toolCalls?: string
       usage?: Usage | null // 该次 agent 调用的 token 消耗，供逐条展示
+      model?: string // 该次 agent 调用所用模型，供逐条展示
     }
   | { role: 'tool'; toolName?: string; content: string }
 )
@@ -259,6 +260,7 @@ export function apply(ctx: Context) {
             'tool_name',
             'time',
             'usage',
+            'model',
           ],
           sort: { turn_number: 'asc', intra_turn_seq: 'asc', id: 'asc' },
         } as any
@@ -270,6 +272,7 @@ export function apply(ctx: Context) {
         tool_name: string
         time: number
         usage: Usage | null
+        model: string
       }>
 
       // user 行存的是包装 envelope，抽取 <user_message> 内层供展示
@@ -302,6 +305,7 @@ export function apply(ctx: Context) {
           reasoning: r.reasoning_content || undefined,
           toolCalls: r.tool_calls || undefined,
           usage: r.usage ?? null,
+          model: r.model || undefined,
         }
       })
       return { messages, earliestTurn: fromTurn, hasMore }
