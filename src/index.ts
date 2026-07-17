@@ -348,6 +348,13 @@ app.plugin(async function PluginCollectionThirdParty(ctx) {
 app.plugin(function PluginCollectionDialogue(ctx) {
   ctx.plugin(PluginDialogue, {
     prefix: env.KOISHI_ENV === 'prod' ? '?!' : '#',
+    // dialogue 有个隐藏的「称呼激活」机制：用户用称呼触发一次问答后，会被加进
+    // activated 表（默认持续 10 分钟），期间该用户的 *每一条* 消息都会在
+    // before('attach') 里被写穿 session.stripped.appel = true（receiver.ts）。
+    // 这会污染下游所有读 stripped 的人 —— FallbackHandler 会把这些消息误判为
+    // 「呼唤了 bot」，全部转给 llm chat，表现为“用户说一句 SILI 跟一句”。
+    // 设为 0 直接掐掉该粘性窗口。
+    appellationTimeout: 0,
   })
   ctx.plugin(PluginDialogueAuthor)
   ctx.plugin(PluginDialogueContext)
