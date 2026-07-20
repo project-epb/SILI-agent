@@ -268,16 +268,16 @@ app.plugin(function PluginCollectionLegacy(ctx) {
     // ctx.command('help').alias('帮助')
     ctx.plugin(PluginCommands)
     ctx.plugin(PluginSwitch)
+    const assetsPathPrefix =
+      env.KOISHI_ENV === 'prod' ? 'sili/v4_prod/' : 'sili/v4_dev/'
     ctx.plugin(PluginAssetsS3, {
       credentials: {
         accessKeyId: env.TOKEN_S3_ACCESS_KEY_ID,
         secretAccessKey: env.TOKEN_S3_ACCESS_KEY_SECRET,
       },
       bucket: env.TOKEN_S3_BUCKET,
-      pathPrefix: env.KOISHI_ENV === 'prod' ? 'v4/assets/' : 'v4-dev/assets/',
-      publicUrl: `${env.TOKEN_S3_PUBLIC_URL}/${
-        env.KOISHI_ENV === 'prod' ? 'v4/assets/' : 'v4-dev/assets/'
-      }`,
+      pathPrefix: assetsPathPrefix,
+      publicUrl: `${env.TOKEN_S3_PUBLIC_URL}/${assetsPathPrefix}`,
       region: env.TOKEN_S3_REGION,
       endpoint: env.TOKEN_S3_ENDPOINT,
     })
