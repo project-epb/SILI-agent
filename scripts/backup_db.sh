@@ -13,7 +13,7 @@ echo "[$(date '+%F %T')] backup start"
 "$script_dir/dump_db.sh"
 
 # Keep only the 8 newest local archives
-ls -1t "$backup_dir"/mongo_dump-*.archive.gz | tail -n +9 | xargs -r rm --
+ls -1t "$backup_dir"/mongo_dump-*.archive.gz | tail -n +15 | xargs -r rm --
 
 # Mirror archives to R2 so remote retention matches local.
 # Guard: refuse to sync (and delete remote copies) if local dir looks wiped.
