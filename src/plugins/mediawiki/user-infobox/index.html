@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>User Infobox</title>
+
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC',
+          'Noto Sans CJK SC', 'Microsoft YaHei', 'PingFang SC', Roboto,
+          sans-serif;
+        color: #1c1e21;
+        /* 透明外边距，截图只取 #user-infobox */
+        padding: 20px;
+        display: inline-block;
+      }
+
+      #user-infobox {
+        width: 340px;
+        border-radius: 12px;
+        background: #fff;
+        overflow: hidden;
+        box-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.08),
+          0 8px 24px rgba(0, 0, 0, 0.1);
+      }
+
+      .top {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        padding: 18px 18px 14px;
+      }
+      .avatar {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        flex: none;
+        object-fit: cover;
+        background: linear-gradient(135deg, #dfe3f0 0%, #c9cfe8 100%);
+      }
+      .avatar-fallback {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        flex: none;
+        background: linear-gradient(135deg, #dfe3f0 0%, #c9cfe8 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        color: #7b83a1;
+      }
+      .name {
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.25;
+        word-break: break-all;
+      }
+      .groups {
+        margin-top: 5px;
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+      .tag {
+        font-size: 11px;
+        padding: 1.5px 7px;
+        border-radius: 999px;
+        background: #eef1f8;
+        color: #4a5578;
+      }
+      .tag.danger {
+        background: #fee7e6;
+        color: #b32424;
+      }
+
+      .blocked {
+        background: #fee7e6;
+        color: #b32424;
+        font-size: 12px;
+        line-height: 1.5;
+        padding: 8px 18px;
+      }
+
+      .stats {
+        display: flex;
+        border-top: 1px solid #eef0f3;
+      }
+      .stat {
+        flex: 1;
+        padding: 11px 8px;
+        text-align: center;
+      }
+      .stat + .stat {
+        border-left: 1px solid #eef0f3;
+      }
+      .stat .n {
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .stat .l {
+        font-size: 10.5px;
+        color: #8a8f98;
+        margin-top: 2px;
+      }
+
+      .contribs {
+        border-top: 1px solid #eef0f3;
+        padding: 10px 18px 14px;
+      }
+      .contribs .hd {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        color: #8a8f98;
+        margin-bottom: 6px;
+      }
+      .contribs .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12.5px;
+        padding: 2.5px 0;
+      }
+      .contribs .pg {
+        color: #3366cc;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .contribs .ts {
+        color: #8a8f98;
+        font-size: 11px;
+        white-space: nowrap;
+        flex: none;
+      }
+
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="user-infobox">
+      <div class="top">
+        <img class="avatar hidden" alt="" />
+        <div class="avatar-fallback">◕‿◕</div>
+        <div>
+          <div class="name"></div>
+          <div class="groups hidden"></div>
+        </div>
+      </div>
+
+      <div class="blocked hidden"></div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="n" data-stat="editcount"></div>
+          <div class="l">编辑</div>
+        </div>
+        <div class="stat">
+          <div class="n" data-stat="year"></div>
+          <div class="l">加入年份</div>
+        </div>
+        <div class="stat">
+          <div class="n" data-stat="userid"></div>
+          <div class="l">用户 ID</div>
+        </div>
+      </div>
+
+      <div class="contribs hidden">
+        <div class="hd">最近编辑</div>
+        <div class="rows"></div>
+      </div>
+    </div>
+
+    <script>
+      const data = JSON.parse(
+        new URL(location.href).searchParams.get('data') || '{}'
+      )
+
+      const $ = (sel) => document.querySelector(sel)
+      const show = (el) => el.classList.remove('hidden')
+
+      // 用户名
+      $('.name').textContent = data.name || ''
+
+      // 头像：有 URL 就用 <img>，加载失败 onerror 回退到 ◕‿◕ 占位
+      const avatarImg = $('.avatar')
+      const avatarFallback = $('.avatar-fallback')
+      if (data.avatar) {
+        avatarImg.onload = () => {
+          show(avatarImg)
+          avatarFallback.classList.add('hidden')
+        }
+        avatarImg.onerror = () => {
+          /* 保留占位，img 继续隐藏 */
+        }
+        avatarImg.src = data.avatar
+      }
+
+      // 用户组 tag
+      const groups = Array.isArray(data.groups) ? data.groups : []
+      if (groups.length) {
+        const box = $('.groups')
+        groups.forEach((g) => {
+          const el = document.createElement('span')
+          el.className = 'tag'
+          el.textContent = g
+          box.appendChild(el)
+        })
+        show(box)
+      }
+
+      // 封禁
+      if (data.block) {
+        const el = $('.blocked')
+        const reason = data.block.reason ? ` · 理由：${data.block.reason}` : ''
+        el.textContent = `⛔ 被 ${data.block.by} 封禁至 ${data.block.expiry}${reason}`
+        show(el)
+      }
+
+      // 统计条
+      $('[data-stat="editcount"]').textContent = (
+        data.editcount ?? 0
+      ).toLocaleString('en-US')
+      $('[data-stat="year"]').textContent = data.registration
+        ? String(data.registration).slice(0, 4)
+        : '—'
+      $('[data-stat="userid"]').textContent =
+        data.userid != null ? `#${data.userid}` : '—'
+
+      // 最近编辑
+      const contribs = Array.isArray(data.contribs) ? data.contribs : []
+      if (contribs.length) {
+        const rows = $('.contribs .rows')
+        contribs.forEach((c) => {
+          const row = document.createElement('div')
+          row.className = 'row'
+          const pg = document.createElement('span')
+          pg.className = 'pg'
+          pg.textContent = c.title
+          const ts = document.createElement('span')
+          ts.className = 'ts'
+          ts.textContent = c.time
+          row.append(pg, ts)
+          rows.appendChild(row)
+        })
+        show($('.contribs'))
+      }
+    </script>
+  </body>
+</html>

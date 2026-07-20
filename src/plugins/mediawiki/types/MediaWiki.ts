@@ -47,6 +47,33 @@ export interface MWNamespaceAlias {
   alias: string
 }
 
+export interface MWUser {
+  userid: number
+  name: string
+  editcount?: number
+  /** ISO timestamp, or null for legacy accounts with no recorded registration. */
+  registration?: string | null
+  groups?: string[]
+  // blockinfo (present only when blocked)
+  blockid?: number
+  blockedby?: string
+  blockedbyid?: number
+  blockreason?: string
+  blockexpiry?: string
+  blocktimestamp?: string
+  // absence markers
+  missing?: boolean
+  invalid?: boolean
+}
+
+export interface MWUserContrib {
+  userid: number
+  user: string
+  ns: number
+  title: string
+  timestamp: string
+}
+
 export type MWNamespaces = Record<string, MWNamespace>
 export interface MWNamespace {
   id: number
