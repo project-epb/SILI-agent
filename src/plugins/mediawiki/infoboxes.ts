@@ -16,6 +16,9 @@ export const INFOBOX_DEFINITION: InfoboxDefinition[] = [
     ],
     injectStyles: '',
     skin: 'apioutput',
+    // 未设头像的用户 404 会自动重定向到 default.png，因此永远有图
+    getAvatarUrl: ({ userid }) =>
+      `https://storage.moegirl.org.cn/moegirl/avatars/${userid}/latest.png`,
   },
   // Minecraft Wiki
   {
@@ -48,5 +51,8 @@ export const INFOBOX_DEFINITION: InfoboxDefinition[] = [
       // 常规
       '.mw-parser-output .ff14-infobox',
     ],
+    // 灰机头像统一域；未设头像会真 404，模板 onerror 回退占位。timestamp 仅防缓存，出图无需
+    getAvatarUrl: ({ userid }) =>
+      `https://av.huijiwiki.com/my_wiki_${userid}_m.png`,
   },
 ]

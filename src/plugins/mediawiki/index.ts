@@ -29,6 +29,7 @@ import {
   parseTitlesFromText,
   useApi,
 } from './utils'
+import { isUserRootPage, shotUserInfobox } from './user-infobox'
 
 declare module 'koishi' {
   export interface Channel {
@@ -48,7 +49,7 @@ export { Config }
 
 export const name = 'mediawiki'
 export default class PluginMediawiki extends BasePlugin<Config> {
-  static inject = ['database', 'puppeteer']
+  static inject = ['database', 'puppeteer', 'html']
 
   readonly INFOBOX_DEFINITION = INFOBOX_DEFINITION
 
@@ -304,6 +305,11 @@ export default class PluginMediawiki extends BasePlugin<Config> {
         ) {
           await session.send(finalMsg)
           session.send(await this.shotInfobox(pages[0].canonicalurl))
+        }
+        // 结果有且仅有一个用户名字空间（ns=2）的根页面 → 伪信息框（不看页面是否存在，看用户是否存在）
+        else if (pages?.length === 1 && isUserRootPage(pages[0])) {
+          await session.send(finalMsg)
+          session.send(await shotUserInfobox(this.ctx, api, pages[0]))
         }
         // 结果有且仅有一个不存在的主名字空间的页面
         else if (
