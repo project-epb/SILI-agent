@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
     ports:
       # 我们暴露此端口到宿主机，这样就能通过 MongoDB Compase 等应用连接它
-      - '27017:27017'
+      - '127.0.0.1:27017:27017'
     # 暂时不设密码，注意配置防火墙，不能将此端口暴露到公网
     # environment:
     #   MONGO_INITDB_ROOT_USERNAME: ${DB_MONGO_USER}
@@ -69,7 +69,7 @@ services:
     #   - NAPCAT_GID=${NAPCAT_GID:-1000}
     mem_limit: 1g
     ports:
-      - 3080:6099
+      - '127.0.0.1:3080:6099'
     volumes:
       - qqnt_data:/app/.config/QQ
       - ./.volumns/napcat:/app/napcat/config

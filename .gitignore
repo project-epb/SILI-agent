@@ -169,3 +169,6 @@ CLAUDE.local.md
 
 # local-only compose override (mounts .debug into core for testing)
 docker-compose.override.yml
+
+# vim swap files
+*.swp
