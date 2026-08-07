@@ -229,16 +229,16 @@ describe('renderHistoryPayload', () => {
   })
 
   it('shows already-seen hint in header when meta carries trim info', () => {
-    const msgs = [baseMsg({ message_seq: 105, time: 1779024000 })]
+    const msgs = [baseMsg({ message_id: 105, message_seq: 105, time: 1779024000 })]
     const out = renderHistoryPayload(msgs, {
       channelId: '999',
       countRequested: 20,
       alreadySeenCount: 7,
-      previousMaxSeq: 104,
+      earliestMessageId: 105,
     })
     expect(out).toContain('已隐藏 7 条')
-    expect(out).toContain('seq ≤ 104')
-    expect(out).toContain('before_seq=105')
+    // The re-read hint must name a message, not a seq threshold — seq cannot order.
+    expect(out).toContain('before_message_id=105')
   })
 
   it('omits already-seen hint when trim count is 0', () => {
@@ -247,48 +247,56 @@ describe('renderHistoryPayload', () => {
       channelId: '999',
       countRequested: 5,
       alreadySeenCount: 0,
-      previousMaxSeq: 50,
+      earliestMessageId: 50,
     })
     expect(out).not.toContain('已隐藏')
   })
 })
 
 describe('trimAlreadySeen', () => {
-  const mk = (seq: number): OneBotHistoryMessage => ({
-    message_seq: seq,
-    time: 1779024000 + seq,
+  const mk = (id: number): OneBotHistoryMessage => ({
+    message_id: id,
+    // Deliberately unrelated to message_id: on NapCat 4.18.4 message_seq IS the
+    // message_id and successive messages carry wildly unordered values, so nothing
+    // here may rely on ordering.
+    message_seq: id,
+    time: 1779024000,
     sender: { user_id: 1, nickname: 'a' },
     message: [{ type: 'text', data: { text: 'x' } }],
   })
 
-  it('keeps only messages with seq > cachedMaxSeq', () => {
-    const r = trimAlreadySeen([mk(1), mk(2), mk(3), mk(4)], 2)
-    expect(r.kept.map((m) => m.message_seq)).toEqual([3, 4])
+  it('drops exactly the messages already shown, whatever their order', () => {
+    const seen = new Set([1979746682, 369767449])
+    const r = trimAlreadySeen([mk(1979746682), mk(369767449), mk(379979974)], seen)
+    expect(r.kept.map((m) => m.message_id)).toEqual([379979974])
     expect(r.trimmedCount).toBe(2)
   })
 
-  it('returns empty kept when cachedMaxSeq >= all seqs', () => {
-    const r = trimAlreadySeen([mk(1), mk(2)], 5)
+  it('keeps a low id that was never shown, even after a much higher one was', () => {
+    // The old seq > cachedMaxSeq rule silently swallowed this whole case.
+    const seen = new Set([1979746682])
+    const r = trimAlreadySeen([mk(55871765)], seen)
+    expect(r.kept).toHaveLength(1)
+    expect(r.trimmedCount).toBe(0)
+  })
+
+  it('returns nothing when every message was already shown', () => {
+    const r = trimAlreadySeen([mk(1), mk(2)], new Set([1, 2]))
     expect(r.kept).toHaveLength(0)
     expect(r.trimmedCount).toBe(2)
   })
 
-  it('returns everything when cachedMaxSeq < all seqs', () => {
-    const r = trimAlreadySeen([mk(10), mk(11)], 5)
-    expect(r.kept).toHaveLength(2)
-    expect(r.trimmedCount).toBe(0)
-  })
-
-  it('drops messages with missing seq (treated as not-newer-than cache)', () => {
-    const noSeq = { time: 1, sender: { user_id: 1 }, message: [] } as OneBotHistoryMessage
-    const r = trimAlreadySeen([noSeq, mk(10)], 5)
-    expect(r.kept.map((m) => m.message_seq)).toEqual([10])
+  it('keeps a message with no id rather than guessing it was seen', () => {
+    const noId = { time: 1, sender: { user_id: 1 }, message: [] } as OneBotHistoryMessage
+    const r = trimAlreadySeen([noId, mk(10)], new Set([10]))
+    expect(r.kept).toHaveLength(1)
+    expect(r.kept[0]).toBe(noId)
     expect(r.trimmedCount).toBe(1)
   })
 
-  it('returns input unchanged when cachedMaxSeq is non-finite', () => {
+  it('returns input unchanged for an empty seen set', () => {
     const msgs = [mk(1), mk(2)]
-    const r = trimAlreadySeen(msgs, NaN)
+    const r = trimAlreadySeen(msgs, new Set())
     expect(r.kept).toBe(msgs)
     expect(r.trimmedCount).toBe(0)
   })

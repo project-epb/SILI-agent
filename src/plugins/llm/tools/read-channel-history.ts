@@ -101,15 +101,22 @@ export async function resolveHistoryAnchor(
 }
 
 interface SeenCacheEntry {
-  maxSeq: number
+  ids: Set<number>
   ts: number
 }
 
 /**
- * Per-(conversation, channel) memory of the newest message_seq the agent
- * has already received. Lets us trim already-shown messages from
- * subsequent calls so the agent doesn't burn tokens re-reading the same
- * window. Plain in-memory Map — lost on restart, which is fine.
+ * Per-(conversation, channel) memory of the message ids the agent has already
+ * been shown. Lets us trim already-shown messages from subsequent calls so the
+ * agent doesn't burn tokens re-reading the same window. Plain in-memory Map —
+ * lost on restart, which is fine.
+ *
+ * This tracks a *set of ids* rather than a high-water mark because message_seq
+ * cannot order anything: on NapCat 4.18.4 it IS the message_id, and consecutive
+ * messages carry unordered values (1979746682 → 369767449 → 379979974). The old
+ * `seq > cachedMaxSeq` rule therefore kept or dropped messages essentially at
+ * random — after one high-valued message it would report "no new messages" for a
+ * channel that had kept talking.
  */
 const SEEN_CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -236,8 +243,8 @@ export interface RenderedHistoryMeta {
   selfId?: number
   /** Number of messages dropped because they were already shown to the agent in a prior call. */
   alreadySeenCount?: number
-  /** The cached max seq used for trimming, if any. */
-  previousMaxSeq?: number
+  /** Oldest message id in this batch — the cursor for reading further back. */
+  earliestMessageId?: number
 }
 
 export function buildHistoryHeader(meta: RenderedHistoryMeta): string {
@@ -256,7 +263,7 @@ export function buildHistoryHeader(meta: RenderedHistoryMeta): string {
   )
   if (meta.alreadySeenCount && meta.alreadySeenCount > 0) {
     lines.push(
-      `（已隐藏 ${meta.alreadySeenCount} 条你上次调用已经看过的消息（seq ≤ ${meta.previousMaxSeq}）。如需重看完整窗口，传 before_seq=${(meta.previousMaxSeq ?? 0) + 1}）`
+      `（已隐藏 ${meta.alreadySeenCount} 条你上次调用已经看过的消息。如需重看完整窗口，传 before_message_id=${meta.earliestMessageId ?? '<该窗口最早一条的 message_id>'}）`
     )
   }
   return lines.join('\n')
@@ -314,17 +321,15 @@ export function renderHistoryPayload(
   return `${header}\n\n${lines.join('\n')}${footer}`
 }
 
-/** Pure helper: drop messages whose seq ≤ cachedMaxSeq. Returns the trimmed
- *  list and how many were trimmed. Used by the handler after cache hit. */
+/** Pure helper: drop messages the agent has already been shown. A message with no
+ *  id is kept — showing it twice beats hiding it on a guess. */
 export function trimAlreadySeen(
   messages: OneBotHistoryMessage[],
-  cachedMaxSeq: number
+  seenIds: Set<number>
 ): { kept: OneBotHistoryMessage[]; trimmedCount: number } {
-  if (!Number.isFinite(cachedMaxSeq)) {
-    return { kept: messages, trimmedCount: 0 }
-  }
+  if (!seenIds.size) return { kept: messages, trimmedCount: 0 }
   const kept = messages.filter(
-    (m) => typeof m.message_seq === 'number' && m.message_seq > cachedMaxSeq
+    (m) => typeof m.message_id !== 'number' || !seenIds.has(m.message_id)
   )
   return { kept, trimmedCount: messages.length - kept.length }
 }
@@ -409,33 +414,29 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
           ? `${conversationId}:${session.guildId}`
           : ''
       const now = Date.now()
-      let cachedMaxSeq: number | undefined
+      let seenIds = new Set<number>()
       if (cacheKey) {
         const cached = seenCache.get(cacheKey)
         if (cached && now - cached.ts < SEEN_CACHE_TTL_MS) {
-          cachedMaxSeq = cached.maxSeq
+          seenIds = cached.ids
         } else if (cached) {
           seenCache.delete(cacheKey)
         }
       }
 
-      let toRender = messages
-      let trimmedCount = 0
-      if (cachedMaxSeq !== undefined) {
-        const r = trimAlreadySeen(messages, cachedMaxSeq)
-        toRender = r.kept
-        trimmedCount = r.trimmedCount
-      }
+      const { kept: toRender, trimmedCount } = trimAlreadySeen(messages, seenIds)
 
       if (cacheKey) {
-        const newestSeq = messages[messages.length - 1]?.message_seq
-        if (typeof newestSeq === 'number' && Number.isFinite(newestSeq)) {
-          seenCache.set(cacheKey, { maxSeq: newestSeq, ts: now })
+        // Union, not replace: the agent has seen everything from every call in the
+        // window, and the batches do not arrive in any order we can collapse.
+        for (const m of messages) {
+          if (typeof m.message_id === 'number') seenIds.add(m.message_id)
         }
+        seenCache.set(cacheKey, { ids: seenIds, ts: now })
       }
 
       if (toRender.length === 0) {
-        return `(自上次调用 read_channel_history（看到 seq=${cachedMaxSeq}）以来没有新消息。如果想重看完整窗口，传 before_seq=${(cachedMaxSeq ?? 0) + 1}。)`
+        return `(自上次调用 read_channel_history 以来没有新消息。如果想重看完整窗口，传 before_message_id=${messages[messages.length - 1]?.message_id ?? ''}。)`
       }
 
       return renderHistoryPayload(toRender, {
@@ -444,7 +445,7 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
         countRequested: count,
         selfId: messages[0]?.self_id,
         alreadySeenCount: trimmedCount,
-        previousMaxSeq: cachedMaxSeq,
+        earliestMessageId: toRender[0]?.message_id ?? messages[0]?.message_id,
       })
     },
   }
