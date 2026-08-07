@@ -35,7 +35,7 @@ export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
       before_seq: {
         type: 'integer',
         description:
-          '分页用：只返回 message_seq 严格小于此值的消息（不传则取最新一批）',
+          '分页用：以该 message_seq 为止往前取（**含**该条），不传则取最新一批。值取自上次返回结尾的提示。',
       },
       before_message_id: {
         type: 'string',
@@ -62,8 +62,12 @@ export interface ReadChannelHistoryInput {
  * `Message` has no seq field, so this lookup is the only way across; koishi's own
  * `getMessageList` does exactly the same.
  *
- * `+ 1` because `before_seq` is strictly-less-than: anchoring ON a message means
- * asking for everything below the next cursor up.
+ * The seq is used verbatim. Verified against NapCat 4.18.4: with `reverse_order`,
+ * `message_seq` selects that message plus the `count` before it — the anchor is
+ * already included. An offset would be meaningless anyway, since `message_seq` is
+ * not a dense counter (it equals `message_id`, and neighbouring values are
+ * unrelated); `seq + 1` simply names a message that does not exist, and NapCat
+ * answers with `data: null`.
  *
  * A message id we cannot resolve returns an `error` rather than falling through to
  * the latest window — quietly answering a different question than the agent asked
@@ -88,7 +92,7 @@ export async function resolveHistoryAnchor(
     if (typeof found !== 'number' || !Number.isFinite(found)) {
       return { error: `无法解析 before_message_id=${id}：该消息没有可用的 message_seq。` }
     }
-    return { seq: Math.floor(found) + 1 }
+    return { seq: Math.floor(found) }
   } catch (e: any) {
     return {
       error: `无法解析 before_message_id=${id}：${e?.message ?? String(e)}`,

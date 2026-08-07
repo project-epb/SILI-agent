@@ -312,10 +312,12 @@ describe('resolveHistoryAnchor', () => {
     expect(r).toEqual({ seq: 500 })
   })
 
-  it('turns a message id into the cursor that includes that message', async () => {
-    // before_seq is strictly-less-than, so anchoring ON a message means seq + 1.
+  it('uses the message_seq verbatim — the cursor already includes the anchor', async () => {
+    // Verified against NapCat 4.18.4: with reverse_order, message_seq means "this
+    // message and the `count` before it", so no offset. An offset would also be
+    // meaningless — message_seq is not a dense counter, it equals message_id.
     const r = await resolveHistoryAnchor(bot(4287), { before_message_id: '123' })
-    expect(r).toEqual({ seq: 4288 })
+    expect(r).toEqual({ seq: 4287 })
   })
 
   it('reports a message id it could not resolve instead of silently ignoring it', async () => {
