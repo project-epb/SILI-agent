@@ -1,5 +1,6 @@
 import type { Context } from 'koishi'
 import { isSignatureValid } from './verify'
+import { escapeMarkup } from './events/util'
 import { renderers } from './events'
 import { buildActions, buildQuoteBody, type ActionMap } from './actions'
 import { DedupStore } from './dedup'
@@ -91,7 +92,12 @@ export async function handleWebhook(
   return {
     status: 200,
     targets,
-    message,
+    // Renderers return plain text, but koishi parses a string as h-element source —
+    // so an `<img src=…>` inside a GitHub body would become a real image element and
+    // a dead URL would fail the entire send. Escape here, once, for every renderer.
+    // `quoteBody` below is deliberately NOT escaped: it goes back to GitHub as
+    // markdown, where entities would render literally.
+    message: typeof message === 'string' ? escapeMarkup(message) : message,
     actions: buildActions(event, payload),
     quoteBody: buildQuoteBody(event, payload, renderOptions),
   }

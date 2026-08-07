@@ -137,6 +137,66 @@ describe('handleWebhook', () => {
     })
   })
 
+  describe('escaping', () => {
+    // GitHub bodies are attacker-controlled text that koishi would otherwise parse as
+    // h-element source: an `<img src=…>` in an issue turns into a real image element,
+    // and a broken URL then fails the whole send (retcode 1200 in prod).
+    const issuePayload = (body: string) => ({
+      repository: { full_name: 'Org/Repo' },
+      issue: {
+        url: 'https://api.github.com/repos/Org/Repo/issues/1',
+        html_url: 'https://github.com/Org/Repo/issues/1',
+        comments_url: 'https://api.github.com/repos/Org/Repo/issues/1/comments',
+        title: 'a bug',
+        number: 1,
+        body,
+        user: { type: 'User' },
+      },
+      sender: { login: 'alice' },
+      action: 'opened',
+    })
+
+    const deliverIssue = async (body: string) => {
+      const json = JSON.stringify(issuePayload(body))
+      const r = 'payload=' + encodeURIComponent(json)
+      return handleWebhook(
+        headers({
+          'x-github-event': 'issues',
+          'x-hub-signature-256':
+            'sha256=' + createHmac('sha256', secret).update(r).digest('hex'),
+        }),
+        r,
+        { payload: json },
+        deps
+      )
+    }
+
+    it('escapes markup in the body so it cannot become an element', async () => {
+      const res = await deliverIssue('见 <img src="https://nope.invalid/x.png"/> 这里')
+      expect(res.message).not.toContain('<img')
+      expect(res.message).toContain('&lt;img src="https://nope.invalid/x.png"/&gt;')
+    })
+
+    it('escapes an at-element so a body cannot make the bot mention anyone', async () => {
+      const res = await deliverIssue('cc <at id="all"/>')
+      expect(res.message).not.toContain('<at')
+      expect(res.message).toContain('&lt;at id="all"/&gt;')
+    })
+
+    it('leaves ordinary text untouched', async () => {
+      const res = await deliverIssue('just a normal report')
+      expect(res.message).toContain('just a normal report')
+      expect(res.message).not.toContain('&')
+    })
+
+    it('does NOT escape the quote body — that one goes back to GitHub as markdown', async () => {
+      // quoteBody is posted into a GitHub comment, not into a chat message, so HTML
+      // entities there would show up literally in the issue thread.
+      const res = await deliverIssue('见 <img src="https://nope.invalid/x.png"/> 这里')
+      expect(res.quoteBody).toContain('<img src="https://nope.invalid/x.png"/>')
+    })
+  })
+
   it('returns quick-reply actions for an interactive event on success', async () => {
     const issuesPayload = {
       repository: { full_name: 'Org/Repo' },
