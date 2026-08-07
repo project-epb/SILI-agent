@@ -33,8 +33,11 @@ describe('renderIssues', () => {
     expect(renderIssues(p, opts))
       .toBe('alice transferred issue org/repo#3 to org/other#8\nBug')
   })
-  it('skips bot-authored issues', () => {
-    expect(renderIssues({ ...base, action: 'opened', issue: { ...base.issue, user: { type: 'Bot' } } }, opts)).toBeNull()
+  // Bot filtering is sender-based and lives in the webhook layer: a human closing a
+  // bot-authored issue must still render.
+  it('renders a human action on a bot-authored issue', () => {
+    const p = { ...base, action: 'closed', issue: { ...base.issue, user: { type: 'Bot' } } }
+    expect(renderIssues(p, opts)).toBe('alice closed issue org/repo#3\nBug')
   })
   it('unknown action -> null', () => {
     expect(renderIssues({ ...base, action: 'labeled' }, opts)).toBeNull()

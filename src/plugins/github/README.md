@@ -32,6 +32,8 @@
 | `replyFooter`   | `string`      | `''`                | 机器人代发评论时追加的签名（会附在评论末尾）               |
 | `replyTimeout`  | `number` (ms) | `3600000`（1 小时） | 引用回复的有效窗口，也是消息 → 操作映射的内存存活时间     |
 | `bodyMaxLength` | `number`      | `500`               | 消息中 issue / PR / 评论正文的截断长度，`0` 表示不截断     |
+| `filterBots`    | `boolean`     | `true`              | 屏蔽由自动程序触发的事件，见下方「屏蔽自动程序」           |
+| `extraBotLogins` | `string[]`   | `[]`                | 额外视为自动程序的账号 login                               |
 
 > webhook 接收路由为 `<path>/webhook`，OAuth 回调路由为 `<path>/authorize`。
 
@@ -94,6 +96,25 @@ github -d owner/repo      # 取消订阅
 `push`、`issues`、`issue_comment`、`pull_request`、`pull_request_review`、`pull_request_review_comment`、`commit_comment`、`create`、`delete`、`fork`、`milestone`、`star`。
 
 机器人自身产生的评论（例如通过引用回复代发的评论）在被 webhook 推回时会自动去除签名，不会造成重复噪声。
+
+## 屏蔽自动程序
+
+`filterBots`（默认开启）会丢弃**由自动程序触发**的一切事件 —— renovate 一次开十几个 PR 时连带产生的建分支 / 删分支 / PR / 评论全部静默。
+
+判据有两条：
+
+1. **`sender.type === 'Bot'`**：凡以 GitHub App 身份动作的账号都命中（`renovate[bot]`、`dependabot[bot]`、`github-actions[bot]` 等）。这比匹配 `[bot]` 后缀可靠——少数 App 身份的 login 并不带该后缀（如 Copilot）。
+2. **`extraBotLogins` 名单**：跑在**普通用户账号**上的自动化（自托管 Renovate 用的 PAT 账号、老式 CI 账号）在 payload 里就是 `type: "User"`，无法自动识别，需要手动列出其 login（大小写不敏感）：
+
+   ```yaml
+   extraBotLogins:
+     - renovate-bot
+     - my-ci-account
+   ```
+
+判据是**触发事件的人**，而非内容作者：人类合并 bot 提交的 PR、在 bot 开的 issue 下回复，这些消息**仍会推送**。
+
+被丢弃的投递会记一条 debug 日志（含事件名与 sender），排查「某条事件为什么没推」时可开 debug 级别查看。
 
 ## 工作原理
 

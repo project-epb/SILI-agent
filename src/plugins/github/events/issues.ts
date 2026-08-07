@@ -3,7 +3,6 @@ import { cleanBody, issueName } from './util'
 
 export const renderIssues: EventRenderer = (payload, opts) => {
   const { repository, issue, sender, changes } = payload
-  if (issue.user?.type === 'Bot') return null
   const name = issueName(repository, issue)
   switch (payload.action) {
     case 'opened':

@@ -47,8 +47,11 @@ describe('renderPullRequest', () => {
     expect(renderPullRequest({ ...base, action: 'ready_for_review' }, opts))
       .toBe('alice marked org/repo#12 as ready for review')
   })
-  it('skips bot-authored PRs', () => {
-    expect(renderPullRequest({ ...base, action: 'opened', pull_request: { ...pr, user: { type: 'Bot' } } }, opts)).toBeNull()
+  // Bot filtering is sender-based and lives in the webhook layer: a human acting on a
+  // bot-authored PR (merging a renovate PR) must still render.
+  it('renders a human action on a bot-authored PR', () => {
+    const p = { ...base, action: 'closed', pull_request: { ...pr, user: { type: 'Bot' }, merged: true } }
+    expect(renderPullRequest(p, opts)).toBe('alice merged pull request org/repo#12\nAdd X')
   })
   it('unknown action -> null', () => {
     expect(renderPullRequest({ ...base, action: 'labeled' }, opts)).toBeNull()
@@ -69,7 +72,8 @@ describe('renderPullRequestReview', () => {
   it('non-submitted action -> null', () => {
     expect(renderPullRequestReview({ ...rbase, action: 'edited' }, opts)).toBeNull()
   })
-  it('bot reviewer -> null', () => {
-    expect(renderPullRequestReview({ ...rbase, review: { body: 'x', user: { type: 'Bot' } } }, opts)).toBeNull()
+  it('renders a bot review — filtering is not the renderer’s job', () => {
+    const p = { ...rbase, review: { body: 'x', user: { login: 'renovate[bot]', type: 'Bot' } } }
+    expect(renderPullRequestReview(p, opts)).toBe('renovate[bot] reviewed pull request org/repo#12\nx')
   })
 })

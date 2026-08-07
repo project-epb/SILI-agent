@@ -26,6 +26,8 @@ export default class PluginGitHub extends BasePlugin<Config> {
     replyFooter: Schema.string().role('textarea').default(''),
     replyTimeout: Schema.natural().role('ms').default(Time.hour),
     bodyMaxLength: Schema.natural().default(500),
+    filterBots: Schema.boolean().default(true),
+    extraBotLogins: Schema.array(Schema.string()).default([]),
   })
 
   private store = new SubscriptionStore()
