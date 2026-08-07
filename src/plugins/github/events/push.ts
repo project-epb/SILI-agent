@@ -1,13 +1,14 @@
 import type { EventRenderer } from '../types'
 
 /**
- * Faithful port of the old push renderer. Returns null to skip: bot pushes, and
- * branch create/delete (before/after all-zero SHAs). Commit body is trimmed to
- * its first line (subject) — commit messages are plain text.
+ * Returns null to skip branch create/delete (before/after all-zero SHAs) — those arrive
+ * as their own `create`/`delete` events. Commit body is trimmed to its first line
+ * (subject) — commit messages are plain text.
+ *
+ * Bot filtering is NOT done here: it is sender-based and config-driven in webhook.ts.
  */
 export const renderPush: EventRenderer = (payload) => {
-  const { pusher, sender, commits, repository, ref, before, after } = payload
-  if (sender?.type === 'Bot') return null
+  const { pusher, commits, repository, ref, before, after } = payload
   if (/^0+$/.test(before) || /^0+$/.test(after)) return null
   const branch = ref.replace(/^refs\/heads\//, '')
   return [

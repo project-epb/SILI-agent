@@ -1,10 +1,9 @@
 import type { EventRenderer, RenderOptions } from '../types'
 import { cleanBody, issueName } from './util'
 
-/** Shared comment wrapper (faithful port of the old onComment factory, message text only). */
+/** Shared comment wrapper (message text only). Bot filtering happens in webhook.ts. */
 function renderComment(payload: any, target: string, opts: RenderOptions): string | null {
   const { user, body } = payload.comment
-  if (user?.type === 'Bot') return null
   if (payload.action === 'deleted') {
     return `${payload.sender.login} deleted a comment on ${target}`
   }

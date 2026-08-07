@@ -18,8 +18,10 @@ describe('renderPush', () => {
   it('renders pusher, branch, and first line of each commit', () => {
     expect(renderPush(base, opts)).toBe('alice pushed to org/repo:main\n[abcdef] fix: the thing')
   })
-  it('skips bot pushes', () => {
-    expect(renderPush({ ...base, sender: { type: 'Bot' } }, opts)).toBeNull()
+  // Bot filtering lives in the webhook layer (sender-based, config-driven), not here.
+  it('renders a bot push — filtering is not the renderer’s job', () => {
+    const p = { ...base, sender: { type: 'Bot' }, pusher: { name: 'renovate[bot]' } }
+    expect(renderPush(p, opts)).toBe('renovate[bot] pushed to org/repo:main\n[abcdef] fix: the thing')
   })
   it('skips branch creation (before all zeros)', () => {
     expect(renderPush({ ...base, before: '0'.repeat(40) }, opts)).toBeNull()

@@ -3,6 +3,7 @@ import { isSignatureValid } from './verify'
 import { renderers } from './events'
 import { buildActions, buildQuoteBody, type ActionMap } from './actions'
 import { DedupStore } from './dedup'
+import { isAutomatedSender } from './bot-filter'
 import type { Config, RenderOptions } from './types'
 
 const UNPARSED_BODY = Symbol.for('unparsedBody')
@@ -26,6 +27,17 @@ export interface WebhookResult {
   actions?: ActionMap
   /** The original body to quote (`> ...`) when a user quote-replies this message. */
   quoteBody?: string
+  /** Set when the delivery was intentionally dropped; surfaced for the debug log. */
+  filtered?: 'bot'
+  /** The dropped sender's login, so the debug log can name it. */
+  filteredSender?: string
+}
+
+/** Sender-based delivery filter. Disabled by default here; `applyWebhook` injects the config. */
+export interface BotFilterOptions {
+  enabled: boolean
+  /** Sender logins to treat as automated even though GitHub reports them as users. */
+  extraLogins: string[]
 }
 
 function safeParse(source: any): any {
@@ -46,7 +58,8 @@ export async function handleWebhook(
   rawBody: string | undefined,
   body: any,
   deps: WebhookDeps,
-  renderOptions: RenderOptions = { bodyMaxLength: 500 }
+  renderOptions: RenderOptions = { bodyMaxLength: 500 },
+  botFilter: BotFilterOptions = { enabled: false, extraLogins: [] }
 ): Promise<WebhookResult> {
   const event = String(headers['x-github-event'] ?? '')
   const signature = headers['x-hub-signature-256'] as string | undefined
@@ -65,6 +78,12 @@ export async function handleWebhook(
   if (hook.name !== repo && deps.onRename) {
     await deps.onRename(hookId, hook.name, repo, hook.secret)
   }
+  // Drop automated senders (renovate/dependabot/actions …). After the rename migration so a
+  // bot-triggered delivery still keeps the subscription index in sync, before target resolution
+  // so nothing is broadcast or deduped.
+  if (botFilter.enabled && isAutomatedSender(payload.sender, botFilter.extraLogins)) {
+    return { status: 200, filtered: 'bot', filteredSender: payload.sender?.login }
+  }
   const targets = deps.targets(repo, event, payload.action)
   const render = renderers[event]
   const message = render ? render(payload, renderOptions) : null
@@ -82,15 +101,33 @@ export async function handleWebhook(
 export function applyWebhook(ctx: Context, config: Config, deps: WebhookDeps): void {
   const prefix = config.messagePrefix ?? ''
   const dedup = new DedupStore(ctx, DEDUP_TTL)
+  const logger = ctx.logger('github')
+  const botFilter: BotFilterOptions = {
+    enabled: config.filterBots ?? true,
+    extraLogins: config.extraBotLogins ?? [],
+  }
   ctx.server.post((config.path ?? '/github') + '/webhook', async (koa) => {
     const reqBody = koa.request.body as any
     const rawBody = reqBody?.[UNPARSED_BODY] as string | undefined
-    const result = await handleWebhook(koa.headers, rawBody, reqBody, deps, {
-      bodyMaxLength: config.bodyMaxLength ?? 500,
-    })
+    const result = await handleWebhook(
+      koa.headers,
+      rawBody,
+      reqBody,
+      deps,
+      { bodyMaxLength: config.bodyMaxLength ?? 500 },
+      botFilter
+    )
     // Respond immediately (incl. 200) — never await broadcast, or a slow QQ send would blow
     // GitHub's 10s webhook timeout and trigger retries.
     koa.status = result.status
+    if (result.filtered === 'bot') {
+      // Makes "why didn't this event show up?" answerable without reading the code.
+      logger.debug(
+        'dropped %s event from bot sender %s',
+        koa.headers['x-github-event'],
+        result.filteredSender ?? '(unknown)'
+      )
+    }
     if (result.status !== 200 || !result.targets?.length || result.message == null) return
     const deliveryId = String(koa.headers['x-github-delivery'] ?? '')
     if (!dedup.firstSeen(deliveryId)) return // duplicate delivery (GitHub retry): already 200, skip

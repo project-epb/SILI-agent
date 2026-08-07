@@ -31,8 +31,10 @@ describe('renderIssueComment', () => {
     expect(renderIssueComment({ ...base, action: 'deleted' }, opts))
       .toBe('alice deleted a comment on issue org/repo#5')
   })
-  it('skips bot-authored comments', () => {
-    expect(renderIssueComment({ ...base, comment: { user: { login: 'b', type: 'Bot' }, body: 'x' } }, opts)).toBeNull()
+  // Bot filtering is sender-based and lives in the webhook layer.
+  it('renders a bot-authored comment — filtering is not the renderer’s job', () => {
+    const p = { ...base, comment: { user: { login: 'renovate[bot]', type: 'Bot' }, body: 'x' } }
+    expect(renderIssueComment(p, opts)).toBe('renovate[bot] commented on issue org/repo#5\nx')
   })
 })
 

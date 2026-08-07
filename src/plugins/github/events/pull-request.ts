@@ -4,7 +4,6 @@ import { cleanBody, issueName } from './util'
 export const renderPullRequest: EventRenderer = (payload, opts) => {
   const { repository, sender } = payload
   const pr = payload.pull_request
-  if (pr.user?.type === 'Bot') return null
   const name = issueName(repository, pr)
   switch (payload.action) {
     case 'opened': {
@@ -38,7 +37,6 @@ export const renderPullRequestReview: EventRenderer = (payload, opts) => {
   if (payload.action !== 'submitted') return null
   const { review, repository, pull_request } = payload
   if (!review.body) return null
-  if (review.user?.type === 'Bot') return null
   const name = issueName(repository, pull_request)
   return [
     `${review.user.login} reviewed pull request ${name}`,

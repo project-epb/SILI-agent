@@ -12,6 +12,11 @@ export interface Config {
   replyTimeout?: number
   /** Max characters of an issue/PR/comment body before truncation. Default 500; 0 = no limit. */
   bodyMaxLength?: number
+  /** Drop events triggered by automated senders (GitHub Apps / bot accounts). Default true. */
+  filterBots?: boolean
+  /** Sender logins to additionally treat as automated — for automations running under an
+   * ordinary user account, which GitHub reports as `type: 'User'`. */
+  extraBotLogins?: string[]
 }
 
 /** Per-channel event filter meta, keyed by camelized event name.
