@@ -13,6 +13,11 @@ import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
 import { PROTOCOL_MARKERS, PROTOCOL_TAGS } from '../utils/protocol'
+import {
+  buildQuotedMessageBlock,
+  extractQuoteMeta,
+  resolveQuoteSeq,
+} from '../utils/quoted-message'
 import { splitContent } from '../utils/stream-splitter'
 import { clampThinkingBudget, resolveThinkingLevel } from '../utils/thinking'
 
@@ -306,6 +311,22 @@ export default class ChatCommand extends BasePlugin {
           JSON.stringify(chatInfo),
           PROTOCOL_TAGS.TURN_CONTEXT.close,
         ].join('\n')
+        // Quote-reply context: without it the agent sees the user's words with no
+        // idea which message they hang off. Part of the persistable envelope —
+        // unlike an interrupt notice this is fact, not a one-shot instruction, so
+        // replaying it next turn keeps multi-turn threads coherent.
+        const quoteMeta = extractQuoteMeta(session)
+        const quotedMessageBlock = quoteMeta
+          ? buildQuotedMessageBlock(
+              {
+                ...quoteMeta,
+                // The history cursor lets the agent read around an old message
+                // instead of paging back from the newest one.
+                seq: await resolveQuoteSeq(session.bot, session.quote?.id),
+              },
+              llm.config.quotedMessageMaxLength ?? 1000
+            )
+          : ''
         const userMessageBlock = [
           PROTOCOL_TAGS.USER_MESSAGE.open,
           userMessageBody,
@@ -315,9 +336,19 @@ export default class ChatCommand extends BasePlugin {
         // computed AFTER history load (we only seed memory on the first
         // turn of a fresh conversation, and post-compaction sessions
         // already carry the snapshot inside their summary user row).
-        const persistableEnvelopeBase = `${chatInfoBlock}\n${userMessageBlock}`
+        const persistableEnvelopeBase = [
+          chatInfoBlock,
+          quotedMessageBlock,
+          userMessageBlock,
+        ]
+          .filter(Boolean)
+          .join('\n')
+        // The quote block belongs in the interrupt path too — being interrupted
+        // doesn't make the user's quote any less relevant.
         const userMessageEnvelopeBase = interruptNoticeBlock
-          ? `${chatInfoBlock}\n${interruptNoticeBlock}\n${userMessageBlock}`
+          ? [chatInfoBlock, interruptNoticeBlock, quotedMessageBlock, userMessageBlock]
+              .filter(Boolean)
+              .join('\n')
           : persistableEnvelopeBase
 
         // chatMessages is populated after systemPromptText is resolved

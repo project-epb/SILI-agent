@@ -35,6 +35,12 @@ export const PROTOCOL_ELEMENT_TYPES = {
   TURN_CONTEXT: 'turn_context',
   /** The actual user-typed text inside a chat turn envelope. */
   USER_MESSAGE: 'user_message',
+  /**
+   * The message the user quote-replied to, when this turn has one. Carries the
+   * author (and whether it was the bot herself) plus, on OneBot, the channel
+   * history cursor so the agent can read around an old message.
+   */
+  QUOTED_MESSAGE: 'quoted_message',
   /** One-shot block telling the agent it was just interrupted. */
   INTERRUPT_NOTICE: 'interrupt_notice',
   /**
@@ -94,6 +100,7 @@ export const PROTOCOL_ONLY_ELEMENT_TYPES: ReadonlySet<string> = new Set([
   PROTOCOL_ELEMENT_TYPES.TURN_CONTEXT,
   'chat_info', // legacy: pre-2026-05-18 envelope tag name
   PROTOCOL_ELEMENT_TYPES.USER_MESSAGE,
+  PROTOCOL_ELEMENT_TYPES.QUOTED_MESSAGE,
   PROTOCOL_ELEMENT_TYPES.INTERRUPT_NOTICE,
   PROTOCOL_ELEMENT_TYPES.SYSTEM_COMPACT,
   'system:compact', // legacy: pre-2026-05-18 namespaced form

@@ -172,6 +172,12 @@ export interface Config {
   memoryUpdateInterval?: number
   memoryForkMaxRetries?: number
   /**
+   * Max characters of a quote-replied message injected as `<quoted_message>`.
+   * The block is persisted with the user row, so an unbounded quote would bloat
+   * both the prompt and history. `0` = no limit. Default 1000.
+   */
+  quotedMessageMaxLength?: number
+  /**
    * Idle timeout (ms) for a chat session. After this many ms without a new
    * user message, the next message rotates to a fresh conversation_id —
    * primarily a length cap on chat history, since system prompt is now
@@ -321,6 +327,7 @@ export default class PluginLLM extends BasePlugin<Config> {
       memoryByteLimit: 3000,
       memoryUpdateInterval: 10,
       memoryForkMaxRetries: 3,
+      quotedMessageMaxLength: 1000,
       sessionIdleTimeoutMs: 3 * 24 * 60 * 60 * 1000, // 3 days
       systemPrompt: {
         default:
