@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   buildQuotedMessageBlock,
   extractQuoteMeta,
-  resolveQuoteSeq,
 } from '../utils/quoted-message'
 
 const MAX = 1000
@@ -33,11 +32,11 @@ describe('buildQuotedMessageBlock', () => {
     expect(block).not.toContain('self=')
   })
 
-  it('carries the history cursor when one is known', () => {
-    // Lets the agent call read_channel_history around an old message instead of
-    // paging back from the newest one.
-    const block = buildQuotedMessageBlock({ content: 'x', seq: 4287 }, MAX)
-    expect(block).toContain('seq="4287"')
+  it('carries the message id so the agent can anchor a history read on it', () => {
+    // read_channel_history takes before_message_id; the id is free here (it is
+    // already on session.quote), so no API call is needed to produce it.
+    const block = buildQuotedMessageBlock({ content: 'x', messageId: '9876' }, MAX)
+    expect(block).toContain('message_id="9876"')
   })
 
   it('omits attributes that are unknown', () => {
@@ -84,9 +83,9 @@ describe('buildQuotedMessageBlock', () => {
   it('orders attributes deterministically for prompt-cache stability', () => {
     // The block is persisted into openai_chat and replayed next turn; byte drift
     // would cost the provider's prefix cache.
-    const meta = { content: 'x', author: 'a', authorId: '1', self: true, seq: 7 }
+    const meta = { content: 'x', author: 'a', authorId: '1', self: true, messageId: '7' }
     expect(buildQuotedMessageBlock(meta, MAX)).toBe(
-      '<quoted_message author="a" author_id="1" self="true" seq="7">\nx\n</quoted_message>'
+      '<quoted_message author="a" author_id="1" self="true" message_id="7">\nx\n</quoted_message>'
     )
   })
 })
@@ -99,12 +98,13 @@ describe('extractQuoteMeta', () => {
   it('reads content, author and id off the quoted message', () => {
     const session = {
       selfId: '233',
-      quote: { content: '你好', user: { id: '12345', name: '小鱼君' } },
+      quote: { id: '9876', content: '你好', user: { id: '12345', name: '小鱼君' } },
     }
     expect(extractQuoteMeta(session)).toEqual({
       content: '你好',
       author: '小鱼君',
       authorId: '12345',
+      messageId: '9876',
       self: false,
     })
   })
@@ -134,37 +134,8 @@ describe('extractQuoteMeta', () => {
       content: 'x',
       author: undefined,
       authorId: undefined,
+      messageId: undefined,
       self: false,
     })
-  })
-})
-
-describe('resolveQuoteSeq', () => {
-  it('reads message_seq via the OneBot get_msg call', async () => {
-    // satori's Message has no seq field, so the adapter drops it — koishi's own
-    // getMessageList re-fetches the same way to page history.
-    const bot = { internal: { getMsg: vi.fn(async () => ({ message_seq: 4287 })) } }
-    expect(await resolveQuoteSeq(bot, 'msg-1')).toBe(4287)
-    expect(bot.internal.getMsg).toHaveBeenCalledWith('msg-1')
-  })
-
-  it('returns undefined on a platform without get_msg', async () => {
-    expect(await resolveQuoteSeq({}, 'msg-1')).toBeUndefined()
-  })
-
-  it('returns undefined when the response carries no seq', async () => {
-    const bot = { internal: { getMsg: async () => ({}) } }
-    expect(await resolveQuoteSeq(bot, 'msg-1')).toBeUndefined()
-  })
-
-  it('swallows an API failure — a missing cursor must not cost us the quote', async () => {
-    const bot = { internal: { getMsg: async () => { throw new Error('offline') } } }
-    expect(await resolveQuoteSeq(bot, 'msg-1')).toBeUndefined()
-  })
-
-  it('returns undefined without an id to look up', async () => {
-    const bot = { internal: { getMsg: vi.fn() } }
-    expect(await resolveQuoteSeq(bot, undefined)).toBeUndefined()
-    expect(bot.internal.getMsg).not.toHaveBeenCalled()
   })
 })

@@ -130,7 +130,7 @@ export function buildSystemPromptText(
       `**\`<${E.QUOTED_MESSAGE}>\` 表示用户是在那条消息的基础上说话**，理解他这句时要带上它。属性含义：`,
       '- `author` / `author_id`：那条消息是谁发的',
       '- `self="true"`：那条消息是**你自己**之前说的 —— 用户在回复你',
-      `- \`seq\`：那条消息在频道里的位置游标。需要了解它前后发生了什么时，用 \`read_channel_history\` 并把 \`before_seq\` 设成 \`seq + 1\`，即可读到它及更早的消息（被引用的消息可能很久远，直接翻最新的历史多半翻不到）`,
+      '- `message_id`：那条消息的 id。需要了解它前后聊了什么时，把它作为 `read_channel_history` 的 `before_message_id` 传进去（被引用的消息可能很久远，直接翻最新的历史多半翻不到）',
       '',
       `\`<${E.QUOTED_MESSAGE}>\` 与用户这句话同等真实，但它**不是用户此刻的指令** —— 要响应的仍然只有 \`${T.USER_MESSAGE.open}\`。同样 MUST NOT 复述该块的标签或属性。`,
       '',

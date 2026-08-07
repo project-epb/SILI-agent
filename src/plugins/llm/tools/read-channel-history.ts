@@ -19,6 +19,8 @@ export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
     '- 闲聊/已经能直接回答的问题',
     '- 凑上下文 / 例行扫一遍（浪费 token）',
     '',
+    '- 用户引用了一条较早的消息，你需要知道那条消息前后发生了什么（传 `before_message_id`）',
+    '',
     '**约束**：仅能查当前 channel，不能跨群；NapCat 端单次最多约 30 条；分页用上次返回里的 `before_seq` 字段继续往前拉。',
   ].join('\n'),
   parameters: {
@@ -35,6 +37,11 @@ export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
         description:
           '分页用：只返回 message_seq 严格小于此值的消息（不传则取最新一批）',
       },
+      before_message_id: {
+        type: 'string',
+        description:
+          '以某条已知消息为锚点，读取它**及**更早的消息。典型用法：用户引用了一条消息（`<quoted_message>` 块的 `message_id`），你想知道那条消息前后聊了什么。与 before_seq 同时传时以 before_seq 为准。',
+      },
     },
     additionalProperties: false,
   },
@@ -43,6 +50,50 @@ export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
 export interface ReadChannelHistoryInput {
   count?: number
   before_seq?: number
+  before_message_id?: string
+}
+
+/**
+ * Work out the `message_seq` cursor to page from.
+ *
+ * `before_seq` wins when given — it is already the native cursor. Otherwise a
+ * `before_message_id` is translated via OneBot's `get_msg`, whose response carries
+ * `message_seq` (a go-cqhttp/NapCat extension, hence the existence check). satori's
+ * `Message` has no seq field, so this lookup is the only way across; koishi's own
+ * `getMessageList` does exactly the same.
+ *
+ * `+ 1` because `before_seq` is strictly-less-than: anchoring ON a message means
+ * asking for everything below the next cursor up.
+ *
+ * A message id we cannot resolve returns an `error` rather than falling through to
+ * the latest window — quietly answering a different question than the agent asked
+ * is worse than telling it the anchor failed.
+ */
+export async function resolveHistoryAnchor(
+  bot: any,
+  input: ReadChannelHistoryInput
+): Promise<{ seq?: number; error?: string }> {
+  const seq = input.before_seq
+  if (typeof seq === 'number' && Number.isFinite(seq) && seq > 0) {
+    return { seq: Math.floor(seq) }
+  }
+  const id = input.before_message_id
+  if (!id) return { seq: undefined }
+  if (typeof bot?.internal?.getMsg !== 'function') {
+    return { error: `无法解析 before_message_id=${id}：当前平台不支持 get_msg。` }
+  }
+  try {
+    const msg = await bot.internal.getMsg(id)
+    const found = msg?.message_seq
+    if (typeof found !== 'number' || !Number.isFinite(found)) {
+      return { error: `无法解析 before_message_id=${id}：该消息没有可用的 message_seq。` }
+    }
+    return { seq: Math.floor(found) + 1 }
+  } catch (e: any) {
+    return {
+      error: `无法解析 before_message_id=${id}：${e?.message ?? String(e)}`,
+    }
+  }
 }
 
 interface SeenCacheEntry {
@@ -294,10 +345,22 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
           : 20
       const count = Math.min(30, Math.max(1, requested))
 
-      const explicitBeforeSeq =
-        typeof input.before_seq === 'number' &&
-        Number.isFinite(input.before_seq) &&
-        input.before_seq > 0
+      const bot = session.bot as Bot & {
+        internal?: {
+          _request?: (action: string, params: any) => Promise<any>
+          getMsg?: (id: string) => Promise<any>
+        }
+      }
+      const internal = bot.internal
+      if (!internal?._request) {
+        return 'Error: onebot internal._request unavailable (adapter not initialized?)'
+      }
+
+      const anchor = await resolveHistoryAnchor(bot, input)
+      if (anchor.error) return `Error: ${anchor.error}`
+      // An anchored read (either form) is pagination, not a "latest window" read —
+      // the seen-cache trim must stay off for it.
+      const explicitBeforeSeq = anchor.seq !== undefined
 
       const params: Record<string, unknown> = {
         group_id: Number(session.guildId),
@@ -309,21 +372,13 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
       // own reply / status messages (higher seq) are naturally excluded
       // without time-based heuristics. Model can override via before_seq
       // for pagination.
-      if (explicitBeforeSeq) {
-        params.message_seq = Math.floor(input.before_seq!)
+      if (anchor.seq !== undefined) {
+        params.message_seq = anchor.seq
       } else if (session.messageId) {
         const anchor = Number(session.messageId)
         if (Number.isFinite(anchor) && anchor > 0) {
           params.message_seq = anchor
         }
-      }
-
-      const bot = session.bot as Bot & {
-        internal?: { _request?: (action: string, params: any) => Promise<any> }
-      }
-      const internal = bot.internal
-      if (!internal?._request) {
-        return 'Error: onebot internal._request unavailable (adapter not initialized?)'
       }
 
       let res: any

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   renderSegment,
   renderHistoryPayload,
+  resolveHistoryAnchor,
   trimAlreadySeen,
   type OneBotHistoryMessage,
 } from '../tools/read-channel-history'
@@ -290,5 +291,54 @@ describe('trimAlreadySeen', () => {
     const r = trimAlreadySeen(msgs, NaN)
     expect(r.kept).toBe(msgs)
     expect(r.trimmedCount).toBe(0)
+  })
+})
+
+describe('resolveHistoryAnchor', () => {
+  const bot = (seq?: number, fail = false) => ({
+    internal: {
+      getMsg: async () => {
+        if (fail) throw new Error('offline')
+        return seq === undefined ? {} : { message_seq: seq }
+      },
+    },
+  })
+
+  it('prefers an explicit before_seq — it is already the native cursor', async () => {
+    const r = await resolveHistoryAnchor(bot(999), {
+      before_seq: 500,
+      before_message_id: '123',
+    })
+    expect(r).toEqual({ seq: 500 })
+  })
+
+  it('turns a message id into the cursor that includes that message', async () => {
+    // before_seq is strictly-less-than, so anchoring ON a message means seq + 1.
+    const r = await resolveHistoryAnchor(bot(4287), { before_message_id: '123' })
+    expect(r).toEqual({ seq: 4288 })
+  })
+
+  it('reports a message id it could not resolve instead of silently ignoring it', async () => {
+    // Silently falling back to the latest window would answer a different
+    // question than the agent asked.
+    const r = await resolveHistoryAnchor(bot(undefined), { before_message_id: '123' })
+    expect(r.seq).toBeUndefined()
+    expect(r.error).toContain('123')
+  })
+
+  it('reports an API failure the same way', async () => {
+    const r = await resolveHistoryAnchor(bot(1, true), { before_message_id: '123' })
+    expect(r.seq).toBeUndefined()
+    expect(r.error).toBeTruthy()
+  })
+
+  it('yields no anchor when neither argument is given', async () => {
+    expect(await resolveHistoryAnchor(bot(1), {})).toEqual({ seq: undefined })
+  })
+
+  it('ignores a non-positive before_seq', async () => {
+    expect(await resolveHistoryAnchor(bot(1), { before_seq: 0 })).toEqual({
+      seq: undefined,
+    })
   })
 })

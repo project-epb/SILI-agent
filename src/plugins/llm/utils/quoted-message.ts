@@ -11,8 +11,8 @@ export interface QuotedMessageMeta {
   authorId?: string
   /** True when the quoted message is one SILI sent herself. */
   self?: boolean
-  /** OneBot `message_seq` — the cursor `read_channel_history` pages by. */
-  seq?: number
+  /** Platform message id — what `read_channel_history`'s `before_message_id` takes. */
+  messageId?: string
 }
 
 /** Pull what satori knows about the quoted message off the session. */
@@ -23,31 +23,8 @@ export function extractQuoteMeta(session: any): QuotedMessageMeta | undefined {
     content: quote.content ?? '',
     author: quote.member?.nick || quote.user?.name || undefined,
     authorId: quote.user?.id,
+    messageId: quote.id,
     self: !!quote.user?.id && quote.user.id === session.selfId,
-  }
-}
-
-/**
- * Look up the quoted message's OneBot `message_seq`, the cursor
- * `read_channel_history` pages by.
- *
- * satori's `Message` has no seq field, so the adapter drops it while building
- * `session.quote` — koishi's own `getMessageList` re-fetches via `get_msg` for the
- * same reason. Costs one local WS round-trip, and only when a quote is present.
- *
- * Best-effort by design: any platform without `get_msg`, any API failure, and we
- * simply omit the cursor rather than lose the quote.
- */
-export async function resolveQuoteSeq(
-  bot: any,
-  messageId: string | undefined
-): Promise<number | undefined> {
-  if (!messageId || typeof bot?.internal?.getMsg !== 'function') return undefined
-  try {
-    const msg = await bot.internal.getMsg(messageId)
-    return typeof msg?.message_seq === 'number' ? msg.message_seq : undefined
-  } catch {
-    return undefined
   }
 }
 
@@ -85,6 +62,6 @@ export function buildQuotedMessageBlock(
     attr('author', meta.author) +
     attr('author_id', meta.authorId) +
     (meta.self ? ' self="true"' : '') +
-    attr('seq', meta.seq)
+    attr('message_id', meta.messageId)
   return `<${TAG}${attrs}>\n${body}\n</${TAG}>`
 }
