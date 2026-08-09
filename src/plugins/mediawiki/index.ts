@@ -281,7 +281,13 @@ export default class PluginMediawiki extends BasePlugin<Config> {
 
         const interwikiMsgs =
           interwiki?.map((item) => {
-            return [`跨语言链接：`, item.url].join('\n')
+            const pageAnchor =
+              titles.find(
+                (i) =>
+                  i.name.toLocaleLowerCase() === item.title.toLocaleLowerCase()
+              )?.anchor || ''
+
+            return [`跨语言链接：`, item.url + pageAnchor].join('\n')
           }) || []
 
         const allMsgList = [...pageMsgs, ...interwikiMsgs]
