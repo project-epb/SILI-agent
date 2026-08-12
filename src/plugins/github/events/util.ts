@@ -25,6 +25,20 @@ export function cleanBody(
   return source
 }
 
+/**
+ * Escape markup so koishi renders the text literally instead of parsing it as
+ * h-element source (a GitHub body containing `<img src=…>` would otherwise become
+ * a real image element, and a dead URL fails the whole send).
+ *
+ * Mirrors satori's `Element.escape` in its non-inline form — `&` first, or the
+ * entities it produces get double-escaped. Hand-rolled because satori ships
+ * default-only ESM, so `import { Element } from '@satorijs/element'` resolves to
+ * undefined here (same reason `src/satori-jsx/` exists).
+ */
+export function escapeMarkup(source: string): string {
+  return source.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 /** "owner/repo#123" — used across issue/PR/comment renderers. */
 export function issueName(repository: any, issue: any): string {
   return `${repository.full_name}#${issue.number}`

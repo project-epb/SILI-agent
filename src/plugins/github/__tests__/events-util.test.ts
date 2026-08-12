@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanBody, issueName } from '../events/util'
+import { cleanBody, escapeMarkup, issueName } from '../events/util'
 
 describe('cleanBody', () => {
   it('returns empty string for empty/null/undefined', () => {
@@ -30,5 +30,24 @@ describe('cleanBody', () => {
 describe('issueName', () => {
   it('formats as full_name#number', () => {
     expect(issueName({ full_name: 'org/repo' }, { number: 7 })).toBe('org/repo#7')
+  })
+})
+
+describe('escapeMarkup', () => {
+  it('escapes the characters koishi would parse as element source', () => {
+    expect(escapeMarkup('<img src="x"/>')).toBe('&lt;img src="x"/&gt;')
+  })
+
+  it('escapes & first so entities are not double-escaped', () => {
+    expect(escapeMarkup('a & <b>')).toBe('a &amp; &lt;b&gt;')
+    expect(escapeMarkup('&lt;')).toBe('&amp;lt;')
+  })
+
+  it('leaves quotes alone — message bodies are not attribute values', () => {
+    expect(escapeMarkup('say "hi"')).toBe('say "hi"')
+  })
+
+  it('leaves ordinary text untouched', () => {
+    expect(escapeMarkup('just text')).toBe('just text')
   })
 })

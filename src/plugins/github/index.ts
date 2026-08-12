@@ -6,7 +6,7 @@ import { GitHubHttp } from './http'
 import { applyOAuth } from './oauth'
 import { applyCommands, makeRepoStore } from './commands'
 import { migrateRepoRename } from './rename'
-import { HistoryStore } from './history'
+import { HISTORY_TABLE, HistoryStore } from './history'
 import { ReplyHandler, parseReplyCommand, formatHelp } from './reply'
 import type { Config as GitHubConfig } from './types'
 
@@ -25,6 +25,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
     messagePrefix: Schema.string().default('[GitHub] '),
     replyFooter: Schema.string().role('textarea').default(''),
     replyTimeout: Schema.natural().role('ms').default(Time.hour),
+    replyColdTimeout: Schema.natural().role('ms').default(Time.week),
     bodyMaxLength: Schema.natural().default(500),
     filterBots: Schema.boolean().default(true),
     extraBotLogins: Schema.array(Schema.string()).default([]),
@@ -49,6 +50,18 @@ export default class PluginGitHub extends BasePlugin<Config> {
       name: 'string(50)',
       secret: 'string(50)',
     })
+    // Snapshot of the quick-reply context so a restart doesn't strand the messages
+    // pushed in the last `replyTimeout`. See HistoryStore for the expiry story.
+    ctx.model.extend(
+      HISTORY_TABLE,
+      {
+        messageId: 'string(255)',
+        actions: 'json',
+        body: 'text',
+        expireAt: 'timestamp',
+      },
+      { primary: 'messageId' }
+    )
 
     // Rebuild the in-memory subscription index from the channel table on startup.
     ctx.on('ready', async () => {
@@ -64,7 +77,12 @@ export default class PluginGitHub extends BasePlugin<Config> {
 
     const http = new GitHubHttp(ctx, this.config)
     const repoStore = makeRepoStore(ctx)
-    const history = new HistoryStore(ctx, this.config.replyTimeout ?? Time.hour)
+    const history = new HistoryStore(
+      ctx,
+      this.config.replyTimeout ?? Time.hour,
+      this.config.replyColdTimeout ?? Time.week
+    )
+    ctx.on('ready', () => history.prune())
 
     applyOAuth(ctx, this.config, http)
     applyCommands(ctx, this.config, http, this.store, repoStore)
@@ -91,14 +109,16 @@ export default class PluginGitHub extends BasePlugin<Config> {
     // ---- quick-reply interactions (quote a pushed message → act on the GitHub resource) ----
     const footer = this.config.replyFooter ?? ''
 
-    // Pull the github user field only when the quoted message is in history (needs a token).
+    // koishi emits before-attach-user synchronously, right before observeUser — so this hook
+    // cannot await the cold layer. Widen to "any quote": the cost is one extra projected
+    // column on a query that already runs, not an extra query.
     ctx.before('attach-user', (session, fields) => {
-      if (session.quote && history.get(session.quote.id)) fields.add('github')
+      if (session.quote) fields.add('github')
     })
 
-    ctx.middleware((session, next) => {
+    ctx.middleware(async (session, next) => {
       if (!session.quote) return next()
-      const entry = history.get(session.quote.id)
+      const entry = await history.fetch(session.quote.id)
       if (!entry) return next()
       const body = session.stripped.content.trim()
       if (!body) return next() // empty reply (bare @bot / whitespace) — don't post an empty comment

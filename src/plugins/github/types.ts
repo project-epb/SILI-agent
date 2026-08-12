@@ -9,7 +9,11 @@ export interface Config {
   /** Prepended to every pushed message. */
   messagePrefix?: string
   replyFooter?: string
+  /** How long a pushed message stays quotable from memory. Default 1h. */
   replyTimeout?: number
+  /** How long it stays quotable from the database after the memory entry is gone.
+   * Survives restarts; a hit warms the entry back into memory. Default 7d. */
+  replyColdTimeout?: number
   /** Max characters of an issue/PR/comment body before truncation. Default 500; 0 = no limit. */
   bodyMaxLength?: number
   /** Drop events triggered by automated senders (GitHub Apps / bot accounts). Default true. */
