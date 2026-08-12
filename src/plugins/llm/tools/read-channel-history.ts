@@ -19,6 +19,8 @@ export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
     '- 闲聊/已经能直接回答的问题',
     '- 凑上下文 / 例行扫一遍（浪费 token）',
     '',
+    '- 用户引用了一条较早的消息，你需要知道那条消息前后发生了什么（传 `before_message_id`）',
+    '',
     '**约束**：仅能查当前 channel，不能跨群；NapCat 端单次最多约 30 条；分页用上次返回里的 `before_seq` 字段继续往前拉。',
   ].join('\n'),
   parameters: {
@@ -33,7 +35,12 @@ export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
       before_seq: {
         type: 'integer',
         description:
-          '分页用：只返回 message_seq 严格小于此值的消息（不传则取最新一批）',
+          '分页用：以该 message_seq 为止往前取（**含**该条），不传则取最新一批。值取自上次返回结尾的提示。',
+      },
+      before_message_id: {
+        type: 'string',
+        description:
+          '以某条已知消息为锚点，读取它**及**更早的消息。典型用法：用户引用了一条消息（`<quoted_message>` 块的 `message_id`），你想知道那条消息前后聊了什么。与 before_seq 同时传时以 before_seq 为准。',
       },
     },
     additionalProperties: false,
@@ -43,18 +50,73 @@ export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
 export interface ReadChannelHistoryInput {
   count?: number
   before_seq?: number
+  before_message_id?: string
+}
+
+/**
+ * Work out the `message_seq` cursor to page from.
+ *
+ * `before_seq` wins when given — it is already the native cursor. Otherwise a
+ * `before_message_id` is translated via OneBot's `get_msg`, whose response carries
+ * `message_seq` (a go-cqhttp/NapCat extension, hence the existence check). satori's
+ * `Message` has no seq field, so this lookup is the only way across; koishi's own
+ * `getMessageList` does exactly the same.
+ *
+ * The seq is used verbatim. Verified against NapCat 4.18.4: with `reverse_order`,
+ * `message_seq` selects that message plus the `count` before it — the anchor is
+ * already included. An offset would be meaningless anyway, since `message_seq` is
+ * not a dense counter (it equals `message_id`, and neighbouring values are
+ * unrelated); `seq + 1` simply names a message that does not exist, and NapCat
+ * answers with `data: null`.
+ *
+ * A message id we cannot resolve returns an `error` rather than falling through to
+ * the latest window — quietly answering a different question than the agent asked
+ * is worse than telling it the anchor failed.
+ */
+export async function resolveHistoryAnchor(
+  bot: any,
+  input: ReadChannelHistoryInput
+): Promise<{ seq?: number; error?: string }> {
+  const seq = input.before_seq
+  if (typeof seq === 'number' && Number.isFinite(seq) && seq > 0) {
+    return { seq: Math.floor(seq) }
+  }
+  const id = input.before_message_id
+  if (!id) return { seq: undefined }
+  if (typeof bot?.internal?.getMsg !== 'function') {
+    return { error: `无法解析 before_message_id=${id}：当前平台不支持 get_msg。` }
+  }
+  try {
+    const msg = await bot.internal.getMsg(id)
+    const found = msg?.message_seq
+    if (typeof found !== 'number' || !Number.isFinite(found)) {
+      return { error: `无法解析 before_message_id=${id}：该消息没有可用的 message_seq。` }
+    }
+    return { seq: Math.floor(found) }
+  } catch (e: any) {
+    return {
+      error: `无法解析 before_message_id=${id}：${e?.message ?? String(e)}`,
+    }
+  }
 }
 
 interface SeenCacheEntry {
-  maxSeq: number
+  ids: Set<number>
   ts: number
 }
 
 /**
- * Per-(conversation, channel) memory of the newest message_seq the agent
- * has already received. Lets us trim already-shown messages from
- * subsequent calls so the agent doesn't burn tokens re-reading the same
- * window. Plain in-memory Map — lost on restart, which is fine.
+ * Per-(conversation, channel) memory of the message ids the agent has already
+ * been shown. Lets us trim already-shown messages from subsequent calls so the
+ * agent doesn't burn tokens re-reading the same window. Plain in-memory Map —
+ * lost on restart, which is fine.
+ *
+ * This tracks a *set of ids* rather than a high-water mark because message_seq
+ * cannot order anything: on NapCat 4.18.4 it IS the message_id, and consecutive
+ * messages carry unordered values (1979746682 → 369767449 → 379979974). The old
+ * `seq > cachedMaxSeq` rule therefore kept or dropped messages essentially at
+ * random — after one high-valued message it would report "no new messages" for a
+ * channel that had kept talking.
  */
 const SEEN_CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -181,8 +243,8 @@ export interface RenderedHistoryMeta {
   selfId?: number
   /** Number of messages dropped because they were already shown to the agent in a prior call. */
   alreadySeenCount?: number
-  /** The cached max seq used for trimming, if any. */
-  previousMaxSeq?: number
+  /** Oldest message id in this batch — the cursor for reading further back. */
+  earliestMessageId?: number
 }
 
 export function buildHistoryHeader(meta: RenderedHistoryMeta): string {
@@ -201,7 +263,7 @@ export function buildHistoryHeader(meta: RenderedHistoryMeta): string {
   )
   if (meta.alreadySeenCount && meta.alreadySeenCount > 0) {
     lines.push(
-      `（已隐藏 ${meta.alreadySeenCount} 条你上次调用已经看过的消息（seq ≤ ${meta.previousMaxSeq}）。如需重看完整窗口，传 before_seq=${(meta.previousMaxSeq ?? 0) + 1}）`
+      `（已隐藏 ${meta.alreadySeenCount} 条你上次调用已经看过的消息。如需重看完整窗口，传 before_message_id=${meta.earliestMessageId ?? '<该窗口最早一条的 message_id>'}）`
     )
   }
   return lines.join('\n')
@@ -259,17 +321,15 @@ export function renderHistoryPayload(
   return `${header}\n\n${lines.join('\n')}${footer}`
 }
 
-/** Pure helper: drop messages whose seq ≤ cachedMaxSeq. Returns the trimmed
- *  list and how many were trimmed. Used by the handler after cache hit. */
+/** Pure helper: drop messages the agent has already been shown. A message with no
+ *  id is kept — showing it twice beats hiding it on a guess. */
 export function trimAlreadySeen(
   messages: OneBotHistoryMessage[],
-  cachedMaxSeq: number
+  seenIds: Set<number>
 ): { kept: OneBotHistoryMessage[]; trimmedCount: number } {
-  if (!Number.isFinite(cachedMaxSeq)) {
-    return { kept: messages, trimmedCount: 0 }
-  }
+  if (!seenIds.size) return { kept: messages, trimmedCount: 0 }
   const kept = messages.filter(
-    (m) => typeof m.message_seq === 'number' && m.message_seq > cachedMaxSeq
+    (m) => typeof m.message_id !== 'number' || !seenIds.has(m.message_id)
   )
   return { kept, trimmedCount: messages.length - kept.length }
 }
@@ -294,10 +354,22 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
           : 20
       const count = Math.min(30, Math.max(1, requested))
 
-      const explicitBeforeSeq =
-        typeof input.before_seq === 'number' &&
-        Number.isFinite(input.before_seq) &&
-        input.before_seq > 0
+      const bot = session.bot as Bot & {
+        internal?: {
+          _request?: (action: string, params: any) => Promise<any>
+          getMsg?: (id: string) => Promise<any>
+        }
+      }
+      const internal = bot.internal
+      if (!internal?._request) {
+        return 'Error: onebot internal._request unavailable (adapter not initialized?)'
+      }
+
+      const anchor = await resolveHistoryAnchor(bot, input)
+      if (anchor.error) return `Error: ${anchor.error}`
+      // An anchored read (either form) is pagination, not a "latest window" read —
+      // the seen-cache trim must stay off for it.
+      const explicitBeforeSeq = anchor.seq !== undefined
 
       const params: Record<string, unknown> = {
         group_id: Number(session.guildId),
@@ -309,21 +381,13 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
       // own reply / status messages (higher seq) are naturally excluded
       // without time-based heuristics. Model can override via before_seq
       // for pagination.
-      if (explicitBeforeSeq) {
-        params.message_seq = Math.floor(input.before_seq!)
+      if (anchor.seq !== undefined) {
+        params.message_seq = anchor.seq
       } else if (session.messageId) {
         const anchor = Number(session.messageId)
         if (Number.isFinite(anchor) && anchor > 0) {
           params.message_seq = anchor
         }
-      }
-
-      const bot = session.bot as Bot & {
-        internal?: { _request?: (action: string, params: any) => Promise<any> }
-      }
-      const internal = bot.internal
-      if (!internal?._request) {
-        return 'Error: onebot internal._request unavailable (adapter not initialized?)'
       }
 
       let res: any
@@ -350,33 +414,29 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
           ? `${conversationId}:${session.guildId}`
           : ''
       const now = Date.now()
-      let cachedMaxSeq: number | undefined
+      let seenIds = new Set<number>()
       if (cacheKey) {
         const cached = seenCache.get(cacheKey)
         if (cached && now - cached.ts < SEEN_CACHE_TTL_MS) {
-          cachedMaxSeq = cached.maxSeq
+          seenIds = cached.ids
         } else if (cached) {
           seenCache.delete(cacheKey)
         }
       }
 
-      let toRender = messages
-      let trimmedCount = 0
-      if (cachedMaxSeq !== undefined) {
-        const r = trimAlreadySeen(messages, cachedMaxSeq)
-        toRender = r.kept
-        trimmedCount = r.trimmedCount
-      }
+      const { kept: toRender, trimmedCount } = trimAlreadySeen(messages, seenIds)
 
       if (cacheKey) {
-        const newestSeq = messages[messages.length - 1]?.message_seq
-        if (typeof newestSeq === 'number' && Number.isFinite(newestSeq)) {
-          seenCache.set(cacheKey, { maxSeq: newestSeq, ts: now })
+        // Union, not replace: the agent has seen everything from every call in the
+        // window, and the batches do not arrive in any order we can collapse.
+        for (const m of messages) {
+          if (typeof m.message_id === 'number') seenIds.add(m.message_id)
         }
+        seenCache.set(cacheKey, { ids: seenIds, ts: now })
       }
 
       if (toRender.length === 0) {
-        return `(自上次调用 read_channel_history（看到 seq=${cachedMaxSeq}）以来没有新消息。如果想重看完整窗口，传 before_seq=${(cachedMaxSeq ?? 0) + 1}。)`
+        return `(自上次调用 read_channel_history 以来没有新消息。如果想重看完整窗口，传 before_message_id=${messages[messages.length - 1]?.message_id ?? ''}。)`
       }
 
       return renderHistoryPayload(toRender, {
@@ -385,7 +445,7 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
         countRequested: count,
         selfId: messages[0]?.self_id,
         alreadySeenCount: trimmedCount,
-        previousMaxSeq: cachedMaxSeq,
+        earliestMessageId: toRender[0]?.message_id ?? messages[0]?.message_id,
       })
     },
   }

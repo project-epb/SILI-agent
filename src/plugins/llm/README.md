@@ -61,8 +61,10 @@ ChatCommand.action      ▼
 [4] 拉 history ─────►  ChatHistoryService.getById(id, N)
                         │
 [5] 构造 user envelope:
-                        <chat_info>{...}</chat_info>
-                        <interrupt_notice>...</interrupt_notice>   ← 仅 mid-stream 注入
+                        <turn_context>{...}</turn_context>
+                        <interrupt_notice>...</interrupt_notice>   ← 仅 mid-stream 注入，不入库
+                        <quoted_message author=… self=… seq=…>…</quoted_message>
+                                                                  ← 仅当本轮有 quote，入库
                         <user_message>用户原话</user_message>
                         │
 [6] 派生 system prompt ─►  SystemPromptBuilder.get(catalog)
