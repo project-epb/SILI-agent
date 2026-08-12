@@ -6,7 +6,7 @@ import { GitHubHttp } from './http'
 import { applyOAuth } from './oauth'
 import { applyCommands, makeRepoStore } from './commands'
 import { migrateRepoRename } from './rename'
-import { HistoryStore } from './history'
+import { HISTORY_TABLE, HistoryStore } from './history'
 import { ReplyHandler, parseReplyCommand, formatHelp } from './reply'
 import type { Config as GitHubConfig } from './types'
 
@@ -53,7 +53,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
     // Snapshot of the quick-reply context so a restart doesn't strand the messages
     // pushed in the last `replyTimeout`. See HistoryStore for the expiry story.
     ctx.model.extend(
-      'github_history',
+      HISTORY_TABLE,
       {
         messageId: 'string(255)',
         actions: 'json',

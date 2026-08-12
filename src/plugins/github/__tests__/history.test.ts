@@ -13,11 +13,11 @@ function makeDb(rows: any[] = []) {
   }
 }
 
-function makeCtx(database: any = makeDb()) {
+function makeCtx(database: any = makeDb(), warn: (e: any) => void = () => {}) {
   return {
     setTimeout: (fn: () => void, ms: number) => globalThis.setTimeout(fn, ms),
     database,
-    logger: () => ({ warn: () => {} }),
+    logger: () => ({ warn }),
   } as any
 }
 
@@ -33,10 +33,13 @@ describe('HistoryStore hot layer (memory)', () => {
   })
 
   it('ignores empty message ids or empty actions', () => {
-    const store = new HistoryStore(makeCtx(), HOT, COLD)
+    const db = makeDb()
+    const store = new HistoryStore(makeCtx(db), HOT, COLD)
     store.record([], { link: ['x'] }, 'b')
     store.record(['m'], {}, 'b')
     expect(store.get('m')).toBeUndefined()
+    // The early return guards both layers — a no-op must not write empty rows either.
+    expect(db.upsert).not.toHaveBeenCalled()
   })
 
   it('expires entries from memory after the hot ttl', async () => {
@@ -85,10 +88,12 @@ describe('HistoryStore cold layer (database)', () => {
     // Persistence is an enhancement: a broken database must never cost us a quick reply.
     const db = makeDb()
     db.upsert.mockRejectedValue(new Error('mongo down'))
-    const store = new HistoryStore(makeCtx(db), HOT, COLD)
+    const warn = vi.fn()
+    const store = new HistoryStore(makeCtx(db, warn), HOT, COLD)
     store.record(['m'], { link: ['x'] }, 'b')
     expect(store.get('m')).toEqual(entry)
-    await vi.waitFor(() => expect(db.upsert).toHaveBeenCalled())
+    // Degraded, but never silent: warn is the only signal that persistence broke.
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled())
   })
 
   it('fetch() serves a hot entry without touching the database', async () => {
@@ -158,8 +163,10 @@ describe('HistoryStore cold layer (database)', () => {
   it('fetch() returns undefined when the database is down', async () => {
     const db = makeDb()
     db.get.mockRejectedValue(new Error('mongo down'))
-    const store = new HistoryStore(makeCtx(db), HOT, COLD)
+    const warn = vi.fn()
+    const store = new HistoryStore(makeCtx(db, warn), HOT, COLD)
     await expect(store.fetch('m')).resolves.toBeUndefined()
+    expect(warn).toHaveBeenCalled()
   })
 
   it('prune() deletes rows past their cold deadline', async () => {
@@ -175,7 +182,9 @@ describe('HistoryStore cold layer (database)', () => {
   it('prune() survives a database that is down', async () => {
     const db = makeDb()
     db.remove.mockRejectedValue(new Error('mongo down'))
-    const store = new HistoryStore(makeCtx(db), HOT, COLD)
+    const warn = vi.fn()
+    const store = new HistoryStore(makeCtx(db, warn), HOT, COLD)
     await expect(store.prune()).resolves.toBeUndefined()
+    expect(warn).toHaveBeenCalled()
   })
 })
