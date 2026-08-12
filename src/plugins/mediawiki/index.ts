@@ -158,7 +158,8 @@ export default class PluginMediawiki extends BasePlugin<Config> {
                 `⚠️查询时遇到问题：${e || '-'}`,
                 ...titles.map(
                   (i) =>
-                    `${i.name} - ${getUrl(mwApi, { title: i.name })}${i.anchor ? '#' + i.anchor : ''}`
+                    // anchor already carries its own '#' (see the titles map above)
+                    `${i.name} - ${getUrl(mwApi, { title: i.name })}${i.anchor}`
                 ),
               ].join('\n')
             )
@@ -190,7 +191,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
             let pageAnchor =
               titles.find(
                 (i) =>
-                  i.name.toLocaleLowerCase() === page.title.toLocaleLowerCase()
+                  i.name.toLowerCase() === page.title.toLowerCase()
               )?.anchor || ''
 
             // 开始判断危险重定向
@@ -284,7 +285,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
             const pageAnchor =
               titles.find(
                 (i) =>
-                  i.name.toLocaleLowerCase() === item.title.toLocaleLowerCase()
+                  i.name.toLowerCase() === item.title.toLowerCase()
               )?.anchor || ''
 
             return [`跨语言链接：`, item.url + pageAnchor].join('\n')
