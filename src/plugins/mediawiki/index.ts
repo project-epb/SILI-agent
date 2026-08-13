@@ -288,7 +288,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
                   i.name.toLowerCase() === item.title.toLowerCase()
               )?.anchor || ''
 
-            return [`跨语言链接：`, item.url + pageAnchor].join('\n')
+            return [`跨wiki链接：`, item.url + pageAnchor].join('\n')
           }) || []
 
         const allMsgList = [...pageMsgs, ...interwikiMsgs]
