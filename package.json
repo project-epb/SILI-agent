@@ -36,6 +36,7 @@
     "@koishijs/plugin-adapter-dingtalk": "^2.5.0",
     "@koishijs/plugin-adapter-discord": "^4.5.10",
     "@koishijs/plugin-adapter-kook": "^4.7.0",
+    "@koishijs/plugin-adapter-lark": "^3.12.6",
     "@koishijs/plugin-adapter-qq": "^4.10.1",
     "@koishijs/plugin-adapter-satori": "^1.5.1",
     "@koishijs/plugin-admin": "^1.4.0",

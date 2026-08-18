@@ -10,6 +10,7 @@
         "@koishijs/plugin-adapter-dingtalk": "^2.5.0",
         "@koishijs/plugin-adapter-discord": "^4.5.10",
         "@koishijs/plugin-adapter-kook": "^4.7.0",
+        "@koishijs/plugin-adapter-lark": "^3.12.6",
         "@koishijs/plugin-adapter-qq": "^4.10.1",
         "@koishijs/plugin-adapter-satori": "^1.5.1",
         "@koishijs/plugin-admin": "^1.4.0",
@@ -332,6 +333,8 @@
 
     "@koishijs/plugin-adapter-kook": ["@koishijs/plugin-adapter-kook@4.7.0", "https://registry.npmmirror.com/@koishijs/plugin-adapter-kook/-/plugin-adapter-kook-4.7.0.tgz", { "dependencies": { "@satorijs/adapter-kook": "^4.7.0" }, "peerDependencies": { "koishi": "^4.18.7" } }, "sha512-GuYP1VuYGhkRpT3nRLlQMYTQMg8LjhgvP1Tb45vDiXxBpkS2C3FrVD4NWbW2IFO+Q2IUA04RnEYPEPzBqSmSsg=="],
 
+    "@koishijs/plugin-adapter-lark": ["@koishijs/plugin-adapter-lark@3.12.6", "https://registry.npmmirror.com/@koishijs/plugin-adapter-lark/-/plugin-adapter-lark-3.12.6.tgz", { "dependencies": { "@satorijs/adapter-lark": "^3.12.6" }, "peerDependencies": { "koishi": "^4.18.11" } }, "sha512-Zcvhe0x+wO6suzFhQ/GWDf9L73Xox/62E9vht+NzEJ344Yi1MYfRvtpzbh+KP4JaiAqQeIPeDXhmORPbmhtmkA=="],
+
     "@koishijs/plugin-adapter-qq": ["@koishijs/plugin-adapter-qq@4.10.1", "https://registry.npmmirror.com/@koishijs/plugin-adapter-qq/-/plugin-adapter-qq-4.10.1.tgz", { "dependencies": { "@satorijs/adapter-qq": "^4.10.1" }, "peerDependencies": { "koishi": "^4.18.8" } }, "sha512-ZKC12iKwE8yRq0uqQMDGuEX+1SAzEeaasVd8GhI8WGSSFHIhzgeubBmYplUK8f7w9J0sjQ7spisP49P29+DTPw=="],
 
     "@koishijs/plugin-adapter-satori": ["@koishijs/plugin-adapter-satori@1.5.1", "https://registry.npmmirror.com/@koishijs/plugin-adapter-satori/-/plugin-adapter-satori-1.5.1.tgz", { "dependencies": { "@satorijs/adapter-satori": "^1.5.1" }, "peerDependencies": { "koishi": "^4.18.6" } }, "sha512-V7hBu/JP5Ra+r5fw5863x6kEYQyyl97umgcn43Bj8cz9greP/sR9vefzJAjdW0DKxLo/NdJMGHCQ6LFp9XKu5g=="],
@@ -449,6 +452,8 @@
     "@satorijs/adapter-discord": ["@satorijs/adapter-discord@4.5.10", "https://registry.npmmirror.com/@satorijs/adapter-discord/-/adapter-discord-4.5.10.tgz", { "peerDependencies": { "@satorijs/core": "^4.3.3" } }, "sha512-ac5Rt9b9bzKjx6+MNN+78Hwbw7+Jc/kal1cvR2BFnMCQFo7QwPx0yr5HSusTBe0gYree5KXMRPaAvfiA0CMGLg=="],
 
     "@satorijs/adapter-kook": ["@satorijs/adapter-kook@4.7.0", "https://registry.npmmirror.com/@satorijs/adapter-kook/-/adapter-kook-4.7.0.tgz", { "peerDependencies": { "@satorijs/core": "^4.5.0" } }, "sha512-1kn5IeBwqEi8fYIWmGvYZpTaLuXg1R+j9eqP1TvTSSd/Oq/9eqjKm5Gs8fCuUdTEmtIJ6JE0mUZS1DRVsX3UzA=="],
+
+    "@satorijs/adapter-lark": ["@satorijs/adapter-lark@3.12.6", "https://registry.npmmirror.com/@satorijs/adapter-lark/-/adapter-lark-3.12.6.tgz", { "dependencies": { "protobufjs": "^8.0.0" }, "peerDependencies": { "@satorijs/core": "^4.6.0" } }, "sha512-QAOIQaaig0Uv5WYxuEkgxzaxCm4VWaaX6TGi+1IvIUkaO5OiIjYpzO8d9D04XQKJJMDxDkujTcxOGEWi+2uadQ=="],
 
     "@satorijs/adapter-qq": ["@satorijs/adapter-qq@4.10.1", "https://registry.npmmirror.com/@satorijs/adapter-qq/-/adapter-qq-4.10.1.tgz", { "peerDependencies": { "@satorijs/core": "^4.5.2" } }, "sha512-2se6B2PwsJNtLWOUKXZcyXTowtWD9v5EkxYrIrSy3NOoRvxFqR0c9UMOILX33XFItLvV2mcOnsDtojhpfKFdjg=="],
 
@@ -1226,6 +1231,8 @@
 
     "log-symbols": ["log-symbols@4.1.0", "https://registry.npmmirror.com/log-symbols/-/log-symbols-4.1.0.tgz", { "dependencies": { "chalk": "4.1.2", "is-unicode-supported": "0.1.0" } }, "sha512-8XPvpAA8uyhfteu8pIvQxpJZ7SYYdpUivZpGy6sFsBuKRY/7rQGavedeB8aK+Zkyq6upMFVL/9AW6vOYzfRyLg=="],
 
+    "long": ["long@5.3.2", "https://registry.npmmirror.com/long/-/long-5.3.2.tgz", {}, "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA=="],
+
     "lru-cache": ["lru-cache@7.18.3", "https://registry.npmmirror.com/lru-cache/-/lru-cache-7.18.3.tgz", {}, "sha512-jumlc0BIUrS3qJGgIkWZsyfAM7NCWiBcCDhnd+3NNM5KbBmLTgHVfWBcg6W+rLUsIpzpERPsvwUP7CckAQSOoA=="],
 
     "magic-string": ["magic-string@0.30.21", "https://registry.npmmirror.com/magic-string/-/magic-string-0.30.21.tgz", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
@@ -1367,6 +1374,8 @@
     "progress": ["progress@2.0.3", "https://registry.npmmirror.com/progress/-/progress-2.0.3.tgz", {}, "sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA=="],
 
     "property-information": ["property-information@7.1.0", "https://registry.npmmirror.com/property-information/-/property-information-7.1.0.tgz", {}, "sha512-TwEZ+X+yCJmYfL7TPUOcvBZ4QfoT5YenQiJuX//0th53DE6w0xxLEtfK3iyryQFddXuvkIk51EEgrJQ0WJkOmQ=="],
+
+    "protobufjs": ["protobufjs@8.7.2", "https://registry.npmmirror.com/protobufjs/-/protobufjs-8.7.2.tgz", { "dependencies": { "long": "^5.3.2" } }, "sha512-oTVHV+oelUBtiu5iTuTNNZ0eLYsXSMxry4cgr30mayNkgIZL6qZ0IOQVPuSWGcyAaXKl/XgqwWHIC3a0khYVBA=="],
 
     "proxy-agent": ["proxy-agent@6.5.0", "https://registry.npmmirror.com/proxy-agent/-/proxy-agent-6.5.0.tgz", { "dependencies": { "agent-base": "7.1.3", "debug": "4.4.0", "http-proxy-agent": "7.0.2", "https-proxy-agent": "7.0.6", "lru-cache": "7.18.3", "pac-proxy-agent": "7.1.0", "proxy-from-env": "1.1.0", "socks-proxy-agent": "8.0.5" } }, "sha512-TmatMXdr2KlRiA2CyDu8GqR8EjahTG3aY3nXjdzFyoZbmB8hrBsTyMezhULIXKnC0jpfjlmiZ3+EaCzoInSu/A=="],
 

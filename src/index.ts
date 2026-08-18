@@ -61,6 +61,7 @@ import PluginYoudao from '~/youdao'
 import AdapterDingtalk from '@koishijs/plugin-adapter-dingtalk'
 import AdapterDiscord from '@koishijs/plugin-adapter-discord'
 import AdapterKook from '@koishijs/plugin-adapter-kook'
+import AdapterLark from '@koishijs/plugin-adapter-lark'
 import AdapterQQ, { QQ } from '@koishijs/plugin-adapter-qq'
 import * as PluginAdmin from '@koishijs/plugin-admin'
 import PluginAnalytics from '@koishijs/plugin-analytics'
@@ -110,7 +111,11 @@ const PROD = process.env.NODE_ENV === 'production'
 // Setup .env
 setupDotEnv()
 setupDotEnv({
-  path: resolve(import.meta.dirname, '..', PROD ? '.env.production' : '.env.development'),
+  path: resolve(
+    import.meta.dirname,
+    '..',
+    PROD ? '.env.production' : '.env.development'
+  ),
   override: true,
 })
 setupDotEnv({
@@ -253,6 +258,17 @@ app.plugin(function PluginCollectionAdapters(ctx) {
         },
       ])
     }
+  }
+
+  // 飞书
+  if (env.FEISHU_APPID && env.FEISHU_APPSECRET) {
+    ctx.plugin(AdapterLark, {
+      appId: env.FEISHU_APPID,
+      appSecret: env.FEISHU_APPSECRET,
+      encryptKey: env.FEISHU_ENCRYPT_KEY,
+      verificationToken: env.FEISHU_VERIFICATION_TOKEN,
+      protocol: 'ws',
+    })
   }
 
   // Repl
