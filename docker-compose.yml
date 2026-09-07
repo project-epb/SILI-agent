@@ -7,7 +7,8 @@ services:
     build:
       context: .
       dockerfile: ./docker/sili-core.dockerfile
-    command: ['/bin/bash', '-c', 'bun install --frozen-lockfile && bun start']
+    # 启动流程见 scripts/docker-entrypoint.sh（镜像 CMD），本地想要热重载可用
+    # docker-compose.override.yml 覆盖 command
     mem_limit: 1.5g
     restart: unless-stopped
     networks:
@@ -31,8 +32,11 @@ services:
       - ./.git:/app/.git:ro
       # koishi自带的data文件夹（comfyui workflows/guides 放 .volumns/core/comfyui/）
       - ./.volumns/core:/app/data
-      # 缓存文件夹
-      - /root/.cache/puppeteer
+      # node_modules 与 Chrome 本体都不在镜像里，由 entrypoint 按 bun.lock /
+      # puppeteer 版本填充到这两个卷。必须是 named 卷：匿名卷每次容器重建都会
+      # 遗留一份几百 MB 的孤儿，且复用旧卷时会遮蔽镜像/依赖的更新。
+      - sili_node_modules:/app/node_modules
+      - sili_puppeteer_cache:/root/.cache/puppeteer
     depends_on:
       - mongo
 
@@ -80,6 +84,10 @@ networks:
     external: true
 
 volumes:
+  sili_node_modules:
+    name: sili_node_modules
+  sili_puppeteer_cache:
+    name: sili_puppeteer_cache
   mongo_data:
     name: sili_mongo_data
   qqnt_data:
