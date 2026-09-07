@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SILI 是基于 [Koishi](https://koishi.chat/) 的群聊机器人，主要部署在 QQ（NapCat OneBot 适配器），也支持 Discord / KOOK / DingTalk / 卫星等。
 
-Runtime: **bun**（dev 与生产统一）。bun 同时是包管理器和运行时——`bun ./src/index.ts` 直接跑 TS/JSX，取代了过去的 tsx。Node >= 24.11（部分原生 API 依赖；bun 自带 CJS 兼容运行时，koishi 的 CJS loader 才跑得起来）。JSX 经 `src/satori-jsx/` 的 shim 暴露具名导出（satori 是 default-only ESM，严格 loader 直接 import 具名会失败）。
+Runtime: **bun**（dev 与生产统一）。bun 同时是包管理器和运行时——`bun ./src/index.ts` 直接跑 TS/JSX，取代了过去的 tsx。`engines.node >= 24.11` 说的是所需的 Node API 兼容级别（部分原生 API 依赖；bun 自带 CJS 兼容运行时，koishi 的 CJS loader 才跑得起来），**不代表要装 Node —— 容器里没有 node 二进制**，`process.versions.node` 由 bun 的兼容层提供。JSX 经 `src/satori-jsx/` 的 shim 暴露具名导出（satori 是 default-only ESM，严格 loader 直接 import 具名会失败）。
 
 **SILI 命令前缀按部署不同**：生产环境是 `!`、测试 / 本地 dev 是 `;`。本文档示例命令一律不带前缀（写 `chat` / `debug.history` / `llm.compact`），按你所在环境补上即可。
 
@@ -70,6 +70,36 @@ src/
 - `src/plugins/llm/CLAUDE.md` —— Claude 编辑须知（DB schema 陷阱、协议中央目录、provider 适配差异等踩坑点）
 
 Claude Code 进入该目录工作时会自动叠加加载那份 CLAUDE.md。
+
+## Docker 镜像是纯运行时基座
+
+`docker/sili-core.dockerfile` 产出的镜像**只含 OS、字体、Chrome 的系统依赖库和 bun**。三样东西不在镜像里：
+
+| | 在哪 | 谁负责填充 |
+| --- | --- | --- |
+| 源码 | compose 挂载宿主目录 | 宿主 `git pull` |
+| `node_modules` | named volume `sili_node_modules` | `scripts/docker-entrypoint.sh` |
+| Chrome 本体 | named volume `sili_puppeteer_cache` | 同上 |
+
+所以**改依赖、升 puppeteer 都只需要 restart，不必重新构建镜像**；只有动字体、系统库、bun 版本时才需要 rebuild。
+
+改 Dockerfile 前先读文件头的注释，几条硬约束：
+
+- **别把 `node_modules` 或 Chrome 装回镜像**——会被 volume 遮蔽，纯属浪费层。
+- **别加 `VOLUME /root/.cache/puppeteer`**——匿名卷每次容器重建都遗留一份约 370 MB 的孤儿，且复用旧卷会遮蔽新版 Chrome。
+- **`libgbm1` 拉进来的 mesa + libllvm20（约 178 MB）是镜像最大的单块，不要动**——那是 headless Chrome 的软件渲染栈，删了 HTML 渲染直接废。
+- **`git` 是运行时依赖**，`version` 命令要跑 `git rev-parse --short HEAD`。
+- **`bun install` 必须带 `PUPPETEER_SKIP_DOWNLOAD=true`**——puppeteer 在 bun 的默认信任列表里，postinstall 会照跑，直连被墙的 `storage.googleapis.com` 且不认 `PUPPETEER_DOWNLOAD_BASE_URL`，整个 install 会挂在 DNS 超时上。浏览器一律由 `puppeteer browsers install chrome --base-url` 走国内镜像装。
+
+首次部署 / 换机器时两个 volume 是空的，要下约 400 MB 依赖 + 375 MB Chrome。生产切换时先用一次性容器预热，避免服务空窗：
+
+```bash
+docker compose run --rm --no-deps --entrypoint bash core -c \
+  'PUPPETEER_SKIP_DOWNLOAD=true bun install --frozen-lockfile && bun puppeteer browsers install chrome --base-url "$PUPPETEER_DOWNLOAD_BASE_URL"'
+docker compose up -d --force-recreate core
+```
+
+`.dockerignore` 用的是「全部排除 + 显式放行」的白名单写法，新增需要进构建上下文的文件时记得加进去。
 
 ## 本地开发偏好
 

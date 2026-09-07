@@ -1,0 +1,7 @@
+# 构建上下文只需要 scripts/ 下的两个脚本——镜像不装依赖、不装 Chrome、不 COPY
+# 源码（源码由 compose 挂载）。所以这里用"全部排除 + 显式放行"的白名单写法，
+# 加新文件时别忘了它默认进不去 build context。
+*
+
+!scripts/apt-clean-install.sh
+!scripts/docker-entrypoint.sh

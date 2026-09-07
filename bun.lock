@@ -71,7 +71,6 @@
         "@satorijs/element": "^3.1.7",
         "@trivago/prettier-plugin-sort-imports": "^6.0.2",
         "@types/node": "^24.10.9",
-        "cross-env": "^10.1.0",
         "dotenv": "^17.2.3",
         "dotenv-vault": "^1.27.0",
         "prettier": "^3.8.1",
@@ -240,8 +239,6 @@
     "@emnapi/runtime": ["@emnapi/runtime@1.11.1", "https://registry.npmmirror.com/@emnapi/runtime/-/runtime-1.11.1.tgz", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-vgj7R3y3Wgx24IQaGPA/R6YFXLHVMOZ0uVEyIQPaWs+rd1AzfEMXlAC22FYwO1XkKR6NPsq7mUandH8oIRdZFw=="],
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "https://registry.npmmirror.com/@emnapi/wasi-threads/-/wasi-threads-1.2.2.tgz", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
-
-    "@epic-web/invariant": ["@epic-web/invariant@1.0.0", "https://registry.npmmirror.com/@epic-web/invariant/-/invariant-1.0.0.tgz", {}, "sha512-lrTPqgvfFQtR/eY/qkIzp98OGdNJu0m5ji3q/nJI8v3SXkRKEnWiOxMmbvcSoAIzv/cGiuvRy57k4suKQSAdwA=="],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.27.1", "https://registry.npmmirror.com/@esbuild/aix-ppc64/-/aix-ppc64-0.27.1.tgz", { "os": "aix", "cpu": "ppc64" }, "sha512-HHB50pdsBX6k47S4u5g/CaLjqS3qwaOVE5ILsq64jyzgMhLuCuZ8rGzM9yhsAjfjkbgUPMzZEPa7DAp7yz6vuA=="],
 
@@ -845,9 +842,7 @@
 
     "create-require": ["create-require@1.1.1", "https://registry.npmmirror.com/create-require/-/create-require-1.1.1.tgz", {}, "sha512-dcKFX3jn0MpIaXjisoRvexIJVEKzaq7z2rZKxf+MSr9TkdmHmsU4m2lcLojrj/FHl8mk5VxMmYA+ftRkP/3oKQ=="],
 
-    "cross-env": ["cross-env@10.1.0", "https://registry.npmmirror.com/cross-env/-/cross-env-10.1.0.tgz", { "dependencies": { "@epic-web/invariant": "^1.0.0", "cross-spawn": "^7.0.6" }, "bin": { "cross-env": "dist/bin/cross-env.js", "cross-env-shell": "dist/bin/cross-env-shell.js" } }, "sha512-GsYosgnACZTADcmEyJctkJIoqAhHjttw7RsFrVoJNXbsWWqaq6Ym+7kZjq6mS45O0jij6vtiReppKQEtqWy6Dw=="],
-
-    "cross-spawn": ["cross-spawn@7.0.6", "https://registry.npmmirror.com/cross-spawn/-/cross-spawn-7.0.6.tgz", { "dependencies": { "path-key": "^3.1.0", "shebang-command": "^2.0.0", "which": "^2.0.1" } }, "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA=="],
+    "cross-spawn": ["cross-spawn@7.0.3", "https://registry.npmmirror.com/cross-spawn/-/cross-spawn-7.0.3.tgz", { "dependencies": { "path-key": "3.1.1", "shebang-command": "2.0.0", "which": "2.0.2" } }, "sha512-iRDPJKUPVEND7dHPO8rkbOnPpyDygcDFtWjpeWNCgy8WP2rXcxXL8TskReQl6OrB2G7+UJrags1q15Fudc7G6w=="],
 
     "css-select": ["css-select@5.1.0", "https://registry.npmmirror.com/css-select/-/css-select-5.1.0.tgz", { "dependencies": { "boolbase": "1.0.0", "css-what": "6.1.0", "domhandler": "5.0.3", "domutils": "3.1.0", "nth-check": "2.1.1" } }, "sha512-nwoRF1rvRRnnCqqY7updORDsuqKzqYJ28+oSMaJMMgOauh3fvwHqMS7EZpIPqK8GL+g9mKxF1vP/ZjSeNjEVHg=="],
 
@@ -1699,8 +1694,6 @@
 
     "@oclif/plugin-update/@oclif/core": ["@oclif/core@2.15.0", "https://registry.npmmirror.com/@oclif/core/-/core-2.15.0.tgz", { "dependencies": { "@types/cli-progress": "3.11.4", "ansi-escapes": "4.3.2", "ansi-styles": "4.3.0", "cardinal": "2.1.1", "chalk": "4.1.2", "clean-stack": "3.0.1", "cli-progress": "3.12.0", "debug": "4.4.0", "ejs": "3.1.9", "get-package-type": "0.1.0", "globby": "11.1.0", "hyperlinker": "1.0.0", "indent-string": "4.0.0", "is-wsl": "2.2.0", "js-yaml": "3.14.1", "natural-orderby": "2.0.3", "object-treeify": "1.1.33", "password-prompt": "1.1.3", "slice-ansi": "4.0.0", "string-width": "4.2.3", "strip-ansi": "6.0.1", "supports-color": "8.1.1", "supports-hyperlinks": "2.3.0", "ts-node": "10.9.1", "tslib": "2.8.1", "widest-line": "3.1.0", "wordwrap": "1.0.0", "wrap-ansi": "7.0.0" } }, "sha512-fNEMG5DzJHhYmI3MgpByTvltBOMyFcnRIUMxbiz2ai8rhaYgaTHMG3Q38HcosfIvtw9nCjxpcQtC8MN8QtVCcA=="],
 
-    "@oclif/plugin-update/cross-spawn": ["cross-spawn@7.0.3", "https://registry.npmmirror.com/cross-spawn/-/cross-spawn-7.0.3.tgz", { "dependencies": { "path-key": "3.1.1", "shebang-command": "2.0.0", "which": "2.0.2" } }, "sha512-iRDPJKUPVEND7dHPO8rkbOnPpyDygcDFtWjpeWNCgy8WP2rXcxXL8TskReQl6OrB2G7+UJrags1q15Fudc7G6w=="],
-
     "@oclif/plugin-update/debug": ["debug@4.3.7", "https://registry.npmmirror.com/debug/-/debug-4.3.7.tgz", { "dependencies": { "ms": "2.1.3" }, "optionalDependencies": { "supports-color": "8.1.1" } }, "sha512-Er2nc/H7RrMXZBFCEim6TCmMk02Z8vLC2Rbi1KEBggpo0fS6l0S1nnapwmIi3yW/+GOJap1Krg4w0Hg80oCqgQ=="],
 
     "@oclif/plugin-warn-if-update-available/@oclif/core": ["@oclif/core@2.15.0", "https://registry.npmmirror.com/@oclif/core/-/core-2.15.0.tgz", { "dependencies": { "@types/cli-progress": "3.11.4", "ansi-escapes": "4.3.2", "ansi-styles": "4.3.0", "cardinal": "2.1.1", "chalk": "4.1.2", "clean-stack": "3.0.1", "cli-progress": "3.12.0", "debug": "4.4.0", "ejs": "3.1.9", "get-package-type": "0.1.0", "globby": "11.1.0", "hyperlinker": "1.0.0", "indent-string": "4.0.0", "is-wsl": "2.2.0", "js-yaml": "3.14.1", "natural-orderby": "2.0.3", "object-treeify": "1.1.33", "password-prompt": "1.1.3", "slice-ansi": "4.0.0", "string-width": "4.2.3", "strip-ansi": "6.0.1", "supports-color": "8.1.1", "supports-hyperlinks": "2.3.0", "ts-node": "10.9.1", "tslib": "2.8.1", "widest-line": "3.1.0", "wordwrap": "1.0.0", "wrap-ansi": "7.0.0" } }, "sha512-fNEMG5DzJHhYmI3MgpByTvltBOMyFcnRIUMxbiz2ai8rhaYgaTHMG3Q38HcosfIvtw9nCjxpcQtC8MN8QtVCcA=="],
@@ -1808,8 +1801,6 @@
     "pac-proxy-agent/debug": ["debug@4.4.0", "https://registry.npmmirror.com/debug/-/debug-4.4.0.tgz", { "dependencies": { "ms": "2.1.3" }, "optionalDependencies": { "supports-color": "8.1.1" } }, "sha512-6WTZ/IxCY/T6BALoZHaE4ctp9xm+Z5kY/pzYaCHRFeyVhojxlrm+46y68HA6hr0TcwEssoxNiDEUJQjfPZ/RYA=="],
 
     "parse-json/@babel/code-frame": ["@babel/code-frame@7.23.5", "https://registry.npmmirror.com/@babel/code-frame/-/code-frame-7.23.5.tgz", { "dependencies": { "@babel/highlight": "7.23.4", "chalk": "2.4.2" } }, "sha512-CgH3s1a96LipHCmSUmYFPwY7MNx8C3avkq7i4Wl3cfa662ldtUe4VM1TPXX70pfmrlWTb6jLqTYrZyT2ZTJBgA=="],
-
-    "password-prompt/cross-spawn": ["cross-spawn@7.0.3", "https://registry.npmmirror.com/cross-spawn/-/cross-spawn-7.0.3.tgz", { "dependencies": { "path-key": "3.1.1", "shebang-command": "2.0.0", "which": "2.0.2" } }, "sha512-iRDPJKUPVEND7dHPO8rkbOnPpyDygcDFtWjpeWNCgy8WP2rXcxXL8TskReQl6OrB2G7+UJrags1q15Fudc7G6w=="],
 
     "proxy-agent/debug": ["debug@4.4.0", "https://registry.npmmirror.com/debug/-/debug-4.4.0.tgz", { "dependencies": { "ms": "2.1.3" }, "optionalDependencies": { "supports-color": "8.1.1" } }, "sha512-6WTZ/IxCY/T6BALoZHaE4ctp9xm+Z5kY/pzYaCHRFeyVhojxlrm+46y68HA6hr0TcwEssoxNiDEUJQjfPZ/RYA=="],
 
