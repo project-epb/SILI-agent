@@ -58,7 +58,7 @@ RUN \
 FROM base AS bun-installer
 
 RUN apt-clean-install curl ca-certificates unzip
-RUN curl -fsSL https://bun.com/install | bash -s "bun-v1.3.14"
+RUN curl -fsSL https://bun.com/install | bash -s "bun-v1.4.2"
 
 
 # ---------------------------------------------------------------------------
