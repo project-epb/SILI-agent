@@ -5,8 +5,8 @@
   "license": "MIT",
   "type": "commonjs",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development bun --watch ./src/index.ts",
-    "start": "cross-env NODE_ENV=production bun ./src/index.ts",
+    "dev": "NODE_ENV=development bun --watch ./src/index.ts",
+    "start": "NODE_ENV=production bun ./src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write src",
@@ -21,7 +21,6 @@
     "@satorijs/element": "^3.1.7",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/node": "^24.10.9",
-    "cross-env": "^10.1.0",
     "dotenv": "^17.2.3",
     "dotenv-vault": "^1.27.0",
     "prettier": "^3.8.1",
