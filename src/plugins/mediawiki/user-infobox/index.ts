@@ -11,8 +11,8 @@ import { buildUserInfoboxPayload, subjectOf } from './payload'
 
 export {
   buildUserInfoboxPayload,
+  formatContribTime,
   formatDate,
-  formatDateTime,
   formatExpiry,
   isUserRootPage,
   normalizeGroups,
@@ -36,9 +36,15 @@ export async function shotUserInfobox(
 
   try {
     const { data } = await api.get<{
-      query: { users?: MWUser[]; usercontribs?: MWUserContrib[] }
+      query: {
+        general?: { sitename?: string }
+        users?: MWUser[]
+        usercontribs?: MWUserContrib[]
+      }
     }>({
       action: 'query',
+      meta: 'siteinfo',
+      siprop: 'general',
       list: 'users|usercontribs',
       ususers: username,
       usprop: 'blockinfo|groups|editcount|registration',
@@ -64,7 +70,11 @@ export async function shotUserInfobox(
     const payload = buildUserInfoboxPayload(
       user,
       data.query.usercontribs ?? [],
-      avatarUrl
+      {
+        avatarUrl,
+        sitename: data.query.general?.sitename,
+        pageUrl: page.canonicalurl,
+      }
     )
 
     const url = pathToFileURL(resolve(import.meta.dirname, 'index.html'))
