@@ -33,6 +33,8 @@
       }
 
       .banner {
+        position: relative;
+        overflow: hidden;
         height: 72px;
         background:
           radial-gradient(
@@ -47,7 +49,24 @@
           );
       }
 
+      /* User-page image on the right, fading out leftward into the hue gradient */
+      .banner .cover {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 70%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center 30%;
+        -webkit-mask-image: linear-gradient(to left, #000 35%, transparent);
+        mask-image: linear-gradient(to left, #000 35%, transparent);
+        /* Keep it ambient: the avatar and name stay the focus */
+        opacity: 0.55;
+      }
+
+      /* Positioned so the overlapping avatar paints above the (positioned) banner */
       .head {
+        position: relative;
         padding: 0 20px;
         display: flex;
         align-items: flex-end;
@@ -220,7 +239,7 @@
   </head>
   <body>
     <div id="user-infobox">
-      <div class="banner"></div>
+      <div class="banner"><img class="cover hidden" alt="" /></div>
       <div class="head">
         <div class="avatar"></div>
         <div class="ident">
@@ -315,6 +334,12 @@
         }
         if (colored < N * N * 0.05) return null
         return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
+      }
+
+      if (data.cover) {
+        const cover = $('.banner .cover')
+        cover.onload = () => show(cover)
+        cover.src = data.cover
       }
 
       const foot = $('.foot')

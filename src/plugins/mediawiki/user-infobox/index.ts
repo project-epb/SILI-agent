@@ -7,7 +7,8 @@ import type { MediaWikiApi } from 'wiki-saikou/node'
 
 import { INFOBOX_DEFINITION } from '../infoboxes'
 import type { MWPage, MWUser, MWUserContrib } from '../types/MediaWiki'
-import { fetchAvatar } from './avatar'
+import { findCoverUrl } from './cover'
+import { fetchImage } from './image'
 import { buildUserInfoboxPayload, subjectOf } from './payload'
 
 export {
@@ -36,6 +37,10 @@ export async function shotUserInfobox(
   const username = subjectOf(page.title)
 
   try {
+    // Cover lookup (parse → imageinfo) doesn't depend on the user query; run them side by side.
+    // findCoverUrl never rejects, so abandoning it on an early return is safe.
+    const coverUrl = findCoverUrl(api, page.title)
+
     const { data } = await api.get<{
       query: {
         general?: { sitename?: string }
@@ -67,13 +72,17 @@ export async function shotUserInfobox(
       userid: user.userid,
       name: user.name,
     })
-    const avatar = avatarUrl ? await fetchAvatar(ctx, avatarUrl) : undefined
+    const [avatar, cover] = await Promise.all([
+      avatarUrl ? fetchImage(ctx, avatarUrl) : undefined,
+      coverUrl.then((u) => (u ? fetchImage(ctx, u) : undefined)),
+    ])
 
     const payload = buildUserInfoboxPayload(
       user,
       data.query.usercontribs ?? [],
       {
         avatar,
+        cover,
         sitename: data.query.general?.sitename,
         pageUrl: page.canonicalurl,
       }

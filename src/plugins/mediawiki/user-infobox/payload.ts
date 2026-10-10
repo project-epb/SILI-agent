@@ -8,6 +8,8 @@ export interface UserInfoboxPayload {
   link: string | null
   name: string
   userid: number
+  /** First artwork on the user page as a data: URI, faded into the banner; null when none. */
+  cover: string | null
   /** Avatar as a data: URI (sampled on canvas for the banner hue), or null for the initial-letter placeholder. */
   avatar: string | null
   /** Formatted YYYY-MM-DD, or null when the wiki reports no registration date. */
@@ -90,11 +92,13 @@ export function buildUserInfoboxPayload(
   contribs: MWUserContrib[],
   {
     avatar,
+    cover,
     sitename,
     pageUrl,
     now = new Date(),
   }: {
     avatar?: string
+    cover?: string
     sitename?: string
     pageUrl?: string
     now?: Date
@@ -106,6 +110,7 @@ export function buildUserInfoboxPayload(
     name: user.name,
     userid: user.userid,
     avatar: avatar ?? null,
+    cover: cover ?? null,
     registration: user.registration ? formatDate(user.registration) : null,
     editcount: user.editcount ?? 0,
     groups: normalizeGroups(user.groups ?? []),
