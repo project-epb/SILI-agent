@@ -7,6 +7,7 @@ import type { MediaWikiApi } from 'wiki-saikou/node'
 
 import { INFOBOX_DEFINITION } from '../infoboxes'
 import type { MWPage, MWUser, MWUserContrib } from '../types/MediaWiki'
+import { fetchAvatar } from './avatar'
 import { buildUserInfoboxPayload, subjectOf } from './payload'
 
 export {
@@ -66,12 +67,13 @@ export async function shotUserInfobox(
       userid: user.userid,
       name: user.name,
     })
+    const avatar = avatarUrl ? await fetchAvatar(ctx, avatarUrl) : undefined
 
     const payload = buildUserInfoboxPayload(
       user,
       data.query.usercontribs ?? [],
       {
-        avatarUrl,
+        avatar,
         sitename: data.query.general?.sitename,
         pageUrl: page.canonicalurl,
       }
