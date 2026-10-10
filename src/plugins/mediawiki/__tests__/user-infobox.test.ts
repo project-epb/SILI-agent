@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import type { MWPage, MWUser } from '../types/MediaWiki'
 import {
   buildUserInfoboxPayload,
+  formatContribTime,
   formatDate,
-  formatDateTime,
   formatExpiry,
   isUserRootPage,
   normalizeGroups,
@@ -16,15 +16,33 @@ const page = (over: Partial<MWPage>): MWPage =>
 const user = (over: Partial<MWUser>): MWUser =>
   ({ userid: 1, name: 'Foo', ...over }) as MWUser
 
-describe('formatDate / formatDateTime (UTC+8)', () => {
+describe('formatDate (UTC+8)', () => {
   it('shifts UTC into UTC+8', () => {
-    // 19:08 UTC + 8h = 次日 03:08
+    // 19:08 UTC + 8h = 次日
     expect(formatDate('2004-05-20T19:08:13Z')).toBe('2004-05-21')
-    expect(formatDateTime('2004-05-20T19:08:13Z')).toBe('05-21 03:08')
+  })
+})
+
+describe('formatContribTime (UTC+8)', () => {
+  const now = new Date('2026-10-10T06:00:00Z')
+
+  it('shows MM-DD HH:mm within the current year', () => {
+    // 19:08 UTC + 8h = 次日 03:08
+    expect(formatContribTime('2026-05-20T19:08:13Z', now)).toBe('05-21 03:08')
   })
 
-  it('keeps same day when shift does not cross midnight', () => {
-    expect(formatDateTime('2016-08-12T02:00:00Z')).toBe('08-12 10:00')
+  it('shows YYYY-MM-DD for a previous year', () => {
+    expect(formatContribTime('2025-12-30T02:00:00Z', now)).toBe('2025-12-30')
+  })
+
+  it('compares years in UTC+8, not UTC', () => {
+    // 2025-12-31 17:00 UTC = 2026-01-01 01:00 UTC+8 → same year as now
+    expect(formatContribTime('2025-12-31T17:00:00Z', now)).toBe('01-01 01:00')
+    // now = 2026-12-31 17:00 UTC is already 2027 in UTC+8
+    const newYear = new Date('2026-12-31T17:00:00Z')
+    expect(formatContribTime('2026-12-31T10:00:00Z', newYear)).toBe(
+      '2026-12-31'
+    )
   })
 })
 
@@ -72,10 +90,32 @@ describe('buildUserInfoboxPayload', () => {
         registration: '2016-08-12T02:00:00Z',
         groups: ['*', 'user', 'sysop', 'interface-admin'],
       }),
-      [{ userid: 12450, user: 'Dragon-Fish', ns: 0, title: '初音未来', timestamp: '2026-07-16T06:22:00Z' }],
-      'https://example.com/a.png'
+      [
+        {
+          userid: 12450,
+          user: 'Dragon-Fish',
+          ns: 0,
+          title: '初音未来',
+          timestamp: '2026-07-16T06:22:00Z',
+        },
+        {
+          userid: 12450,
+          user: 'Dragon-Fish',
+          ns: 0,
+          title: '沙盒',
+          timestamp: '2025-03-01T00:00:00Z',
+        },
+      ],
+      {
+        avatarUrl: 'https://example.com/a.png',
+        sitename: '萌娘百科',
+        pageUrl: 'https://zh.moegirl.org.cn/User:%E5%B0%8F%E9%B1%BC',
+        now: new Date('2026-10-10T06:00:00Z'),
+      }
     )
     expect(p).toMatchObject({
+      sitename: '萌娘百科',
+      link: 'zh.moegirl.org.cn/User:小鱼',
       name: 'Dragon-Fish',
       userid: 12450,
       avatar: 'https://example.com/a.png',
@@ -84,7 +124,10 @@ describe('buildUserInfoboxPayload', () => {
       groups: ['管理员', '界面管理员'],
       block: null,
     })
-    expect(p.contribs).toEqual([{ title: '初音未来', time: '07-16 14:22' }])
+    expect(p.contribs).toEqual([
+      { title: '初音未来', time: '07-16 14:22' },
+      { title: '沙盒', time: '2025-03-01' },
+    ])
   })
 
   it('handles null registration (legacy account)', () => {
@@ -127,14 +170,18 @@ describe('isUserRootPage', () => {
     expect(isUserRootPage(page({ ns: 2, title: 'User:Foo' }))).toBe(true)
   })
   it('rejects subpages', () => {
-    expect(isUserRootPage(page({ ns: 2, title: 'User:Foo/sandbox' }))).toBe(false)
+    expect(isUserRootPage(page({ ns: 2, title: 'User:Foo/sandbox' }))).toBe(
+      false
+    )
   })
   it('rejects non-user namespaces', () => {
     expect(isUserRootPage(page({ ns: 0, title: 'Foo' }))).toBe(false)
     expect(isUserRootPage(page({ ns: 3, title: 'User talk:Foo' }))).toBe(false)
   })
   it('rejects invalid titles (e.g. IP handled upstream)', () => {
-    expect(isUserRootPage(page({ ns: 2, title: 'User:Foo', invalid: true }))).toBe(false)
+    expect(
+      isUserRootPage(page({ ns: 2, title: 'User:Foo', invalid: true }))
+    ).toBe(false)
   })
   it('accepts localized namespace prefix', () => {
     expect(isUserRootPage(page({ ns: 2, title: '用户:Foo' }))).toBe(true)

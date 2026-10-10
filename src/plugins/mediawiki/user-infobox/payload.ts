@@ -2,9 +2,13 @@ import type { MWPage, MWUser, MWUserContrib } from '../types/MediaWiki'
 
 /** Payload consumed by user-infobox/index.html via the `data` query param. */
 export interface UserInfoboxPayload {
+  /** Wiki display name from siteinfo, or null when the wiki did not report one. */
+  sitename: string | null
+  /** Human-readable user page URL (scheme dropped, percent-decoded), so a forwarded card stays traceable. */
+  link: string | null
   name: string
   userid: number
-  /** Remote avatar URL, or null to fall back to the placeholder face. */
+  /** Remote avatar URL, or null to fall back to the initial-letter placeholder. */
   avatar: string | null
   /** Formatted YYYY-MM-DD, or null when the wiki reports no registration date. */
   registration: string | null
@@ -52,9 +56,15 @@ export function formatDate(iso: string): string {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`
 }
 
-/** UTC+8 `MM-DD HH:mm`. */
-export function formatDateTime(iso: string): string {
+/**
+ * Contrib time in UTC+8: `MM-DD HH:mm` within `now`'s year, `YYYY-MM-DD` otherwise —
+ * a yearless date on an old edit reads as recent.
+ */
+export function formatContribTime(iso: string, now: Date): string {
   const d = toUtc8(iso)
+  if (d.getUTCFullYear() !== toUtc8(now.toISOString()).getUTCFullYear()) {
+    return formatDate(iso)
+  }
   return `${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
 }
 
@@ -78,9 +88,21 @@ export function normalizeGroups(groups: string[]): string[] {
 export function buildUserInfoboxPayload(
   user: MWUser,
   contribs: MWUserContrib[],
-  avatarUrl?: string
+  {
+    avatarUrl,
+    sitename,
+    pageUrl,
+    now = new Date(),
+  }: {
+    avatarUrl?: string
+    sitename?: string
+    pageUrl?: string
+    now?: Date
+  } = {}
 ): UserInfoboxPayload {
   return {
+    sitename: sitename || null,
+    link: pageUrl ? decodeURI(pageUrl).replace(/^https?:\/\//, '') : null,
     name: user.name,
     userid: user.userid,
     avatar: avatarUrl ?? null,
@@ -96,7 +118,7 @@ export function buildUserInfoboxPayload(
       : null,
     contribs: (contribs ?? []).slice(0, MAX_CONTRIBS).map((c) => ({
       title: c.title,
-      time: formatDateTime(c.timestamp),
+      time: formatContribTime(c.timestamp, now),
     })),
   }
 }
