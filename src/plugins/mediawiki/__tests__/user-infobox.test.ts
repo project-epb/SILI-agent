@@ -107,7 +107,7 @@ describe('buildUserInfoboxPayload', () => {
         },
       ],
       {
-        avatarUrl: 'https://example.com/a.png',
+        avatar: 'data:image/png;base64,AAAA',
         sitename: '萌娘百科',
         pageUrl: 'https://zh.moegirl.org.cn/User:%E5%B0%8F%E9%B1%BC',
         now: new Date('2026-10-10T06:00:00Z'),
@@ -118,7 +118,7 @@ describe('buildUserInfoboxPayload', () => {
       link: 'zh.moegirl.org.cn/User:小鱼',
       name: 'Dragon-Fish',
       userid: 12450,
-      avatar: 'https://example.com/a.png',
+      avatar: 'data:image/png;base64,AAAA',
       registration: '2016-08-12',
       editcount: 12345,
       groups: ['管理员', '界面管理员'],

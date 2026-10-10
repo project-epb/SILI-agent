@@ -33,8 +33,9 @@
       }
 
       .banner {
+        position: relative;
+        overflow: hidden;
         height: 72px;
-        padding: 12px 16px;
         background:
           radial-gradient(
             120% 140% at 100% 0%,
@@ -48,22 +49,24 @@
           );
       }
 
-      .site {
-        display: inline-block;
-        max-width: 100%;
-        padding: 3px 10px;
-        border-radius: 999px;
-        background: rgba(0, 0, 0, 0.16);
-        color: #fff;
-        font-size: 12px;
-        font-weight: 600;
-        line-height: 1.4;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+      /* User-page image on the right, fading out leftward into the hue gradient */
+      .banner .cover {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 70%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center 30%;
+        -webkit-mask-image: linear-gradient(to left, #000 35%, transparent);
+        mask-image: linear-gradient(to left, #000 35%, transparent);
+        /* Keep it ambient: the avatar and name stay the focus */
+        opacity: 0.55;
       }
 
+      /* Positioned so the overlapping avatar paints above the (positioned) banner */
       .head {
+        position: relative;
         padding: 0 20px;
         display: flex;
         align-items: flex-end;
@@ -199,7 +202,7 @@
         font-variant-numeric: tabular-nums;
       }
 
-      /* Bare spacer when there is no link; a page-URL footer once filled */
+      /* Source line (sitename · page URL) so a forwarded card stays traceable; bare spacer when empty */
       .foot {
         margin-top: 18px;
       }
@@ -207,11 +210,26 @@
         margin-top: 16px;
         padding: 9px 20px 11px;
         border-top: 1px solid #eef0f3;
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
         font-size: 11px;
         color: #8f959e;
+        white-space: nowrap;
+      }
+      .foot .site {
+        flex: none;
+        font-weight: 600;
+        color: #646a73;
+      }
+      .foot .site + .link::before {
+        content: '·';
+        margin-right: 6px;
+      }
+      .foot .link {
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
       }
 
       .hidden {
@@ -221,7 +239,7 @@
   </head>
   <body>
     <div id="user-infobox">
-      <div class="banner"><span class="site hidden"></span></div>
+      <div class="banner"><img class="cover hidden" alt="" /></div>
       <div class="head">
         <div class="avatar"></div>
         <div class="ident">
@@ -265,27 +283,83 @@
         return e
       }
 
-      // Stable per-user accent hue so different users get different banners
+      const setHue = (hue) =>
+        $('#user-infobox').style.setProperty('--hue', String(Math.round(hue)))
+
+      // Default accent: stable per-user hash, so avatarless users still differ
       let h = 0
       for (const ch of String(data.name || ''))
         h = (h * 31 + ch.codePointAt(0)) >>> 0
-      $('#user-infobox').style.setProperty('--hue', String(h % 360))
+      setHue(h % 360)
 
-      if (data.sitename) {
-        $('.site').textContent = data.sitename
-        show($('.site'))
+      /**
+       * Dominant hue of an avatar: saturation²-weighted circular mean over a 16×16 downsample.
+       * Transparency is flattened onto white, and near-white / near-black pixels are skipped,
+       * so plain or transparent backgrounds don't pull the hue. Returns null for (near-)grayscale
+       * avatars. Needs a same-origin image — the avatar arrives as a data: URI for this reason.
+       */
+      function avatarHue(img) {
+        const N = 16
+        const canvas = document.createElement('canvas')
+        canvas.width = canvas.height = N
+        const g = canvas.getContext('2d')
+        g.fillStyle = '#fff'
+        g.fillRect(0, 0, N, N)
+        g.drawImage(img, 0, 0, N, N)
+        const px = g.getImageData(0, 0, N, N).data
+        let x = 0
+        let y = 0
+        let colored = 0
+        for (let i = 0; i < px.length; i += 4) {
+          const r = px[i] / 255
+          const gr = px[i + 1] / 255
+          const b = px[i + 2] / 255
+          const max = Math.max(r, gr, b)
+          const min = Math.min(r, gr, b)
+          const l = (max + min) / 2
+          const d = max - min
+          if (d === 0 || l > 0.92 || l < 0.08) continue
+          const s = d / (1 - Math.abs(2 * l - 1))
+          if (s < 0.15) continue
+          const hue =
+            max === r
+              ? ((gr - b) / d + 6) % 6
+              : max === gr
+                ? (b - r) / d + 2
+                : (r - gr) / d + 4
+          const rad = (hue * Math.PI) / 3
+          x += Math.cos(rad) * s * s
+          y += Math.sin(rad) * s * s
+          colored++
+        }
+        if (colored < N * N * 0.05) return null
+        return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
       }
-      if (data.link) $('.foot').textContent = data.link
+
+      if (data.cover) {
+        const cover = $('.banner .cover')
+        cover.onload = () => show(cover)
+        cover.src = data.cover
+      }
+
+      const foot = $('.foot')
+      if (data.sitename) foot.append(el('span', 'site', data.sitename))
+      if (data.link) foot.append(el('span', 'link', data.link))
 
       $('.name').textContent = data.name || ''
       $('.sub').textContent = data.userid != null ? `UID ${data.userid}` : ''
 
-      // Avatar: initial letter until the remote image loads; a failed load keeps the initial
+      // Avatar: initial letter unless the inlined image decodes. The <img> load
+      // delays window.onload, so the hue lands before the screenshot is taken.
       const avatar = $('.avatar')
       avatar.textContent = Array.from(String(data.name || '?'))[0].toUpperCase()
       if (data.avatar) {
         const img = new Image()
-        img.onload = () => avatar.replaceChildren(img)
+        img.onload = () => {
+          avatar.replaceChildren(img)
+          const hue = avatarHue(img)
+          if (hue != null) setHue(hue)
+        }
         img.src = data.avatar
       }
 
