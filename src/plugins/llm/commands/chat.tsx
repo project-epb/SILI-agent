@@ -568,7 +568,7 @@ export default class ChatCommand extends BasePlugin {
             signal: abortController.signal,
             registry: effectiveRegistry,
             maxIterations: llm.config.maxToolIterations ?? 5,
-            showToolCallNotice: llm.config.showToolCallNotice ?? true,
+            showToolCallNotice: llm.config.showToolCallNotice ?? false,
             dsmlLeakMaxRetries: llm.config.dsmlLeakMaxRetries ?? 2,
             session,
             logger: llm.logger,

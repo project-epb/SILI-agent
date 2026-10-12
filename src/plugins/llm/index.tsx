@@ -160,6 +160,11 @@ export interface Config {
   // Agent 改造新增
   enableAgent?: boolean
   maxToolIterations?: number
+  /**
+   * Send a "[正在执行: xxx]" notice before each tool call. Verbose by nature —
+   * off by default, so an ordinary chat is not interleaved with tool chatter.
+   * Turn on only when debugging what the agent is doing.
+   */
   showToolCallNotice?: boolean
   /**
    * DeepSeek "DSML leak" workaround (see utils/dsml-leak.ts): when the model
@@ -322,7 +327,7 @@ export default class PluginLLM extends BasePlugin<Config> {
       persistWrappedUserMessage: true,
       enableAgent: true,
       maxToolIterations: 5,
-      showToolCallNotice: true,
+      showToolCallNotice: false,
       dsmlLeakMaxRetries: 2,
       memoryByteLimit: 3000,
       memoryUpdateInterval: 10,
