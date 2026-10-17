@@ -29,6 +29,7 @@ import { MemoryForkScheduler } from './services/memory-fork-scheduler'
 import { SessionManager } from './services/session-manager'
 import { SummaryCompactor } from './services/summary-compactor'
 import { SystemPromptBuilder } from './services/system-prompt'
+import { DeepSeekSearchClient } from './services/deepseek-search-client'
 import { TavilySearchClient } from './services/tavily-client'
 import { TurnAllocator } from './services/turn-allocator'
 import { migrateTurnNumbers } from './services/turn-migration'
@@ -202,23 +203,28 @@ export interface Config {
   /** Max bytes per image; oversized images skip cache + show placeholder. Default 8MB. */
   imageCacheMaxImageBytes?: number
   /**
-   * Tavily-backed `web_search` tool. When set, the agent gets a `web_search`
-   * tool it can call for live internet lookups. Without this config the
-   * tool is not registered and the agent has no web-search capability
-   * (existing provider-side `enableSearch` flag is unaffected).
+   * `web_search` + `extract_webpages` tools, served by the chosen backend.
+   * Without this config, or without the chosen backend's key, the tools are
+   * not registered and the agent has no web-search capability (the
+   * provider-side `enableSearch` flag is unaffected).
    */
-  tavily?: {
-    apiKey: string
-    searchDepth?: 'basic' | 'advanced' | 'fast' | 'ultra-fast'
-    topic?: 'general' | 'news' | 'finance'
+  webSearch?: {
+    backend: 'deepseek' | 'tavily'
+    /** DeepSeek Search & Fetch; billed to the same account as its chat models. */
+    deepseek?: { apiKey: string }
+    tavily?: {
+      apiKey: string
+      searchDepth?: 'basic' | 'advanced' | 'fast' | 'ultra-fast'
+      topic?: 'general' | 'news' | 'finance'
+      /** Extract depth: `basic` is fast, `advanced` more thorough. Default basic. */
+      extractDepth?: 'basic' | 'advanced'
+    }
     /** Default result count if the agent doesn't pass max_results. Default 5. */
     defaultMaxResults?: number
     /** Hard cap for max_results (agent requests above this are clamped). Default 10. */
     maxResultsCap?: number
     /** Per-request timeout in seconds. Default 15. */
     timeoutSeconds?: number
-    /** Extract depth: `basic` is fast, `advanced` more thorough. Default basic. */
-    extractDepth?: 'basic' | 'advanced'
     /** Hard cap for URLs per single extract call. Default 5. */
     maxExtractUrlsPerCall?: number
     /** Per-turn cap for `web_search` tool calls. Default 3. */
@@ -452,37 +458,49 @@ export default class PluginLLM extends BasePlugin<Config> {
       },
     })
 
-    // 可选工具：web_search + extract_webpages（仅在配置了 tavily.apiKey 时注册）
-    if (config.tavily?.apiKey) {
-      const tavilyConfig = config.tavily
-      const tavilyClient = new TavilySearchClient({
-        apiKey: tavilyConfig.apiKey,
-        searchDepth: tavilyConfig.searchDepth,
-        topic: tavilyConfig.topic,
-        timeoutSeconds: tavilyConfig.timeoutSeconds,
-        extractDepth: tavilyConfig.extractDepth,
-      })
+    // 可选工具：web_search + extract_webpages（仅在所选后端配置了 key 时注册）
+    const webSearch = config.webSearch
+    const webClient = webSearch
+      ? webSearch.backend === 'deepseek'
+        ? webSearch.deepseek?.apiKey
+          ? new DeepSeekSearchClient({
+              apiKey: webSearch.deepseek.apiKey,
+              timeoutSeconds: webSearch.timeoutSeconds,
+            })
+          : null
+        : webSearch.tavily?.apiKey
+          ? new TavilySearchClient({
+              apiKey: webSearch.tavily.apiKey,
+              searchDepth: webSearch.tavily.searchDepth,
+              topic: webSearch.tavily.topic,
+              timeoutSeconds: webSearch.timeoutSeconds,
+              extractDepth: webSearch.tavily.extractDepth,
+            })
+          : null
+      : null
+    if (webSearch && !webClient) {
+      this.logger.warn(
+        `web search backend "${webSearch.backend}" has no API key; web_search is not registered`
+      )
+    }
+    if (webSearch && webClient) {
+      this.logger.info(`web search backend: ${webSearch.backend}`)
       this.tools.register({
         definition: WEB_SEARCH_TOOL,
         execute: async (args, { turnState }) =>
-          runWebSearch(args as any, tavilyClient, getWebToolsState(turnState), {
-            defaultMaxResults: tavilyConfig.defaultMaxResults,
-            maxResultsCap: tavilyConfig.maxResultsCap,
-            maxCallsPerTurn: tavilyConfig.maxSearchCallsPerTurn,
+          runWebSearch(args as any, webClient, getWebToolsState(turnState), {
+            defaultMaxResults: webSearch.defaultMaxResults,
+            maxResultsCap: webSearch.maxResultsCap,
+            maxCallsPerTurn: webSearch.maxSearchCallsPerTurn,
           }),
       })
       this.tools.register({
         definition: EXTRACT_WEBPAGES_TOOL,
         execute: async (args, { turnState }) =>
-          runWebExtract(
-            args as any,
-            tavilyClient,
-            getWebToolsState(turnState),
-            {
-              maxUrlsPerCall: tavilyConfig.maxExtractUrlsPerCall,
-              maxCallsPerTurn: tavilyConfig.maxExtractCallsPerTurn,
-            }
-          ),
+          runWebExtract(args as any, webClient, getWebToolsState(turnState), {
+            maxUrlsPerCall: webSearch.maxExtractUrlsPerCall,
+            maxCallsPerTurn: webSearch.maxExtractCallsPerTurn,
+          }),
       })
     }
 

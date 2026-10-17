@@ -460,8 +460,21 @@ app.plugin(function PluginCollectionSILICore(ctx) {
       },
     })
   }
+  const llmProviders = parseLLMProviders(env)
+  // DeepSeek Search & Fetch share the chat account, so the `deepseek`
+  // provider's key serves them. LLM_WEB_SEARCH_BACKEND picks the backend;
+  // unset, DeepSeek wins when its key exists, else Tavily.
+  const deepseekKey = llmProviders.find((p) => p.name === 'deepseek')?.options
+    ?.apiKey as string | undefined
+  const webSearchBackend =
+    env.LLM_WEB_SEARCH_BACKEND === 'deepseek' ||
+    env.LLM_WEB_SEARCH_BACKEND === 'tavily'
+      ? env.LLM_WEB_SEARCH_BACKEND
+      : deepseekKey
+        ? 'deepseek'
+        : 'tavily'
   ctx.plugin(PluginLLM, {
-    providers: parseLLMProviders(env),
+    providers: llmProviders,
     maxTokens: env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : 16384,
     model: env.LLM_MODEL || 'gpt-4o',
     memoryModel: env.LLM_AGENT_MEMORY_MODEL,
@@ -471,9 +484,13 @@ app.plugin(function PluginCollectionSILICore(ctx) {
     sessionIdleTimeoutMs: env.LLM_SESSION_IDLE_HOURS
       ? Number(env.LLM_SESSION_IDLE_HOURS) * 60 * 60 * 1000
       : undefined,
-    tavily: env.LLM_TAVILY_API_KEY
-      ? { apiKey: env.LLM_TAVILY_API_KEY }
-      : undefined,
+    webSearch: {
+      backend: webSearchBackend,
+      deepseek: deepseekKey ? { apiKey: deepseekKey } : undefined,
+      tavily: env.LLM_TAVILY_API_KEY
+        ? { apiKey: env.LLM_TAVILY_API_KEY }
+        : undefined,
+    },
   })
   // ComfyUI 图像生成：从 data/comfyui 加载 workflow/guide（容器里 /app/data，
   // 即宿主机 .volumns/core/comfyui/）；后端 baseURL + 认证走 .env（沿用 Hermes
