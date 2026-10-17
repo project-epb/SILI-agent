@@ -19,6 +19,7 @@ import MessagesLogger from '@/modules/MessagesLogger'
 import { MinecraftConnect } from '@/modules/MinecraftConnect'
 import MgpGroupUtils from '@/modules/MoegirlGroupUtils'
 import ProcessErrorHandler from '@/modules/ProcessErrorHandler'
+import SilentSwitch from '@/modules/SilentSwitch'
 import PiggybackService from '@/services/PiggybackService'
 import { QQNTEmojiReactionService } from '@/services/QQNTEmojiReaction'
 import HTMLService from '@/services/html'
@@ -565,6 +566,7 @@ app.plugin(function PluginCollectionInternal(ctx) {
   ctx.command('tools', '实用工具集')
   ctx.plugin(HTMLService)
   ctx.plugin(FallbackHandler)
+  ctx.plugin(SilentSwitch)
   ctx.plugin(GuildRequestFirewall)
   ctx.plugin(MessagesLogger)
   ctx.plugin(MgpGroupUtils)
