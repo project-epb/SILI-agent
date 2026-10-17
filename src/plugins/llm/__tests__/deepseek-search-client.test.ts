@@ -28,7 +28,13 @@ describe('DeepSeekSearchClient.search', () => {
     const fetch = mockFetch(() =>
       json({
         results: [
-          { title: 'A', url: 'https://a', snippet: 'short', summary: 'long form', rerank_score: 2.1 },
+          {
+            title: 'A',
+            url: 'https://a',
+            snippet: 'short',
+            summary: 'long form',
+            rerank_score: 2.1,
+          },
           { title: 'B', url: 'https://b', snippet: 'only snippet' },
         ],
       })
@@ -38,11 +44,18 @@ describe('DeepSeekSearchClient.search', () => {
 
     const [url, init] = fetch.mock.calls[0]!
     expect(url).toBe('https://api.deepseek.com/v1/tools/search')
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer k')
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      'Bearer k'
+    )
     expect(JSON.parse(String(init.body))).toEqual({ query: '天气', count: 3 })
     expect(resp.results).toEqual([
       { title: 'A', url: 'https://a', content: 'long form', score: 2.1 },
-      { title: 'B', url: 'https://b', content: 'only snippet', score: undefined },
+      {
+        title: 'B',
+        url: 'https://b',
+        content: 'only snippet',
+        score: undefined,
+      },
     ])
   })
 
@@ -58,8 +71,12 @@ describe('DeepSeekSearchClient.search', () => {
   it('reports the status without the body', async () => {
     mockFetch(() => json({ error: { message: 'echo Bearer k' } }, 402))
     const client = new DeepSeekSearchClient({ apiKey: 'k' })
-    const err = await client.search({ query: 'x', maxResults: 5 }).catch((e) => e)
-    expect(err.message).toBe('DeepSeek search: account balance exhausted (HTTP 402)')
+    const err = await client
+      .search({ query: 'x', maxResults: 5 })
+      .catch((e) => e)
+    expect(err.message).toBe(
+      'DeepSeek search: account balance exhausted (HTTP 402)'
+    )
   })
 })
 
@@ -76,7 +93,10 @@ describe('DeepSeekSearchClient.extract', () => {
       { url: 'https://ok', title: 'T', content: '## Hi https://x' },
     ])
     expect(resp.failed).toEqual([
-      { url: 'https://bad', error: 'DeepSeek fetch: content unavailable (HTTP 404)' },
+      {
+        url: 'https://bad',
+        error: 'DeepSeek fetch: content unavailable (HTTP 404)',
+      },
     ])
   })
 })
