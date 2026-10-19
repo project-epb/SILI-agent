@@ -21,15 +21,17 @@ import type {
   MWPages,
   MWRedirects,
   MWSpecialPageAliases,
+  MWTitleMappings,
 } from './types/MediaWiki'
+import { isUserRootPage, shotUserInfobox } from './user-infobox'
 import {
   getUrl,
   getWikiDisplayTitle,
   isValidApi,
   parseTitlesFromText,
+  resolveQueriedTitle,
   useApi,
 } from './utils'
-import { isUserRootPage, shotUserInfobox } from './user-infobox'
 
 declare module 'koishi' {
   export interface Channel {
@@ -115,6 +117,8 @@ export default class PluginMediawiki extends BasePlugin<Config> {
           .get<{
             query: {
               pages: MWPages
+              normalized?: MWTitleMappings
+              converted?: MWTitleMappings
               redirects?: MWRedirects
               interwiki?: MWInterwikiLinks
               specialpagealiases: MWSpecialPageAliases
@@ -182,17 +186,20 @@ export default class PluginMediawiki extends BasePlugin<Config> {
           .flat(Infinity) as string[]
         // 获取本地特殊名字空间的标准名称
         const specialNsName = namespaces['-1'].name
+        // 按 API 解析后的最终标题找回用户输入的锚点
+        const findAnchor = (title: string) =>
+          titles.find(
+            (i) =>
+              resolveQueriedTitle(i.name, data.query).toLowerCase() ===
+              title.toLowerCase()
+          )?.anchor || ''
 
         const pageMsgs =
           pages?.map((page) => {
             // Cache variables
             const msg: string[] = []
             let pageRedirect = redirects?.find(({ to }) => to === page.title)
-            let pageAnchor =
-              titles.find(
-                (i) =>
-                  i.name.toLowerCase() === page.title.toLowerCase()
-              )?.anchor || ''
+            let pageAnchor = findAnchor(page.title)
 
             // 开始判断危险重定向
             if (
@@ -282,11 +289,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
 
         const interwikiMsgs =
           interwiki?.map((item) => {
-            const pageAnchor =
-              titles.find(
-                (i) =>
-                  i.name.toLowerCase() === item.title.toLowerCase()
-              )?.anchor || ''
+            const pageAnchor = findAnchor(item.title)
 
             return [`跨wiki链接：`, item.url + pageAnchor].join('\n')
           }) || []
