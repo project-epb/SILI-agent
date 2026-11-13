@@ -240,40 +240,52 @@ export default class QQBotService extends Service {
   }
 
   /**
-   * Make an openid an op (authority 4) or revert it. The platform exposes no
-   * "bot owner" API, so this is how a new bot learns who its ops are; the
+   * Set the Koishi authority of the account behind an openid. The platform has
+   * no "bot owner" API, so this is how a new bot gets its first admins: the
    * person only needs to have messaged the bot once to be listed.
-   * - op: create an authority-4 account if the openid has none; otherwise raise
-   *   to 4, never lower an account that is already 4 or above.
-   * - not op: only an account at exactly 4 drops back to 1. Accounts above 4
-   *   are refused so a misclick cannot demote a super admin.
+   *
+   * Same rule as Koishi's `authorize`: the new level must be lower than the
+   * operator's. Additionally an account at or above the operator's level
+   * cannot be changed, and nobody edits themselves here. An openid without an
+   * account gets one at the requested level.
+   *
    * Authority lives on the Koishi account: after `bind` merges this identity
    * into an old account, the old account's authority applies.
    */
-  async setOp(
+  async setAuthority(
     platform: string,
     userId: string,
-    op: boolean
+    authority: number,
+    operator: { id: number; authority: number }
   ): Promise<{ ok: boolean; message?: string }> {
+    if (!Number.isInteger(authority) || authority < 0) {
+      return { ok: false, message: '权限等级必须是非负整数。' }
+    }
+    if (authority >= operator.authority) {
+      return {
+        ok: false,
+        message: `只能授予低于你自己（${operator.authority}）的权限等级。`,
+      }
+    }
     const db = this.ctx.database
     const [binding] = await db.get('binding', { platform, pid: userId }, [
       'aid',
     ])
     if (!binding) {
-      if (op) await db.createUser(platform, userId, { authority: 4 })
+      await db.createUser(platform, userId, { authority })
     } else {
+      if (binding.aid === operator.id) {
+        return { ok: false, message: '不能在这里修改你自己的权限。' }
+      }
       const [user] = await db.get('user', { id: binding.aid }, ['authority'])
       const current = user?.authority ?? 0
-      if (op && current < 4) {
-        await db.set('user', { id: binding.aid }, { authority: 4 })
-      } else if (!op && current > 4) {
+      if (current >= operator.authority) {
         return {
           ok: false,
-          message: `该账号权限为 ${current}，高于 op，不在这里调整。`,
+          message: `该账号权限为 ${current}，不低于你自己，不能修改。`,
         }
-      } else if (!op && current === 4) {
-        await db.set('user', { id: binding.aid }, { authority: 1 })
       }
+      await db.set('user', { id: binding.aid }, { authority })
     }
     await this.state.reload(this.ctx)
     return { ok: true }

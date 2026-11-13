@@ -83,7 +83,7 @@ declare module '@koishijs/console' {
     'qqbot-admin/refresh-group'(payload: { selfId: string; id: string }): {
       ok: true
     }
-    'qqbot-admin/set-op'(payload: { id: string; op: boolean }): {
+    'qqbot-admin/set-authority'(payload: { id: string; authority: number }): {
       ok: boolean
       message?: string
     }
@@ -251,9 +251,17 @@ export function apply(ctx: Context) {
     { authority: AUTH }
   )
 
+  // The operator is the account logged into the console (plugin-auth).
   ctx.console.addListener(
-    'qqbot-admin/set-op',
-    async ({ id, op }) => ctx.qqbot.setOp(PLATFORM, id, op),
+    'qqbot-admin/set-authority',
+    async function ({ id, authority }) {
+      const auth = (this as any)?.auth
+      if (!auth) return { ok: false, message: '未登录控制台。' }
+      return ctx.qqbot.setAuthority(PLATFORM, id, authority, {
+        id: auth.id,
+        authority: auth.authority,
+      })
+    },
     { authority: AUTH }
   )
 

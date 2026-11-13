@@ -203,19 +203,23 @@ const Page = defineComponent({
           const main = h('tr', { key, class: served ? 'is-on' : '' }, [
             h('td', [h('div', r.name || '（无名称）'), h('div', { class: 'qa-dim' }, short(r.id))]),
             h('td', r.account
-              ? [r.account.name || '（未命名）', ' ', h('span', { class: 'qa-dim' }, `#${r.account.id}`), r.isOp ? badge('op') : null]
+              ? [r.account.name || '（未命名）', ' ', h('span', { class: 'qa-dim' }, `#${r.account.id}`), r.isOp ? badge(`权限 ${r.account.authority}`) : null]
               : h('span', { class: 'qa-dim' }, '未绑定')),
             h('td', when(r.lastSeen)),
             h('td', r.messageCount),
             h('td', r.dmCount),
             h('td', { class: 'qa-actions' }, [
-              h('button', {
-                class: `qa-btn ${r.isOp ? 'is-danger' : 'is-plain'}`,
+              h('select', {
+                class: 'qa-input qa-level',
                 disabled: busy.value === key,
-                onClick: () => act(key, 'qqbot-admin/set-op', { id: r.id, op: !r.isOp }),
-              }, r.isOp ? '取消 op' : '设为 op'),
+                value: String(r.account?.authority ?? ''),
+                onChange: (e) => act(key, 'qqbot-admin/set-authority', { id: r.id, authority: Number(e.target.value) }),
+              }, [
+                r.account ? null : h('option', { value: '', disabled: true }, '无账号'),
+                ...[0, 1, 2, 3, 4, 5].map((n) => h('option', { value: String(n) }, `权限 ${n}`)),
+              ]),
               r.isOp
-                ? h('span', { class: 'qa-dim' }, 'op 私聊始终放行')
+                ? h('span', { class: 'qa-dim' }, '权限 ≥ 4：私聊始终放行')
                 : h('button', {
                     class: `qa-btn ${r.dmActive ? 'is-danger' : ''}`,
                     disabled: busy.value === key,
@@ -237,7 +241,7 @@ const Page = defineComponent({
     return () =>
       h('div', { class: 'qa-root' }, [
         h('p', { class: 'qa-notice' },
-          '只记录元数据，不展示消息内容。成员只覆盖发过言的人，不是完整的群成员名单。激活群等同于在群里 assign。要让某人成为 op：先让他给机器人发一条消息（会被静默，但会出现在用户列表），再点「设为 op」。'),
+          '只记录元数据，不展示消息内容。成员只覆盖发过言的人，不是完整的群成员名单。激活群等同于在群里 assign。授予权限：先让对方给机器人发一条消息（会被静默，但会出现在用户列表），再在这里选择权限等级；只能授予低于你自己的等级，权限 ≥ 4 才能激活群、私聊始终放行。'),
         toolbar(),
         err.value ? h('p', { class: 'qa-err' }, err.value) : null,
         rows.value.length

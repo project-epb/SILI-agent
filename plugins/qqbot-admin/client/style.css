@@ -42,3 +42,4 @@
   font-size: 0.75rem; border: 1px solid var(--k-color-border, #ddd);
 }
 .qa-badge.is-warn { color: var(--k-color-danger, #e0533d); border-color: currentColor; }
+.qa-level { padding: 0.3rem 0.4rem; font-size: 0.85rem; }
