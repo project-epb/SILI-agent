@@ -52,7 +52,7 @@
 迁移期间 `v5` 额外加载 OneBot 适配器（以 `ONEBOT_SELFID` 是否设置为开关），它**只用于接收 `bind` 的绑定码**。
 
 - `onebot` 平台的会话**一律视为未服务**，不看 `assignee`：生产库里约 60 个 OneBot 群的 `channel` 记录，`assignee` 仍是 SILI 的 QQ 号，而 OneBot 适配器的 `selfId` 正是这个号，核心会把它们当成已受理。
-- gate 只放行以绑定码前缀（plugin-bind 默认的 `koishi/`）开头的 OneBot 消息，交给 plugin-bind 的前置中间件处理；其余全部静默丢弃。
+- gate 只放行以绑定码前缀（plugin-bind 默认的 `koishi/`）开头的 OneBot 消息，交给 plugin-bind 的前置中间件处理；其余全部静默丢弃。唯一的例外是被 @ 时的迁移提醒（每群 8 小时一次，见迁移 spec）。
 - plugin-bind 按发码者查 `binding` 找旧用户，不新建用户；`autoAuthorize`、`autoAssign` 对 `onebot` 返回 0 / `false`，其余路径也不会建用户和频道。
 - 消息存储和元数据表都不记 `onebot` 的消息。
 - 共存期间群里同时有两个 SILI：OneBot 会话在 gate 就被丢弃，早于 Koishi 读取用户，所以 OneBot 一侧不会写入任何用户数据，也不会和官方 bot 一起回复。

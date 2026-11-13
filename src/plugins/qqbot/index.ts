@@ -16,7 +16,7 @@
  *   Koishi from creating user and channel rows for strangers on every other
  *   path (e.g. `session.execute`).
  */
-import { Context, Next, Service, Session, Time } from 'koishi'
+import { Context, Next, Service, Session, Time, h } from 'koishi'
 
 import {
   GUARDED_PLATFORMS,
@@ -32,6 +32,7 @@ import {
   GROUP_MIGRATE_COMMAND,
   MigrationFeatures,
   migrationNotice,
+  oldAccountNotice,
 } from './migration'
 import { ServedState, factsOf } from './state'
 import { MessageStore } from './store'
@@ -113,6 +114,9 @@ export default class QQBotService extends Service {
   readonly store: MessageStore
   readonly metadata: MetadataRecorder
   private pendingNotice = new Set<string>()
+  /** Last time the old OneBot account reminded a group, by `selfId:channelId`. */
+  private oldAccountRemindedAt = new Map<string, number>()
+  private shareUrl?: string
 
   constructor(
     ctx: Context,
@@ -128,6 +132,9 @@ export default class QQBotService extends Service {
     ctx.on('ready', () => this.reload())
     ctx.setInterval(() => this.reload(), 30 * Time.second)
     ctx.middleware((session, next) => this.gate(session, next), true)
+    ctx.on('before-send', (out, options) =>
+      this.rewriteAssignReply(out, options)
+    )
   }
 
   /** Re-read activation, DM permissions and ops from the database. */
@@ -156,8 +163,10 @@ export default class QQBotService extends Service {
     const { content, command } = commandOf(session)
     const rules = rulesOf(this.ctx)
     if (guarded) this.metadata.record(session)
-    if (decideGate(facts, content, command, this.state, rules) === 'drop')
+    if (decideGate(facts, content, command, this.state, rules) === 'drop') {
+      if (platform === 'onebot') void this.remindOnOldAccount(session)
       return
+    }
 
     if (guarded && isServed(facts, this.state)) {
       // A duplicate push was already handled once.
@@ -175,6 +184,35 @@ export default class QQBotService extends Service {
       this.afterAssign(session)
     }
     return result
+  }
+
+  /**
+   * plugin-admin answers `assign` with its generic channel replies
+   * ("频道数据已修改" / "频道数据未改动"), shared by every channel admin
+   * command, so the i18n text cannot be changed globally. Koishi sends a
+   * command's reply itself, so rewrite it in `before-send`, only when the
+   * source session ran `assign` on a guarded platform and the reply is one of
+   * those two texts. By then plugin-admin has applied the new assignee to the
+   * observed channel. Anything else (permission errors, usage) is untouched.
+   */
+  private rewriteAssignReply(out: Session, options: any) {
+    const source: Session | undefined = options?.session
+    if (!source || !GUARDED_PLATFORMS.has(source.platform)) return
+    if (source.argv?.command?.name !== 'assign') return
+    const text = out.content?.trim()
+    const updated = source.text('admin.channel-updated')
+    const unchanged = source.text('admin.channel-unchanged')
+    if (text !== updated && text !== unchanged) return
+    const active = (source.channel as any)?.assignee === source.selfId
+    const reply =
+      text === updated
+        ? active
+          ? '好的，SILI 开始在这个群工作啦！'
+          : '好的，SILI 之后不会在这个群回复了。管理员可以再用 assign 叫醒我。'
+        : active
+          ? 'SILI 已经在这个群工作啦。'
+          : 'SILI 本来就没有在这个群工作。'
+    out.elements = [h.text(reply)]
   }
 
   /**
@@ -329,6 +367,48 @@ export default class QQBotService extends Service {
       this.pendingNotice.add(`${selfId}:${channelId}`)
     } catch (error) {
       this.logger.warn('first-activation notice', error)
+    }
+  }
+
+  /**
+   * During the migration window the old OneBot account stays silent except
+   * for one thing: when someone @-mentions it in a group, tell them it moved,
+   * at most once per group every 8 hours. Reactive and rate-limited on purpose:
+   * mass-broadcasting from a real QQ account is what triggers risk control.
+   * The rate limit lives in memory; a restart may cost one extra reminder.
+   */
+  private async remindOnOldAccount(session: Session) {
+    if (!this.options.migrationWindow || session.isDirect) return
+    if (!session.stripped?.atSelf) return
+    const key = `${session.selfId}:${session.channelId}`
+    if (
+      Date.now() - (this.oldAccountRemindedAt.get(key) ?? 0) <
+      8 * Time.hour
+    ) {
+      return
+    }
+    this.oldAccountRemindedAt.set(key, Date.now())
+    try {
+      await session.send(oldAccountNotice(await this.newBotShareUrl()))
+    } catch (error) {
+      this.logger.warn('old account reminder', error)
+    }
+  }
+
+  /** The new bot's "add to group" link (`share_url` of /users/@me), cached. */
+  private async newBotShareUrl() {
+    if (this.shareUrl !== undefined) return this.shareUrl
+    const bot = this.ctx.bots.find(
+      (b) => GUARDED_PLATFORMS.has(b.platform) && (b as any).internal?.getMe
+    ) as any
+    if (!bot) return ''
+    try {
+      const me = await bot.internal.getMe()
+      this.shareUrl = me?.share_url ?? ''
+      return this.shareUrl
+    } catch (error) {
+      this.logger.debug('getMe failed: %s', (error as Error)?.message)
+      return ''
     }
   }
 

@@ -45,6 +45,20 @@ const BIND_COPY = {
   },
 }
 
+/**
+ * Sent by the old OneBot account when someone @-mentions it during the
+ * migration window: it no longer serves, so point the group at the new bot.
+ */
+export function oldAccountNotice(shareUrl: string) {
+  return [
+    'SILI换新账号啦，这个旧号已经不再回复消息了。',
+    shareUrl
+      ? `请群主或管理员把新 SILI 拉进群：${shareUrl}`
+      : '请群主或管理员把新 SILI 拉进群。',
+    `旧号上的记忆、称呼和权限可以带过去：加新 SILI 为好友，私聊点「${BIND_ALIAS}」，按提示操作。`,
+  ].join('\n')
+}
+
 export function migrationNotice(oldSiliIsHere: boolean) {
   return [
     'SILI换新账号啦！旧号上的记忆、称呼和权限可以带过来：',
