@@ -18,7 +18,7 @@
 
 ```
 src/index.ts              入口：读 profile 名 → loadEnv → 动态 import → createApp → install → start
-src/bootstrap.ts          loadEnv()、createApp(profile)、进程级错误监听
+src/bootstrap.ts          loadEnv()、createApp(profile)、logProcessErrors(app)
 src/profiles/index.ts     注册表 { v4, v5 }，值是 () => import(...)
 src/profiles/types.ts     Profile 接口
 src/profiles/v4.ts        现有 index.ts 的全部安装逻辑，只搬不改
@@ -41,7 +41,7 @@ interface Profile {
 
 - `createApp` 负责所有 profile 共用的选项（`nickname`、`minSimilarity`、`delay`）、Server 和 Mongo，再合并 profile 的 `appOptions`。`autoAssign`、`autoAuthorize` 是 App 级选项，访问控制依赖它们，所以不能只开放 `prefix`。
 - 入口保留 `logger('INIT')` 和 `app.start()` 之后的「🌈 SILI启动成功~」日志，部署流程以这行判断就绪。
-- `bootstrap` 为所有 profile 注册进程级的 `unhandledRejection` / `uncaughtException` 监听：bun 下未处理的 rejection 会直接让进程退出，而 Koishi 只在 CLI 的 worker 进程里注册这个监听，本项目自己 `new App`，不走 worker。`ProcessErrorHandler` 里「私聊通知站长」的部分留在各 profile，`v4` 保持原样。
+- 每个 profile 都必须有进程级的 `unhandledRejection` / `uncaughtException` 监听：bun 下未处理的 rejection 会直接让进程退出，而 Koishi 只在 CLI 的 worker 进程里注册这个监听，本项目自己 `new App`，不走 worker。`v4` 由原有的 `ProcessErrorHandler` 提供（它还会用 OneBot 私聊通知站长），保持原样；`v5` 不装它（迁移期加载的 OneBot 必须闭麦），改为调用 `bootstrap` 的 `logProcessErrors`，只记日志，站长通知属于阶段三。
 
 ## v4：只搬不改
 

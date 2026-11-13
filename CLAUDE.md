@@ -46,7 +46,9 @@ JSX 不是 React。`tsconfig.json` 里 `"jsxImportSource": "@satorijs/element"` 
 
 ```
 src/
-├── index.ts            App + 全部插件加载入口
+├── index.ts            入口：解析 profile → 加载 env → 创建 app → 安装 profile → 启动
+├── bootstrap.ts        env 加载、App 与核心服务（server、mongo），所有 profile 共用
+├── profiles/           v4（OneBot 时代，回退用）、v5（官方 QQ bot）；shared/ 放多个 profile 共用的插件配置
 ├── adapters/           自研适配器（minecraft）
 ├── modules/            进程级辅助（logging / firewall / fallback handler …）
 ├── services/           对外注入式服务（html 渲染、QQ NT emoji reaction、piggyback…）
@@ -60,7 +62,9 @@ src/
     └── ...             （每个文件就是一个 koishi 命令插件）
 ```
 
-加新功能 = 在 `src/plugins/` 加文件（或目录） + 在 `src/index.ts` 里 `ctx.plugin(YourPlugin)` 注册。
+加新功能 = 在 `src/plugins/` 加文件（或目录） + 在要启用它的 profile（`src/profiles/v4.ts` / `v5.ts`）里 `ctx.plugin(YourPlugin)` 注册。
+
+**Profile**：同一时间只运行一个。选择顺序：启动参数 `--profile=<name>` > 环境变量 `SILI_PROFILE` > 默认 `v4`。`SILI_PROFILE` 不要写进 `.env.production` / `.env.development` / `.env.local`——它们以 override 方式加载，会覆盖 compose 传入的值。`v4` 是原 `index.ts` 的原样搬迁，插件注册顺序关系到前置中间件的先后，不要调整。`v5` 按阶段装回插件，设计见 `docs/superpowers/specs/2026-11-13-sili-profiles-design.md`。
 
 ## LLM 插件特别说明
 
