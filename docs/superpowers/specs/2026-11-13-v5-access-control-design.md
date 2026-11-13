@@ -34,6 +34,8 @@
 2. **一个前置中间件（gate）**：由 qqbot 服务注册。核心的 `attach` 是 App 构造时注册的第一个前置中间件，之后注册的前置中间件都排在它前面，所以 gate 总在 Koishi 读取频道和用户之前执行。它负责：放行已服务的会话；对未服务的会话只放行少数命令，其余一律静默丢弃；消息去重和入库（见下文）；记录元数据。
 3. **App 选项** `autoAuthorize` / `autoAssign`：对未服务的会话不建用户、不建频道，挡住 `session.execute` 等其他路径。两个函数都必须同步、只读内存缓存：返回 Promise 会被当成真值，照样建用户。
 
+`qq-crack` 默认会把消息里的用户名写回 Koishi：对没见过的发送者直接建用户，权限取 `autoAuthorize || 1`。这条路径绕过上面三层，而且 `autoAuthorize` 是函数时权限字段存不进去，建出来的用户等同 0 级（连 `bind` 后续流程都会失败）。所以 `v5` 必须给适配器设 `disableUserNamePersist: true`，用户名由 `qqbot_user` 记录。
+
 「已服务」的判断：
 
 - `qq` 与 `qqguild`（QQ 频道）：群按激活状态，私聊按「发送者是 op，或该用户的私聊已激活」。

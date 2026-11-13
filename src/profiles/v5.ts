@@ -149,7 +149,13 @@ function install(app: App) {
         id: env.QQBOT_APPID,
         secret: env.QQBOT_APPSECRET,
         type: env.QQBOT_TYPE,
-      })
+        // Keep off: the adapter writes sender names back by creating a user row
+        // for every unknown sender (bypassing the access-control guards), with
+        // `authority: config.autoAuthorize || 1`, which stores nothing when
+        // autoAuthorize is a function, leaving users at authority 0. Names are
+        // kept in qqbot_user instead.
+        disableUserNamePersist: true,
+      } as any)
     }
 
     // 迁移期：OneBot 只接收 bind 绑定码，其余一律闭麦（由 qqbot 服务的守卫保证）。
