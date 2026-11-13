@@ -6,6 +6,7 @@ import type { Profile } from './types'
  */
 export const PROFILES = {
   v4: () => import('./v4'),
+  v5: () => import('./v5'),
 } satisfies Record<string, () => Promise<{ default: Profile }>>
 
 export type ProfileName = keyof typeof PROFILES

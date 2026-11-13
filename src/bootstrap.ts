@@ -36,6 +36,20 @@ export function loadEnv() {
   })
 }
 
+/**
+ * Log unhandled rejections and uncaught exceptions instead of letting them kill
+ * the process: bun exits on an unhandled rejection, and Koishi only installs
+ * these listeners in its CLI worker, which SILI does not use. v4 gets the same
+ * from ProcessErrorHandler (which also DMs the owner over OneBot); profiles
+ * without it call this.
+ */
+export function logProcessErrors(app: App) {
+  const logger = app.logger('process')
+  for (const event of ['unhandledRejection', 'uncaughtException'] as const) {
+    process.on(event, (error) => logger.error(event, error))
+  }
+}
+
 /** Create the app with options shared by every profile, plus core services. */
 export function createApp(profile: Profile, env = process.env) {
   /** 初始化 Koishi 实例 */

@@ -21,7 +21,7 @@ describe('resolveProfileName', () => {
 
   it('rejects unknown names and lists the available ones', () => {
     expect(() => resolveProfileName([], { SILI_PROFILE: 'v3' })).toThrow(
-      /Unknown SILI profile "v3"\. Available: v4/
+      /Unknown SILI profile "v3"\. Available: v4, v5/
     )
   })
 
