@@ -209,7 +209,7 @@ export default class QQBotService extends Service {
     // Decide from the command, not from source.channel: plugin-admin swaps in
     // its own channel object while running and restores the original (whose
     // assignee is stale) before the reply is sent.
-    const removing = !!source.argv?.options?.remove
+    const removing = !!(source.argv?.options as { remove?: boolean })?.remove
     const reply =
       text === updated
         ? removing
