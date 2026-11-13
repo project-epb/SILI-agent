@@ -6,9 +6,8 @@
  * reverse registration order (FallbackHandler relies on it). Do not reorder
  * or move calls into shared helpers at different positions.
  */
-import { App, Context, Time, h } from 'koishi'
+import { App, Context, h } from 'koishi'
 
-import { resolve } from 'node:path'
 import process from 'node:process'
 
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
@@ -20,12 +19,17 @@ import { MinecraftConnect } from '@/modules/MinecraftConnect'
 import MgpGroupUtils from '@/modules/MoegirlGroupUtils'
 import ProcessErrorHandler from '@/modules/ProcessErrorHandler'
 import SilentSwitch from '@/modules/SilentSwitch'
+import { PluginCollectionDialogue } from '@/profiles/shared/dialogue'
+import { installNovelAI } from '@/profiles/shared/novelai'
 import {
   assetsS3Config,
+  comfyUIConfig,
   consoleConfig,
   gelbooruConfig,
   githubConfig,
   llmConfig,
+  mediawikiConfig,
+  pixivConfig,
   puppeteerConfig,
 } from '@/profiles/shared/plugin-configs'
 import type { Profile } from '@/profiles/types'
@@ -93,16 +97,10 @@ import AdapterQQ from 'koishi-plugin-adapter-qq-crack'
 import PluginAssetsS3 from 'koishi-plugin-assets-s3'
 import * as PluginAutowithdraw from 'koishi-plugin-autowithdraw-fix'
 import * as PluginBasedata from 'koishi-plugin-basedata'
-import * as PluginDialogue from 'koishi-plugin-dialogue'
-import * as PluginDialogueAuthor from 'koishi-plugin-dialogue-author'
-import * as PluginDialogueContext from 'koishi-plugin-dialogue-context'
-import * as PluginDialogueFlow from 'koishi-plugin-dialogue-flow'
-import * as PluginDialogueRateLimit from 'koishi-plugin-dialogue-rate-limit'
 import * as PluginImageSearch from 'koishi-plugin-image-search'
 import * as PluginLlmAdmin from 'koishi-plugin-llm-admin'
 import * as PluginLlmDashboard from 'koishi-plugin-llm-dashboard'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
-import * as PluginNovelAi from 'koishi-plugin-novelai'
 import PluginPuppeteer from 'koishi-plugin-puppeteer'
 import * as PluginRateLimit from 'koishi-plugin-rate-limit'
 import * as PluginRecall from 'koishi-plugin-recall'
@@ -301,64 +299,7 @@ function install(app: App) {
     // 可用角色名：梅露露、诺亚、汉娜、奈叶香、亚里沙、米莉亚、雪莉、艾玛、玛格、安安、可可、希罗、蕾雅`)
   })
 
-  app.plugin(function PluginCollectionDialogue(ctx) {
-    ctx.plugin(PluginDialogue, {
-      prefix: env.KOISHI_ENV === 'prod' ? '?!' : '#',
-      // dialogue 有个隐藏的「称呼激活」机制：用户用称呼触发一次问答后，会被加进
-      // activated 表（默认持续 10 分钟），期间该用户的 *每一条* 消息都会在
-      // before('attach') 里被写穿 session.stripped.appel = true（receiver.ts）。
-      // 这会污染下游所有读 stripped 的人 —— FallbackHandler 会把这些消息误判为
-      // 「呼唤了 bot」，全部转给 llm chat，表现为“用户说一句 SILI 跟一句”。
-      // 设为 0 直接掐掉该粘性窗口。
-      appellationTimeout: 0,
-    })
-    ctx.plugin(PluginDialogueAuthor)
-    ctx.plugin(PluginDialogueContext)
-    // ctx.plugin(PluginDialogueFlow)
-    ctx.plugin(PluginDialogueRateLimit, {
-      throttle: {
-        responses: 10,
-        interval: 1 * Time.minute,
-      },
-      preventLoop: {
-        length: 3,
-        participants: 1,
-        debounce: 3 * Time.minute,
-      },
-    })
-
-    // FIXME: plugin-dialogue 权限漏洞
-    // 禁止一般用户查询问答库，避免泄露敏感信息
-    ctx.on(
-      // @ts-ignore
-      'dialogue/before-action',
-      (session: PluginDialogue.Dialogue.Session) => {
-        const userAuth = session.user?.authority || 0
-        if (userAuth <= 2) {
-          return '你没有权限执行此操作。'
-        }
-      }
-    )
-
-    // FIXME: plugin-dialogue 逻辑漏洞
-    // 当用户仅发送了一个纯 @bot 的消息时，stripped.content 为空，
-    // `dialogue/query` hook 不会附加 question 条件，
-    // 导致其退化为「全库按 probA 加权随机抽一条」，
-    // 表现为「@bot」=「随机回答」。
-    ctx.on(
-      // @ts-ignore
-      'dialogue/receive',
-      ({ session }: PluginDialogue.SessionState) => {
-        const trimmedContent = session.stripped.content?.trim() || ''
-        if (trimmedContent.length <= 0) {
-          ctx
-            .logger('HOTFIX')
-            .warn(`Pure mention triggered random dialogue: ${session.id}`)
-          return true
-        }
-      }
-    )
-  })
+  app.plugin(PluginCollectionDialogue)
 
   // SILI Core
   app.plugin(function PluginCollectionSILICore(ctx) {
@@ -369,96 +310,25 @@ function install(app: App) {
     ctx.plugin(PluginMarkdown)
     ctx.plugin(PluginMinecraft)
     ctx.plugin(PluginMute)
-    if (process.env.NOVELAI_USERNAME) {
-      // 部分开启 NovelAI 测试
-      ctx
-        .channel(
-          process.env.CHANNEL_QQ_SANDBOX,
-          process.env.CHANNEL_QQ_SILI_HOME,
-          process.env.CHANNEL_QQ_NGNL_COMMON,
-          process.env.CHANNEL_QQ_IPE
-        )
-        .plugin(PluginNovelAi, {
-          type: 'login',
-          email: process.env.NOVELAI_USERNAME,
-          password: process.env.NOVELAI_PASSWORD,
-          model: 'nai-diffusion-4-5-full',
-          basePrompt:
-            'best quality, amazing quality, very aesthetic, absurdres',
-          resolution: { width: 832, height: 1216 },
-          scale: 8,
-          latinOnly: true,
-        })
-      ctx.command('novelai', {
-        minInterval(session) {
-          if ((session.user as any)?.authority > 1) return 0
-          return 60 * 1000
-        },
-        maxUsage(session) {
-          if ((session.user as any)?.authority > 1) return undefined
-          return 10
-        },
-      })
-    }
+    installNovelAI(ctx, [
+      process.env.CHANNEL_QQ_SANDBOX,
+      process.env.CHANNEL_QQ_SILI_HOME,
+      process.env.CHANNEL_QQ_NGNL_COMMON,
+      process.env.CHANNEL_QQ_IPE,
+    ])
     ctx.plugin(PluginLLM, llmConfig(env))
-    // ComfyUI 图像生成：从 data/comfyui 加载 workflow/guide（容器里 /app/data，
-    // 即宿主机 .volumns/core/comfyui/）；后端 baseURL + 认证走 .env（沿用 Hermes
-    // 变量名）。未配 COMFYUI_BASE_URL 时插件惰性无害（命令仍注册，generate 返回
-    // 未配置提示）。
-    ctx.plugin(PluginComfyUI, {
-      http: env.COMFYUI_BASE_URL
-        ? {
-            baseURL: env.COMFYUI_BASE_URL,
-            headers:
-              env.CF_SERVICE_TOKEN_ID && env.CF_SERVICE_TOKEN_SECRET
-                ? {
-                    'CF-Access-Client-Id': env.CF_SERVICE_TOKEN_ID,
-                    'CF-Access-Client-Secret': env.CF_SERVICE_TOKEN_SECRET,
-                  }
-                : undefined,
-          }
-        : undefined,
-      workflows: PluginComfyUI.scanWorkflowTemplates(
-        resolve(ctx.baseDir, 'data/comfyui/workflows')
-      ),
-      guides: PluginComfyUI.scanGuides(
-        resolve(ctx.baseDir, 'data/comfyui/guides')
-      ),
-      // 临时措施：放行沙盒群 / NGNL 群 / 站长私聊（复用现有 .env 变量；CHANNEL_QQ_*
-      // 是群 channelId，站长私聊用 private:<QQ号>）。都未配则为空数组 = 不限。
-      allowedChannels: [
+    ctx.plugin(
+      PluginComfyUI,
+      comfyUIConfig(env, ctx.baseDir, [
         env.ACCOUNT_QQ_XIAOYUJUN && `private:${env.ACCOUNT_QQ_XIAOYUJUN}`,
         env.CHANNEL_QQ_SANDBOX,
         env.CHANNEL_QQ_NGNL_COMMON,
         env.CHANNEL_QQ_FEIFEIYAOREN,
-      ].filter(Boolean) as string[],
-      // 访问控制（防群友刷爆显卡）：可经 .env 调整，缺省给保护性默认。
-      // COMFYUI_GENERATE_MIN_INTERVAL_S 单位为秒（转成 ms）。
-      generate: {
-        authority: env.COMFYUI_GENERATE_AUTHORITY
-          ? Number(env.COMFYUI_GENERATE_AUTHORITY)
-          : 1,
-        minInterval: env.COMFYUI_GENERATE_MIN_INTERVAL_S
-          ? Number(env.COMFYUI_GENERATE_MIN_INTERVAL_S) * 1000
-          : 30_000,
-        maxUsage: env.COMFYUI_GENERATE_MAX_USAGE
-          ? Number(env.COMFYUI_GENERATE_MAX_USAGE)
-          : 0,
-      },
-      // 提示词过滤（按需启用）：blacklist 命中即拒绝、force* 追加强制词，Computed 可按群。
-      // 复杂逻辑用 ctx.on('comfyui/before-generate', ...) 自己写监听器。
-      // filter: {
-      //   blacklist: (s) => s.channelId === env.CHANNEL_QQ_XXX ? ['nsfw', 'nude'] : [],
-      //   forceNegative: 'nsfw, nude',
-      // },
-    })
+      ])
+    )
     ctx.plugin(PluginGelbooru, gelbooruConfig(env))
     ctx.plugin(PluginPing)
-    ctx.plugin(PluginPixiv, {
-      apiBaseURL: env.PIXIV_API_BASE,
-      webBaseURL: env.PIXIV_WEB_BASE,
-      pximgBaseURL: env.PIXIV_IMG_BASE,
-    })
+    ctx.plugin(PluginPixiv, pixivConfig(env))
     ctx.plugin(PluginPowerUser)
     ctx.plugin(PluginProfile)
     ctx.plugin(PluginQueue)
@@ -472,11 +342,7 @@ function install(app: App) {
     // ctx.plugin(PluginYoudao)
 
     // MediaWiki
-    ctx.plugin(PluginMediawiki, {
-      searchIfNotExist: true,
-      showDetailsByDefault: true,
-      cmdAuthConnect: 2,
-    })
+    ctx.plugin(PluginMediawiki, mediawikiConfig())
   })
 
   // Internal utils

@@ -5,7 +5,11 @@
  */
 import { Time } from 'koishi'
 
+import { resolve } from 'node:path'
+
 import { parseLLMProviders } from '@/utils/parseLLMProviders'
+
+import PluginComfyUI from '~/comfy-ui'
 
 import { executablePath } from 'puppeteer'
 
@@ -81,5 +85,72 @@ export function gelbooruConfig(env: Env) {
     // 含敏感标签的 post 去缩略图（保留 tags/score 供 agent 写 prompt 参考）。
     // imageBlacklist: (s) =>
     //   s.channelId === env.CHANNEL_QQ_XXX ? [] : ['nsfw', 'nude', 'explicit'],
+  }
+}
+
+// ComfyUI 图像生成：从 data/comfyui 加载 workflow/guide（容器里 /app/data，
+// 即宿主机 .volumns/core/comfyui/）；后端 baseURL + 认证走 .env（沿用 Hermes
+// 变量名）。未配 COMFYUI_BASE_URL 时插件惰性无害（命令仍注册，generate 返回
+// 未配置提示）。
+export function comfyUIConfig(
+  env: Env,
+  baseDir: string,
+  allowedChannels: (string | undefined | false)[]
+) {
+  return {
+    http: env.COMFYUI_BASE_URL
+      ? {
+          baseURL: env.COMFYUI_BASE_URL,
+          headers:
+            env.CF_SERVICE_TOKEN_ID && env.CF_SERVICE_TOKEN_SECRET
+              ? {
+                  'CF-Access-Client-Id': env.CF_SERVICE_TOKEN_ID,
+                  'CF-Access-Client-Secret': env.CF_SERVICE_TOKEN_SECRET,
+                }
+              : undefined,
+        }
+      : undefined,
+    workflows: PluginComfyUI.scanWorkflowTemplates(
+      resolve(baseDir, 'data/comfyui/workflows')
+    ),
+    guides: PluginComfyUI.scanGuides(resolve(baseDir, 'data/comfyui/guides')),
+    // 只放行这些频道（群聊是群 id，私聊是 `private:<用户 id>`）。空数组 = 不限。
+    // 频道 id 因平台而异，由各 profile 传入。
+    allowedChannels: allowedChannels.filter(Boolean) as string[],
+    // 访问控制（防群友刷爆显卡）：可经 .env 调整，缺省给保护性默认。
+    // COMFYUI_GENERATE_MIN_INTERVAL_S 单位为秒（转成 ms）。
+    generate: {
+      authority: env.COMFYUI_GENERATE_AUTHORITY
+        ? Number(env.COMFYUI_GENERATE_AUTHORITY)
+        : 1,
+      minInterval: env.COMFYUI_GENERATE_MIN_INTERVAL_S
+        ? Number(env.COMFYUI_GENERATE_MIN_INTERVAL_S) * 1000
+        : 30_000,
+      maxUsage: env.COMFYUI_GENERATE_MAX_USAGE
+        ? Number(env.COMFYUI_GENERATE_MAX_USAGE)
+        : 0,
+    },
+    // 提示词过滤（按需启用）：blacklist 命中即拒绝、force* 追加强制词，Computed 可按群。
+    // 复杂逻辑用 ctx.on('comfyui/before-generate', ...) 自己写监听器。
+    // filter: {
+    //   blacklist: (s) => s.channelId === env.CHANNEL_QQ_XXX ? ['nsfw', 'nude'] : [],
+    //   forceNegative: 'nsfw, nude',
+    // },
+  }
+}
+
+export function pixivConfig(env: Env) {
+  return {
+    apiBaseURL: env.PIXIV_API_BASE,
+    webBaseURL: env.PIXIV_WEB_BASE,
+    pximgBaseURL: env.PIXIV_IMG_BASE,
+  }
+}
+
+export function mediawikiConfig() {
+  return {
+    searchIfNotExist: true,
+    showDetailsByDefault: true,
+    cmdAuthConnect: 2,
   }
 }
