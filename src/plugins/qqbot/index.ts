@@ -194,8 +194,7 @@ export default class QQBotService extends Service {
    * command, so the i18n text cannot be changed globally. Koishi sends a
    * command's reply itself, so rewrite it in `before-send`, only when the
    * source session ran `assign` on a guarded platform and the reply is one of
-   * those two texts. By then plugin-admin has applied the new assignee to the
-   * observed channel. Anything else (permission errors, usage) is untouched.
+   * those two texts. Anything else (permission errors, usage) is untouched.
    */
   private rewriteAssignReply(out: Session, options: any) {
     const source: Session | undefined = options?.session
@@ -205,15 +204,20 @@ export default class QQBotService extends Service {
     const updated = source.text('admin.channel-updated')
     const unchanged = source.text('admin.channel-unchanged')
     if (text !== updated && text !== unchanged) return
-    const active = (source.channel as any)?.assignee === source.selfId
+    // Assigning another account (`assign <bot>`) is rare; keep plugin-admin's text.
+    if (source.argv?.args?.length) return
+    // Decide from the command, not from source.channel: plugin-admin swaps in
+    // its own channel object while running and restores the original (whose
+    // assignee is stale) before the reply is sent.
+    const removing = !!source.argv?.options?.remove
     const reply =
       text === updated
-        ? active
-          ? '好的，SILI 开始在这个群工作啦！'
-          : '好的，SILI 之后不会在这个群回复了。管理员可以再用 assign 叫醒我。'
-        : active
-          ? 'SILI 已经在这个群工作啦。'
-          : 'SILI 本来就没有在这个群工作。'
+        ? removing
+          ? '好的，SILI 之后不会在这个群回复了。管理员可以再用 assign 叫醒我。'
+          : '好的，SILI 开始在这个群工作啦！'
+        : removing
+          ? 'SILI 本来就没有在这个群工作。'
+          : 'SILI 已经在这个群工作啦。'
     out.elements = [h.text(reply)]
   }
 
