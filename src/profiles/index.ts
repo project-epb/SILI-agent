@@ -21,7 +21,8 @@ export function resolveProfileName(
   env: NodeJS.ProcessEnv
 ): ProfileName {
   const flag = argv.find((arg) => arg.startsWith('--profile='))
-  const name = flag?.slice('--profile='.length) || env.SILI_PROFILE || DEFAULT_PROFILE
+  const name =
+    flag?.slice('--profile='.length) || env.SILI_PROFILE || DEFAULT_PROFILE
   if (!Object.hasOwn(PROFILES, name)) {
     throw new Error(
       `Unknown SILI profile "${name}". Available: ${Object.keys(PROFILES).join(', ')}`

@@ -6,7 +6,6 @@
  * reverse registration order (FallbackHandler relies on it). Do not reorder
  * or move calls into shared helpers at different positions.
  */
-
 import { App, Context, Time, h } from 'koishi'
 
 import { resolve } from 'node:path'
@@ -21,6 +20,7 @@ import { MinecraftConnect } from '@/modules/MinecraftConnect'
 import MgpGroupUtils from '@/modules/MoegirlGroupUtils'
 import ProcessErrorHandler from '@/modules/ProcessErrorHandler'
 import SilentSwitch from '@/modules/SilentSwitch'
+import type { Profile } from '@/profiles/types'
 import PiggybackService from '@/services/PiggybackService'
 import { QQNTEmojiReactionService } from '@/services/QQNTEmojiReaction'
 import HTMLService from '@/services/html'
@@ -105,7 +105,6 @@ import * as PluginSwitch from 'koishi-plugin-switch'
 
 import PluginHTTP from '@cordisjs/plugin-http'
 import { executablePath } from 'puppeteer'
-import type { Profile } from '@/profiles/types'
 
 const { env } = process
 
@@ -405,7 +404,8 @@ function install(app: App) {
           email: process.env.NOVELAI_USERNAME,
           password: process.env.NOVELAI_PASSWORD,
           model: 'nai-diffusion-4-5-full',
-          basePrompt: 'best quality, amazing quality, very aesthetic, absurdres',
+          basePrompt:
+            'best quality, amazing quality, very aesthetic, absurdres',
           resolution: { width: 832, height: 1216 },
           scale: 8,
           latinOnly: true,
