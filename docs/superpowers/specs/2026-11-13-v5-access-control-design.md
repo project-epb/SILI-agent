@@ -118,6 +118,7 @@
 
 - plugin-auth 的平台登录能否关闭。
 - 群收消息被关闭（`group-msg-reject`）时，是否需要在 `before-send` 拦截全部主动消息。
+- 官方群消息事件里的 `username` 是群名片还是 QQ 昵称（两者不同）。若是群名片，`qqbot_user.name` 只代表最近一次出现的群里的名片，人名应改为按群存在 `qqbot_member` 上；给私聊会话补名字的功能等这项结论再做。测法：让群名片与昵称不同的成员发言，看 `qqbot_message.username`。
 
 ## 相关
 
