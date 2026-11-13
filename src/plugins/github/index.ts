@@ -14,6 +14,13 @@ import type { Config as GitHubConfig } from './types'
 // (koishi's interface+Schema idiom; aliased import avoids a merged-declaration clash).
 export type Config = GitHubConfig
 
+declare module 'koishi' {
+  interface Events {
+    /** Re-read subscriptions from the channel table into the in-memory index. */
+    'github/rebuild-index'(): void
+  }
+}
+
 export default class PluginGitHub extends BasePlugin<Config> {
   static inject = ['database', 'server', 'http']
 
@@ -63,9 +70,12 @@ export default class PluginGitHub extends BasePlugin<Config> {
       { primary: 'messageId' }
     )
 
-    // Rebuild the in-memory subscription index from the channel table on startup.
-    ctx.on('ready', async () => {
+    // The in-memory subscription index mirrors `channel.github.webhooks`. Rebuild
+    // it on startup, and on 'github/rebuild-index' after something rewrites
+    // those rows directly (e.g. v5 group migration).
+    const rebuildIndex = async () => {
       const channels = await ctx.database.get('channel', {}, ['id', 'platform', 'github'])
+      this.store.clear()
       for (const { id, platform, github } of channels) {
         const webhooks = github?.webhooks ?? {}
         for (const repo in webhooks) {
@@ -73,7 +83,9 @@ export default class PluginGitHub extends BasePlugin<Config> {
         }
       }
       this.logger.info('subscription index rebuilt')
-    })
+    }
+    ctx.on('ready', rebuildIndex)
+    ctx.on('github/rebuild-index', rebuildIndex)
 
     const http = new GitHubHttp(ctx, this.config)
     const repoStore = makeRepoStore(ctx)

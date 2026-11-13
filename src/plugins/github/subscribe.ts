@@ -29,6 +29,10 @@ export class SubscriptionStore {
     ;(this.map[repo] ||= Object.create(null))[cid] = meta
   }
 
+  clear() {
+    this.map = Object.create(null)
+  }
+
   unsubscribe(repo: string, cid?: string) {
     if (!cid) {
       delete this.map[repo]
