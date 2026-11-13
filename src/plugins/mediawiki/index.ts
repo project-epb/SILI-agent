@@ -425,7 +425,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
             searchinfo: {
               totalhits: number
             }
-            pages: {
+            pages?: {
               pageid: number
               ns: number
               title: string
@@ -441,17 +441,15 @@ export default class PluginMediawiki extends BasePlugin<Config> {
         }>({
           action: 'query',
           list: 'search',
-          ...(!qq && {
-            prop: 'extracts',
-            generator: 'search',
-            exchars: '120',
-            exintro: 1,
-            explaintext: 1,
-            exsectionformat: 'plain',
-            gsrsearch: `"${keywords}"`,
-            gsrnamespace: '0',
-            gsrlimit: '5',
-          }),
+          prop: 'extracts',
+          generator: 'search',
+          exchars: '120',
+          exintro: 1,
+          explaintext: 1,
+          exsectionformat: 'plain',
+          gsrsearch: `"${keywords}"`,
+          gsrnamespace: '0',
+          gsrlimit: '5',
           srsearch: `"${keywords}"`,
           srnamespace: '0',
           srlimit: '5',
@@ -466,12 +464,16 @@ export default class PluginMediawiki extends BasePlugin<Config> {
           return h.text(`💔找不到与“${keywords}”匹配的结果。`)
         }
         if (qq) {
+          const extracts = new Map(
+            pages?.map(({ pageid, extract }) => [pageid, extract])
+          )
           return qqWikiReply(
             session,
-            search.map(
-              ({ title, pageid }, index) =>
-                `${index + 1}. ${markdownLink(title, getUrl(mwApi, { curid: pageid }))}`
-            ),
+            search.map(({ title, pageid }, index) => {
+              const link = markdownLink(title, getUrl(mwApi, { curid: pageid }))
+              const extract = extracts.get(pageid)?.trim()
+              return `${index + 1}. ${link}${extract ? `\n\n${markdownText(extract)}` : ''}`
+            }),
             `🔍 共找到 ${searchinfo?.totalhits ?? search.length} 个结果`
           )
         }
@@ -486,7 +488,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
           } 个相关结果，我来简单整理一下前 ${search.length} 个结果：`
         )
         pages
-          .sort((a, b) => a.index - b.index)
+          ?.sort((a, b) => a.index - b.index)
           .forEach((item, index: number) => {
             bulk.botSay(
               `(${index + 1}) ${item.title}
