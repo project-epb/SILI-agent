@@ -83,11 +83,33 @@ interface Profile {
 
 - who-asked（`qq` 平台改读 `qqbot_message`）、LLM 的 `read_channel_history`（`qq` 平台改读 `qqbot_message`）
 - caniuse、pixiv、mediawiki 在 `qq` 平台上的合并转发替代
-- verify-fandom-user（官方 bot 拿不到 QQ 号，需要重新设计）
-- MgpGroupUtils（群管理改用禁言）、GuildRequestFirewall（改用官方的入群申请接口）
+- GuildRequestFirewall（改用官方的入群申请接口）
 - repeater、sili-name、mute、QQNT 表情回应、MinecraftConnect、version、Debug、FixQQSendLinks、Autowithdraw、ProcessErrorHandler 的通知部分
 
+**本轮不做**：
+- verify-fandom-user：官方 bot 拿不到 QQ 号，需要整个重写。
+- MgpGroupUtils 的禁言、踢人：需要群主给新号加管理员、群号换成 openid，操作成本高。
+
 生产从 `v4` 切到 `v5` 的时机由用户决定，最早在阶段二完成后。
+
+### 按 QQ 号、群号做的过滤（v5 中待改配置）
+
+官方 bot 的群和用户标识是 openid，而且按机器人区分（本地 Noir 与生产机器人的 openid 互不相同）。以下按 OneBot 的群号、QQ 号做过滤的地方，在 `v5` 里都要换成对应机器人下的 openid，逐个改配置，不在本轮统一处理：
+
+| 位置 | 变量 | 用途 |
+|---|---|---|
+| `index.ts` NovelAI | `CHANNEL_QQ_SANDBOX`、`CHANNEL_QQ_SILI_HOME`、`CHANNEL_QQ_NGNL_COMMON`、`CHANNEL_QQ_IPE` | `ctx.channel(...)` 限定可用的群 |
+| `index.ts` ComfyUI | `ACCOUNT_QQ_XIAOYUJUN`（`private:<QQ号>`）、`CHANNEL_QQ_SANDBOX`、`CHANNEL_QQ_NGNL_COMMON`、`CHANNEL_QQ_FEIFEIYAOREN` | `allowedChannels` |
+| `index.ts` / `MinecraftConnect.ts` | `MINECRAFT_CONNECT_QQ_GROUP` | Minecraft 与 QQ 群互通（`ctx.platform('onebot').channel(...)`） |
+| `MoegirlGroupUtils.ts` | `CHANNEL_QQ_MOEGIRL_BFANS`、`CHANNEL_QQ_MOEGIRL_ADMIN_LOGS` | 萌百群识别、管理日志群 |
+| `ProcessErrorHandler.ts` | `ACCOUNT_QQ_XIAOYUJUN` | 私聊通知站长 |
+| `verify-fandom-user.ts` | `CHANNEL_QQ_FANDOM`、`CHANNEL_QQ_SANDBOX` | 限定验证所在的群 |
+
+存在数据库里的按群配置（`switch` 的开关、`mwApi`、`userBlacklist`、`github.webhooks`）由群迁移命令处理；用户的权限、记忆等由 `bind` 处理，不在这张表里。
+
+## 本地开发
+
+本地用灰度账号 SILI Noir（`QQBOT_ENTERPRISE_GRAY_*`）实测 `v5`。`v5` 的 QQ 适配器与生产读同一组变量（`QQBOT_APPID`、`QQBOT_APPSECRET`、`QQBOT_TYPE`），本地在 env 里把它们设为 Noir 的值。Noir 只在本地使用：同一个机器人同一时间只能有一条网关连接。
 
 ## 验证
 
