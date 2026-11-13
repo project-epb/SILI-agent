@@ -114,8 +114,8 @@ export default class QQBotService extends Service {
   readonly store: MessageStore
   readonly metadata: MetadataRecorder
   private pendingNotice = new Set<string>()
-  /** Last time the old OneBot account reminded a group, by `selfId:channelId`. */
-  private oldAccountRemindedAt = new Map<string, number>()
+  /** Last reminder per group (old OneBot account, or unactivated group), by `selfId:channelId`. */
+  private remindedAt = new Map<string, number>()
   private shareUrl?: string
 
   constructor(
@@ -165,6 +165,8 @@ export default class QQBotService extends Service {
     if (guarded) this.metadata.record(session)
     if (decideGate(facts, content, command, this.state, rules) === 'drop') {
       if (platform === 'onebot') void this.remindOnOldAccount(session)
+      else if (guarded && !session.isDirect)
+        void this.remindUnactivated(session)
       return
     }
 
@@ -381,17 +383,36 @@ export default class QQBotService extends Service {
     if (!this.options.migrationWindow || session.isDirect) return
     if (!session.stripped?.atSelf) return
     const key = `${session.selfId}:${session.channelId}`
-    if (
-      Date.now() - (this.oldAccountRemindedAt.get(key) ?? 0) <
-      8 * Time.hour
-    ) {
+    if (Date.now() - (this.remindedAt.get(key) ?? 0) < 8 * Time.hour) {
       return
     }
-    this.oldAccountRemindedAt.set(key, Date.now())
+    this.remindedAt.set(key, Date.now())
     try {
       await session.send(oldAccountNotice(await this.newBotShareUrl()))
     } catch (error) {
       this.logger.warn('old account reminder', error)
+    }
+  }
+
+  /**
+   * In a group that is not activated, an @ to the bot gets one hint that the
+   * group is not served yet, at most once per group every 8 hours (memory).
+   * Everything else there stays silent, so the bot does not look broken to
+   * people who pulled it in, without becoming a free chat target.
+   */
+  private async remindUnactivated(session: Session) {
+    if (!session.stripped?.atSelf) return
+    const key = `${session.selfId}:${session.channelId}`
+    if (Date.now() - (this.remindedAt.get(key) ?? 0) < 8 * Time.hour) {
+      return
+    }
+    this.remindedAt.set(key, Date.now())
+    try {
+      await session.send(
+        'SILI尚未开通本群服务，提醒群管找维护者（或小鱼君）激活本群服务哦'
+      )
+    } catch (error) {
+      this.logger.warn('unactivated group hint', error)
     }
   }
 
