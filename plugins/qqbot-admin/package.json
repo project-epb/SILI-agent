@@ -1,0 +1,10 @@
+{
+  "name": "koishi-plugin-qqbot-admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Console page to see where the official QQ bot is and activate groups / DMs (SILI v5)",
+  "main": "index.ts",
+  "peerDependencies": {
+    "koishi": "^4.18.0"
+  }
+}

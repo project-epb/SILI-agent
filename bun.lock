@@ -95,6 +95,13 @@
         "koishi": "^4.18.0",
       },
     },
+    "plugins/qqbot-admin": {
+      "name": "koishi-plugin-qqbot-admin",
+      "version": "0.0.0",
+      "peerDependencies": {
+        "koishi": "^4.18.0",
+      },
+    },
   },
   "packages": {
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.86.1", "https://registry.npmmirror.com/@anthropic-ai/sdk/-/sdk-0.86.1.tgz", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-Q32GUFCVMmTJrVQC4bQOG2mA8rGNuYWJP8ODufxl3g5Awy1VjY5wy0Xm+mC++i5rBkZMvxhzOR9MNTW7IvIAmw=="],
@@ -1170,6 +1177,8 @@
     "koishi-plugin-novelai": ["koishi-plugin-novelai@1.27.0", "https://registry.npmmirror.com/koishi-plugin-novelai/-/koishi-plugin-novelai-1.27.0.tgz", { "dependencies": { "adm-zip": "^0.5.16", "image-size": "^1.2.0", "libsodium-wrappers-sumo": "^0.7.15" }, "peerDependencies": { "koishi": "^4.18.7" } }, "sha512-xdpwym1WrsuHyR6iJqhOSwAhPUpWKA0PUDgKEVgtsz1TbXVOAVtICTbRch5lbfsDOm8vSHr1f8Ajs1hH6mtc6w=="],
 
     "koishi-plugin-puppeteer": ["koishi-plugin-puppeteer@3.9.0", "https://registry.npmmirror.com/koishi-plugin-puppeteer/-/koishi-plugin-puppeteer-3.9.0.tgz", { "dependencies": { "@koishijs/canvas": "0.2.0", "puppeteer-core": "22.15.0", "puppeteer-finder": "1.1.1" }, "peerDependencies": { "koishi": "4.18.0" } }, "sha512-dr2Efo6iiwHSDt/cLbR39RrkOm3GYjai9GVGUsjlKtjP7lvAfGhHHvMBKoVDvsojRIfwPOPxFbQk9KLe7Jb5wA=="],
+
+    "koishi-plugin-qqbot-admin": ["koishi-plugin-qqbot-admin@workspace:plugins/qqbot-admin"],
 
     "koishi-plugin-rate-limit": ["koishi-plugin-rate-limit@2.0.4", "https://registry.npmmirror.com/koishi-plugin-rate-limit/-/koishi-plugin-rate-limit-2.0.4.tgz", { "peerDependencies": { "koishi": "4.18.0" } }, "sha512-a4ea1Y4sjYAXrPoTKQN05mrNZ0CblIR2fta94Qp0S5VbMij6N0q0/Rys3Nxh1K+rWkmGd9JE16yuBaNZspa0AA=="],
 

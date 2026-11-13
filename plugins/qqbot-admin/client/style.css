@@ -1,0 +1,44 @@
+.qa-root { padding: 1.5rem; overflow-y: auto; height: 100%; box-sizing: border-box; }
+.qa-dim { color: var(--k-text-light, #999); font-size: 0.85em; }
+.qa-err { color: var(--k-color-danger, #e0533d); margin: 0.5rem 0; }
+.qa-notice {
+  font-size: 0.8rem; color: var(--k-text-light, #999);
+  background: var(--k-color-warning-fade, rgba(224, 120, 60, 0.08));
+  border: 1px solid var(--k-color-border, #eee); border-radius: 6px;
+  padding: 0.4rem 0.7rem; margin: 0 0 1rem;
+}
+.qa-toolbar { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+.qa-tabs { display: flex; gap: 0.3rem; }
+.qa-tab {
+  padding: 0.45rem 0.9rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+  border: 1px solid var(--k-color-border, #d0d0d0); background: var(--k-card-bg, #fff); color: inherit;
+}
+.qa-tab.is-active { border-color: var(--k-color-primary, #6a5acd); color: var(--k-color-primary, #6a5acd); }
+.qa-input {
+  padding: 0.45rem 0.7rem; border-radius: 6px; font-size: 0.9rem;
+  border: 1px solid var(--k-color-border, #d0d0d0); background: var(--k-card-bg, #fff); color: inherit;
+}
+.qa-search { flex: 1; min-width: 12rem; }
+.qa-btn {
+  padding: 0.35rem 0.8rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; white-space: nowrap;
+  border: 1px solid transparent; background: var(--k-color-primary, #6a5acd); color: #fff;
+}
+.qa-btn:disabled { opacity: 0.5; cursor: default; }
+.qa-btn.is-danger { background: var(--k-color-danger, #e0533d); }
+.qa-btn.is-plain {
+  background: transparent; color: inherit; border-color: var(--k-color-border, #d0d0d0);
+}
+.qa-table, .qa-sub { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.qa-table th, .qa-table td, .qa-sub th, .qa-sub td {
+  text-align: left; padding: 0.45rem 0.6rem; vertical-align: top;
+  border-bottom: 1px solid var(--k-color-border, #eee);
+}
+.qa-table th, .qa-sub th { font-weight: 600; color: var(--k-text-light, #888); font-size: 0.8rem; }
+.qa-table tr.is-on > td:first-child { box-shadow: inset 3px 0 0 var(--k-color-success, #3ba55d); }
+.qa-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.qa-sub { margin: 0.3rem 0 0.6rem; background: var(--k-hover-bg, rgba(0, 0, 0, 0.02)); }
+.qa-badge {
+  display: inline-block; margin: 0.2rem 0.3rem 0 0; padding: 0 0.4rem; border-radius: 4px;
+  font-size: 0.75rem; border: 1px solid var(--k-color-border, #ddd);
+}
+.qa-badge.is-warn { color: var(--k-color-danger, #e0533d); border-color: currentColor; }
