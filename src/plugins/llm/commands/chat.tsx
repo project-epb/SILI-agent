@@ -13,7 +13,10 @@ import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
 import { PROTOCOL_MARKERS, PROTOCOL_TAGS } from '../utils/protocol'
-import { buildQuotedMessageBlock, extractQuoteMeta } from '../utils/quoted-message'
+import {
+  buildQuotedMessageBlock,
+  extractQuoteMeta,
+} from '../utils/quoted-message'
 import { splitContent } from '../utils/stream-splitter'
 import { clampThinkingBudget, resolveThinkingLevel } from '../utils/thinking'
 
@@ -341,7 +344,12 @@ export default class ChatCommand extends BasePlugin {
         // The quote block belongs in the interrupt path too — being interrupted
         // doesn't make the user's quote any less relevant.
         const userMessageEnvelopeBase = interruptNoticeBlock
-          ? [chatInfoBlock, interruptNoticeBlock, quotedMessageBlock, userMessageBlock]
+          ? [
+              chatInfoBlock,
+              interruptNoticeBlock,
+              quotedMessageBlock,
+              userMessageBlock,
+            ]
               .filter(Boolean)
               .join('\n')
           : persistableEnvelopeBase
