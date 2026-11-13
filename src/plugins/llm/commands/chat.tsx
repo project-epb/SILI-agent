@@ -1,4 +1,4 @@
-import { Context, Time, h } from 'koishi'
+import { Context, Session, Time, h } from 'koishi'
 
 import crypto from 'node:crypto'
 
@@ -554,7 +554,10 @@ export default class ChatCommand extends BasePlugin {
               sanitizeAgentOutput(next.text)
             )
             const [msgId] = await session.sendQueued(
-              (lastMessageId ? h.quote(lastMessageId) : '') + safeText
+              <>
+                {lastMessageId ? <quote id={lastMessageId} /> : ''}
+                <markdown>{h.parse(safeText)}</markdown>
+              </>
             )
             if (msgId) lastMessageId = msgId
           }

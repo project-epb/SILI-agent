@@ -63,7 +63,6 @@ import AdapterDingtalk from '@koishijs/plugin-adapter-dingtalk'
 import AdapterDiscord from '@koishijs/plugin-adapter-discord'
 import AdapterKook from '@koishijs/plugin-adapter-kook'
 import AdapterLark from '@koishijs/plugin-adapter-lark'
-import AdapterQQ, { QQ } from '@koishijs/plugin-adapter-qq'
 import * as PluginAdmin from '@koishijs/plugin-admin'
 import PluginAnalytics from '@koishijs/plugin-analytics'
 import PluginAuth from '@koishijs/plugin-auth'
@@ -84,6 +83,7 @@ import PluginServer from '@koishijs/plugin-server'
 import * as PluginStatus from '@koishijs/plugin-status'
 
 import AdapterOnebot from 'koishi-plugin-adapter-onebot'
+import AdapterQQ from 'koishi-plugin-adapter-qq-crack'
 import PluginAssetsS3 from 'koishi-plugin-assets-s3'
 import * as PluginAutowithdraw from 'koishi-plugin-autowithdraw-fix'
 import * as PluginBasedata from 'koishi-plugin-basedata'
@@ -129,9 +129,9 @@ const { env } = process
 const app = new App({
   nickname: env.KOISHI_NICKNAME?.split('|'),
   prefix: (ctx) => {
-    // QQ官方适配器，必须at才能收到消息，无需前缀
+    // QQ官方适配器，如果没有 at，则使用 slash
     if (['qq', 'qqguild'].includes(ctx.platform)) {
-      return ''
+      return '/'
     }
     // 钉钉适配器，必须at才能收到消息，无需前缀
     if (ctx.platform === 'dingtalk') {
@@ -179,18 +179,16 @@ app.plugin(function PluginCollectionAdapters(ctx) {
   }
   if (process.env.QQBOT_APPID) {
     ctx.plugin(AdapterQQ, {
-      sandbox: true,
       id: env.QQBOT_APPID,
-      token: env.QQBOT_TOKEN,
-      secret: env.QQBOT_SECRET,
+      secret: env.QQBOT_APPSECRET,
       type: env.QQBOT_TYPE,
-      intents:
-        QQ.Intents.GUILDS |
-        QQ.Intents.GUILD_MEMBERS |
-        QQ.Intents.PUBLIC_GUILD_MESSAGES |
-        QQ.Intents.OPEN_FORUMS_EVENT |
-        QQ.Intents.INTERACTIONS |
-        QQ.Intents.MESSAGE_AUDIT,
+      // intents:
+      //   AdapterQQ.QQ.Intents.GUILDS |
+      //   AdapterQQ.QQ.Intents.GUILD_MEMBERS |
+      //   AdapterQQ.QQ.Intents.PUBLIC_GUILD_MESSAGES |
+      //   AdapterQQ.QQ.Intents.OPEN_FORUMS_EVENT |
+      //   AdapterQQ.QQ.Intents.INTERACTIONS |
+      //   AdapterQQ.QQ.Intents.MESSAGE_AUDIT,
     })
   }
 

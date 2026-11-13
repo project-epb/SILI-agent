@@ -54,30 +54,47 @@ export default class PluginProfile extends BasePlugin {
         const isPlatformBoundText = (platform: string) => {
           return isBoundText(!!bindings.find((i) => i.platform === platform))
         }
-        const msgBuilder = new BulkMessageBuilder(session as Session)
-        msgBuilder
-          .prependOriginal()
-          .botSay(
-            `${isTargetEqualAuthor ? '个人' : '他人'}资料\n平台ID: ${
-              curPlatformBinding.pid
-            }\n平台昵称/群名片: ${(user as any)?.nickname || ''}`
-          )
-          .botSay(`UID: ${user.id}`)
-          .botSay(`SILI称${isTargetEqualAuthor ? '你' : 'TA'}为: ${nickname}`)
-          .botSay(`权限: ${user.authority || 0}`)
-          .botSay(
-            [
-              `账号绑定情况:`,
-              `${isPlatformBoundText('onebot')} QQ`,
-              `${isPlatformBoundText('qqguild')} QQ频道`,
-              `${isPlatformBoundText('discord')} Discord`,
-              `${isPlatformBoundText('kooka')} Kook`,
-              `${isPlatformBoundText('villa')} 大别野`,
-              `${isPlatformBoundText('dingtalk')} 钉钉`,
-              `${isBoundText(!!user?.github?.accessToken)} GitHub`,
-            ].join('\n')
-          )
-        return msgBuilder.all()
+        // const msgBuilder = new BulkMessageBuilder(session as Session)
+        // msgBuilder
+        //   .prependOriginal()
+        //   .botSay(
+        //     `${isTargetEqualAuthor ? '个人' : '他人'}资料\n平台ID: ${
+        //       curPlatformBinding.pid
+        //     }\n平台昵称/群名片: ${(user as any)?.nickname || ''}`
+        //   )
+        //   .botSay(`UID: ${user.id}`)
+        //   .botSay(`SILI称${isTargetEqualAuthor ? '你' : 'TA'}为: ${nickname}`)
+        //   .botSay(`权限: ${user.authority || 0}`)
+        //   .botSay(
+        //     [
+        //       `账号绑定情况:`,
+        //       `${isPlatformBoundText('onebot')} QQ`,
+        //       `${isPlatformBoundText('qqguild')} QQ频道`,
+        //       `${isPlatformBoundText('discord')} Discord`,
+        //       `${isPlatformBoundText('kooka')} Kook`,
+        //       `${isPlatformBoundText('villa')} 大别野`,
+        //       `${isPlatformBoundText('dingtalk')} 钉钉`,
+        //       `${isBoundText(!!user?.github?.accessToken)} GitHub`,
+        //     ].join('\n')
+        //   )
+        // return msgBuilder.all()
+        return `<markdown>
+## ${isTargetEqualAuthor ? '个人' : '他人'}资料
+- 平台ID: ${curPlatformBinding?.pid || ''}
+- 平台昵称/群名片: ${(user as any)?.nickname || ''}
+- UID: ${user.id}
+- SILI称${isTargetEqualAuthor ? '你' : 'TA'}为: ${nickname}
+- 权限: ${user.authority || 0}
+- 账号绑定情况:
+  - ${isPlatformBoundText('onebot')} QQ
+  - ${isPlatformBoundText('qqguild')} QQ频道
+  - ${isPlatformBoundText('discord')} Discord
+  - ${isPlatformBoundText('kooka')} Kook
+  - ${isPlatformBoundText('villa')} 大别野
+  - ${isPlatformBoundText('dingtalk')} 钉钉
+  - ${isBoundText(!!user?.github?.accessToken)} GitHub
+</markdown>
+`
       })
   }
 }
