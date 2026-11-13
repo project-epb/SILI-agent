@@ -20,10 +20,6 @@ import { MinecraftConnect } from '@/modules/MinecraftConnect'
 import MgpGroupUtils from '@/modules/MoegirlGroupUtils'
 import ProcessErrorHandler from '@/modules/ProcessErrorHandler'
 import SilentSwitch from '@/modules/SilentSwitch'
-import type { Profile } from '@/profiles/types'
-import PiggybackService from '@/services/PiggybackService'
-import { QQNTEmojiReactionService } from '@/services/QQNTEmojiReaction'
-import HTMLService from '@/services/html'
 import {
   assetsS3Config,
   consoleConfig,
@@ -32,6 +28,10 @@ import {
   llmConfig,
   puppeteerConfig,
 } from '@/profiles/shared/plugin-configs'
+import type { Profile } from '@/profiles/types'
+import PiggybackService from '@/services/PiggybackService'
+import { QQNTEmojiReactionService } from '@/services/QQNTEmojiReaction'
+import HTMLService from '@/services/html'
 
 import PluginAbout from '~/about'
 import PatchCallme from '~/callme'

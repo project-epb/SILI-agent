@@ -11,8 +11,8 @@ import { App, Context } from 'koishi'
 
 import process from 'node:process'
 
-import { logProcessErrors } from '@/bootstrap'
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
+import { logProcessErrors } from '@/bootstrap'
 import FallbackHandler from '@/modules/FallbackHandler'
 import SilentSwitch from '@/modules/SilentSwitch'
 import {
