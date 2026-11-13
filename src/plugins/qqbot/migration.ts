@@ -16,18 +16,24 @@ const BIND_COPY = {
   description: '把多个账号绑成同一个人',
   options: { remove: '取消绑定，恢复成独立账号' },
   messages: {
+    // Each <message> is sent as its own message: the code goes alone in the
+    // second one so it can be copied with a single long-press.
     'generated-1': [
-      '绑定码：{0}',
-      '请在 5 分钟内，用你的大号（要保留数据的那个账号）把这串码发给 SILI。',
+      '<message>',
+      '请在 5 分钟内，用你的大号（要保留数据的那个账号）把下一条消息里的绑定码发给 SILI。',
       '之后，当前账号会被视为你的小号：',
       '· 小号说的话，SILI 都当成大号说的',
       '· 小号原来的记忆、权限、称呼暂停使用，取消绑定后恢复',
       '想取消，在当前账号发「bind -r」。',
+      '</message>',
+      '<message>{0}</message>',
     ].join('\n'),
     'generated-2': [
-      '还差一步：请在 5 分钟内，用刚才发起绑定的那个账号把这串码发给 SILI：',
-      '{0}',
+      '<message>',
+      '还差一步：请在 5 分钟内，用刚才发起绑定的那个账号把下一条消息里的绑定码发给 SILI。',
       '完成后，那个账号会被视为你的小号，数据以当前账号为准。',
+      '</message>',
+      '<message>{0}</message>',
     ].join('\n'),
     'self-1': '要用你的大号发，不是当前这个账号。',
     'self-2': '要用刚才发起绑定的那个账号发，不是当前这个账号。',
