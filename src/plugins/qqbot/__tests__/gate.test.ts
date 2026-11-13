@@ -17,12 +17,16 @@ const rules: GateRules = {
   bindTokenPrefix: 'koishi/',
 }
 
-function lookup(opts: { groups?: string[]; dms?: string[] } = {}): ServedLookup {
+function lookup(
+  opts: { groups?: string[]; dms?: string[]; ops?: string[] } = {}
+): ServedLookup {
   const groups = new Set(opts.groups ?? [])
+  const ops = new Set(opts.ops ?? [])
   const dms = new Set(opts.dms ?? [])
   return {
     isGroupActive: (_p, _s, channelId) => groups.has(channelId),
-    isDmAllowed: (_p, _s, userId) => dms.has(userId),
+    isDmAllowed: (_p, _s, userId) => ops.has(userId) || dms.has(userId),
+    isOp: (_p, userId) => ops.has(userId),
   }
 }
 
@@ -66,12 +70,17 @@ describe('decideGate', () => {
   it('drops plain messages in unactivated groups', () => {
     expect(decideGate(group(), 'hello', 'hello', lookup(), rules)).toBe('drop')
   })
-  it('lets whitelisted commands through in unactivated groups', () => {
-    expect(decideGate(group(), 'assign', 'assign', lookup(), rules)).toBe('pass')
-    expect(decideGate(group(), 'group-migrate 123', 'group-migrate', lookup(), rules)).toBe('pass')
+  it('lets ops run whitelisted commands in unactivated groups', () => {
+    const ops = lookup({ ops: ['U1'] })
+    expect(decideGate(group(), 'assign', 'assign', ops, rules)).toBe('pass')
+    expect(decideGate(group(), 'group-migrate 123', 'group-migrate', ops, rules)).toBe('pass')
+  })
+  it('silently drops whitelisted commands from non-ops in unactivated groups', () => {
+    // Passing them would make Koishi reply "权限不足" in an ignored group.
+    expect(decideGate(group(), 'assign', 'assign', lookup(), rules)).toBe('drop')
   })
   it('does not accept DM-only commands in groups', () => {
-    expect(decideGate(group(), 'bind', 'bind', lookup(), rules)).toBe('drop')
+    expect(decideGate(group(), 'bind', 'bind', lookup({ ops: ['U1'] }), rules)).toBe('drop')
   })
   it('passes everything in activated groups', () => {
     expect(decideGate(group(), 'hello', 'hello', lookup({ groups: ['G1'] }), rules)).toBe('pass')

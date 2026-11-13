@@ -41,9 +41,13 @@ export class ServedState implements ServedLookup {
 
   isDmAllowed(platform: string, selfId: string, userId: string) {
     return (
-      this.ops.has(`${platform}:${userId}`) ||
+      this.isOp(platform, userId) ||
       this.dmActive.has(ServedState.userKey(platform, selfId, userId))
     )
+  }
+
+  isOp(platform: string, userId: string) {
+    return this.ops.has(`${platform}:${userId}`)
   }
 
   isServedSession(session: Session) {

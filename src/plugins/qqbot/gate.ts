@@ -19,6 +19,8 @@ export interface ServedLookup {
   isGroupActive(platform: string, selfId: string, channelId: string): boolean
   /** DM sender is an op (`authority >= 4`) or their DM was activated. */
   isDmAllowed(platform: string, selfId: string, userId: string): boolean
+  /** Sender is an op (`authority >= 4`). */
+  isOp(platform: string, userId: string): boolean
 }
 
 /**
@@ -37,7 +39,11 @@ export function isServed(facts: SessionFacts, served: ServedLookup): boolean {
 }
 
 export interface GateRules {
-  /** Command names and aliases allowed in unactivated groups. */
+  /**
+   * Command names and aliases allowed in unactivated groups, for ops only:
+   * letting anyone else through would make Koishi answer "权限不足" in a group
+   * the bot is supposed to ignore.
+   */
   groupCommands: ReadonlySet<string>
   /** Command names and aliases allowed in unserved DMs. */
   dmCommands: ReadonlySet<string>
@@ -63,8 +69,12 @@ export function decideGate(
     return content.trim().startsWith(rules.bindTokenPrefix) ? 'pass' : 'drop'
   }
   if (isServed(facts, served)) return 'pass'
-  const allowed = facts.isDirect ? rules.dmCommands : rules.groupCommands
-  return commandName && allowed.has(commandName) ? 'pass' : 'drop'
+  if (!commandName) return 'drop'
+  if (facts.isDirect) return rules.dmCommands.has(commandName) ? 'pass' : 'drop'
+  return rules.groupCommands.has(commandName) &&
+    served.isOp(facts.platform, facts.userId)
+    ? 'pass'
+    : 'drop'
 }
 
 /**
