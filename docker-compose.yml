@@ -42,7 +42,9 @@ services:
 
   mongo:
     container_name: sili-mongo
-    image: mongo:8
+    # Pinned to the exact mongod release; a floating `8` tag can jump minor
+    # versions on the next pull. Bump deliberately.
+    image: mongo:8.2.11
     mem_limit: 256m
     networks:
       sili-network:
