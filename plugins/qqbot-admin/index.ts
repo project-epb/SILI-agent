@@ -83,6 +83,10 @@ declare module '@koishijs/console' {
     'qqbot-admin/refresh-group'(payload: { selfId: string; id: string }): {
       ok: true
     }
+    'qqbot-admin/set-op'(payload: { id: string; op: boolean }): {
+      ok: boolean
+      message?: string
+    }
   }
 }
 
@@ -244,6 +248,12 @@ export function apply(ctx: Context) {
       await ctx.qqbot.metadata.refreshGroup(selfId, id)
       return { ok: true }
     },
+    { authority: AUTH }
+  )
+
+  ctx.console.addListener(
+    'qqbot-admin/set-op',
+    async ({ id, op }) => ctx.qqbot.setOp(PLATFORM, id, op),
     { authority: AUTH }
   )
 

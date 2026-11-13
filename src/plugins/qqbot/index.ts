@@ -240,6 +240,46 @@ export default class QQBotService extends Service {
   }
 
   /**
+   * Make an openid an op (authority 4) or revert it. The platform exposes no
+   * "bot owner" API, so this is how a new bot learns who its ops are; the
+   * person only needs to have messaged the bot once to be listed.
+   * - op: create an authority-4 account if the openid has none; otherwise raise
+   *   to 4, never lower an account that is already 4 or above.
+   * - not op: only an account at exactly 4 drops back to 1. Accounts above 4
+   *   are refused so a misclick cannot demote a super admin.
+   * Authority lives on the Koishi account: after `bind` merges this identity
+   * into an old account, the old account's authority applies.
+   */
+  async setOp(
+    platform: string,
+    userId: string,
+    op: boolean
+  ): Promise<{ ok: boolean; message?: string }> {
+    const db = this.ctx.database
+    const [binding] = await db.get('binding', { platform, pid: userId }, [
+      'aid',
+    ])
+    if (!binding) {
+      if (op) await db.createUser(platform, userId, { authority: 4 })
+    } else {
+      const [user] = await db.get('user', { id: binding.aid }, ['authority'])
+      const current = user?.authority ?? 0
+      if (op && current < 4) {
+        await db.set('user', { id: binding.aid }, { authority: 4 })
+      } else if (!op && current > 4) {
+        return {
+          ok: false,
+          message: `该账号权限为 ${current}，高于 op，不在这里调整。`,
+        }
+      } else if (!op && current === 4) {
+        await db.set('user', { id: binding.aid }, { authority: 1 })
+      }
+    }
+    await this.state.reload(this.ctx)
+    return { ok: true }
+  }
+
+  /**
    * First activation during the migration window: tell the group how to bring
    * old data over. Prefer a passive reply to the message that activated the
    * group; otherwise a proactive message if allowed; otherwise owe it and send

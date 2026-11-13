@@ -100,7 +100,8 @@ const Page = defineComponent({
       busy.value = key
       err.value = ''
       try {
-        await send(event, payload)
+        const res = await send(event, payload)
+        if (res && res.ok === false && res.message) err.value = res.message
         await load()
       } catch (e) {
         err.value = String(e?.message ?? e)
@@ -208,8 +209,13 @@ const Page = defineComponent({
             h('td', r.messageCount),
             h('td', r.dmCount),
             h('td', { class: 'qa-actions' }, [
+              h('button', {
+                class: `qa-btn ${r.isOp ? 'is-danger' : 'is-plain'}`,
+                disabled: busy.value === key,
+                onClick: () => act(key, 'qqbot-admin/set-op', { id: r.id, op: !r.isOp }),
+              }, r.isOp ? '取消 op' : '设为 op'),
               r.isOp
-                ? h('span', { class: 'qa-dim' }, 'op 始终放行')
+                ? h('span', { class: 'qa-dim' }, 'op 私聊始终放行')
                 : h('button', {
                     class: `qa-btn ${r.dmActive ? 'is-danger' : ''}`,
                     disabled: busy.value === key,
@@ -231,7 +237,7 @@ const Page = defineComponent({
     return () =>
       h('div', { class: 'qa-root' }, [
         h('p', { class: 'qa-notice' },
-          '只记录元数据，不展示消息内容。成员只覆盖发过言的人，不是完整的群成员名单。激活群等同于在群里 assign。'),
+          '只记录元数据，不展示消息内容。成员只覆盖发过言的人，不是完整的群成员名单。激活群等同于在群里 assign。要让某人成为 op：先让他给机器人发一条消息（会被静默，但会出现在用户列表），再点「设为 op」。'),
         toolbar(),
         err.value ? h('p', { class: 'qa-err' }, err.value) : null,
         rows.value.length
