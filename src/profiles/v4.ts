@@ -24,7 +24,14 @@ import type { Profile } from '@/profiles/types'
 import PiggybackService from '@/services/PiggybackService'
 import { QQNTEmojiReactionService } from '@/services/QQNTEmojiReaction'
 import HTMLService from '@/services/html'
-import { parseLLMProviders } from '@/utils/parseLLMProviders'
+import {
+  assetsS3Config,
+  consoleConfig,
+  gelbooruConfig,
+  githubConfig,
+  llmConfig,
+  puppeteerConfig,
+} from '@/profiles/shared/plugin-configs'
 
 import PluginAbout from '~/about'
 import PatchCallme from '~/callme'
@@ -104,7 +111,6 @@ import PluginSilk from 'koishi-plugin-silk'
 import * as PluginSwitch from 'koishi-plugin-switch'
 
 import PluginHTTP from '@cordisjs/plugin-http'
-import { executablePath } from 'puppeteer'
 
 const { env } = process
 
@@ -245,19 +251,7 @@ function install(app: App) {
       // ctx.command('help').alias('帮助')
       ctx.plugin(PluginCommands)
       ctx.plugin(PluginSwitch)
-      const assetsPathPrefix =
-        env.KOISHI_ENV === 'prod' ? 'sili/v4_prod/' : 'sili/v4_dev/'
-      ctx.plugin(PluginAssetsS3, {
-        credentials: {
-          accessKeyId: env.TOKEN_S3_ACCESS_KEY_ID,
-          secretAccessKey: env.TOKEN_S3_ACCESS_KEY_SECRET,
-        },
-        bucket: env.TOKEN_S3_BUCKET,
-        pathPrefix: assetsPathPrefix,
-        publicUrl: `${env.TOKEN_S3_PUBLIC_URL}/${assetsPathPrefix}`,
-        region: env.TOKEN_S3_REGION,
-        endpoint: env.TOKEN_S3_ENDPOINT,
-      })
+      ctx.plugin(PluginAssetsS3, assetsS3Config(env))
       ctx.plugin(PluginHTTP)
     })
     // [common]
@@ -274,11 +268,7 @@ function install(app: App) {
 
   // 网页控制台
   app.plugin(function PluginCollectionConsole(ctx) {
-    ctx.plugin(PluginConsole, {
-      title: 'SILI 监控中心',
-      uiPath: '/dash',
-      apiPath: '/api/status',
-    })
+    ctx.plugin(PluginConsole, consoleConfig())
     ctx.plugin(PluginAnalytics)
     ctx.plugin(PluginAuth, { admin: { enabled: false } })
     ctx.plugin(PluginDataview)
@@ -293,22 +283,11 @@ function install(app: App) {
 
   // 第三方
   app.plugin(async function PluginCollectionThirdParty(ctx) {
-    ctx.plugin(PluginGithub, {
-      path: '/api/github',
-      appId: env.TOKEN_GITHUB_APPID,
-      appSecret: env.TOKEN_GITHUB_APPSECRET,
-      redirect: env.TOKEN_GITHUB_REDIRECT, // optional override; unset → derived from selfUrl (see applyOAuth)
-      replyTimeout: 6 * Time.hour,
-      replyFooter:
-        '<sub>↪ by [SILI agent](https://github.com/project-epb/SILI-agent)</sub>',
-    })
+    ctx.plugin(PluginGithub, githubConfig(env))
     ctx.plugin(PluginImageSearch, {
       saucenaoApiKey: env.TOKEN_SAUCENAO_APIKEY,
     })
-    ctx.plugin(PluginPuppeteer, {
-      // headless: 'new',
-      executablePath: executablePath(),
-    })
+    ctx.plugin(PluginPuppeteer, puppeteerConfig())
     ctx.plugin(PluginSchedule)
     ctx.plugin(PluginSilk)
 
@@ -421,21 +400,7 @@ function install(app: App) {
         },
       })
     }
-    ctx.plugin(PluginLLM, {
-      providers: parseLLMProviders(env),
-      maxTokens: env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : 16384,
-      model: env.LLM_MODEL || 'gpt-4o',
-      memoryModel: env.LLM_AGENT_MEMORY_MODEL,
-      // IM 场景下 50 turn 就几千 token，DeepSeek 类便宜模型完全 cover；
-      // 切贵模型时记得把这个数字也调小。
-      historyTurnCount: 50,
-      sessionIdleTimeoutMs: env.LLM_SESSION_IDLE_HOURS
-        ? Number(env.LLM_SESSION_IDLE_HOURS) * 60 * 60 * 1000
-        : undefined,
-      tavily: env.LLM_TAVILY_API_KEY
-        ? { apiKey: env.LLM_TAVILY_API_KEY }
-        : undefined,
-    })
+    ctx.plugin(PluginLLM, llmConfig(env))
     // ComfyUI 图像生成：从 data/comfyui 加载 workflow/guide（容器里 /app/data，
     // 即宿主机 .volumns/core/comfyui/）；后端 baseURL + 认证走 .env（沿用 Hermes
     // 变量名）。未配 COMFYUI_BASE_URL 时插件惰性无害（命令仍注册，generate 返回
@@ -487,15 +452,7 @@ function install(app: App) {
       //   forceNegative: 'nsfw, nude',
       // },
     })
-    // Gelbooru 标签/图片查询（agent 工具，只读）：凭据走 .env，未配则惰性无害
-    // （命令仍注册，调用返回未配置提示）。imageBlacklist 可按需启用，Computed 按群。
-    ctx.plugin(PluginGelbooru, {
-      apiKey: env.GELBOORU_API_KEY,
-      userId: env.GELBOORU_USER_ID,
-      // 含敏感标签的 post 去缩略图（保留 tags/score 供 agent 写 prompt 参考）。
-      // imageBlacklist: (s) =>
-      //   s.channelId === env.CHANNEL_QQ_XXX ? [] : ['nsfw', 'nude', 'explicit'],
-    })
+    ctx.plugin(PluginGelbooru, gelbooruConfig(env))
     ctx.plugin(PluginPing)
     ctx.plugin(PluginPixiv, {
       apiBaseURL: env.PIXIV_API_BASE,
