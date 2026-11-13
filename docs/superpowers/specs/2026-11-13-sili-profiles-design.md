@@ -1,11 +1,11 @@
 # SILI profile 设计
 
-把启动代码从 `src/index.ts` 移走，按 **profile** 选择要装哪些适配器和插件。`v4` 是现有行为（NapCat/OneBot 时代），`v5` 是迁到 QQ 官方 bot 之后的版本，只装已经适配好的功能。
+把启动代码从 `src/index.ts` 移走，按 **profile** 选择要装哪些适配器和插件。`v4` 是现有行为（NapCat/OneBot 时代）。`v5` 是把 OneBot 换成 QQ 官方 bot 的版本：在 Koishi 里两者是不同的平台，最终目标是 `v4` 的插件在 `v5` 里全部装上，分阶段推进。
 
 ## 目标 / 非目标
 
-- 目标：用一个开关切换 profile；`v4` 行为与现在完全一致；`v5` 能随适配进度逐个加插件。
-- 非目标：同时运行多个 profile；改动 `v4` 里任何插件的行为；改数据库结构；适配 `v5` 暂不装的插件（各自独立处理）。
+- 目标：用一个开关切换 profile；`v4` 行为与现在完全一致；`v5` 按阶段装回插件。
+- 非目标：同时运行多个 profile；改动 `v4` 里任何插件的行为；改数据库结构；阶段三里各个插件的适配（各自独立设计）。
 - **同一时间只运行一个 profile**：`v4` 用于回退，`v5` 是切换后的目标。切换就是改 profile 并重启，部署形态不变。
 
 ## 选择方式
@@ -54,29 +54,40 @@ interface Profile {
 - 只抽 `v4`、`v5` 都装的插件的配置。
 - 与 profile 相关的值由各 profile 作为参数传入，不能写死在 `shared/` 里。例如 ComfyUI 的 `allowedChannels` 现在写死了 `v4` 的群号和 QQ 号，在 `v5` 下会变成全部拒绝或全部放行。
 
-## v5 首版内容
+## v5 的内容
 
-只装平台无关或已适配的部分，随适配进展增减。**Koishi 对缺失的依赖不报错，插件只会静默地不加载**，所以清单必须显式包含被依赖的服务。
+**Koishi 对缺失的依赖不报错，插件只会静默地不加载**，所以每个阶段的清单都必须显式包含被依赖的服务（例如 puppeteer：`HTMLService` 依赖它，md、hljs、webshot、reboot、dbadmin、sticker 又依赖 `HTMLService`）。
 
-**适配器**：QQ 官方（`koishi-plugin-adapter-qq-crack`），使用适配器默认的 intents（包含入群申请等群事件所需的 `GROUP_MEMBER_EVENT`）。不含 villa 的前缀分支，其余适配器不装。
+**适配器**（从阶段一起）：QQ 官方（`koishi-plugin-adapter-qq-crack`，使用适配器默认的 intents，包含入群申请等群事件所需的 `GROUP_MEMBER_EVENT`），以及 `v4` 里除 OneBot 以外的全部适配器（Discord、钉钉、KOOK、飞书、Minecraft），它们与这次迁移无关，照常服务。不含 villa 的前缀分支。
 
-**迁移期的 OneBot**：设置了 `ONEBOT_SELFID` 时额外装 OneBot 适配器，**只用于接收迁移码**，其余消息一概不处理（见迁移 spec 与访问控制 spec）。迁移期结束删除该变量，OneBot 不再加载，不需要改代码。
+**迁移期的 OneBot**：设置了 `ONEBOT_SELFID` 时额外装 OneBot 适配器，**只用于接收 `bind` 的绑定码**，其余消息一概不处理（见迁移 spec 与访问控制 spec）。迁移期结束删除该变量，OneBot 不再加载，不需要改代码。
 
-**装**
-- 核心与通用：help、commands、switch、http、assets-s3、puppeteer（`HTMLService` 依赖它，进而 md、hljs、webshot、reboot、dbadmin、sticker 都依赖它）、silk（适配器发送语音需要）、admin、callme、echo、rate-limit、recall；父命令 `admin`、`tools`
+### 阶段一：最小集合与频道管理器
+
+- 核心与通用：help、commands、switch、http、assets-s3、puppeteer、silk（适配器发送语音需要）、admin、bind（用户迁移与跨平台绑定）、callme、echo、rate-limit、recall；父命令 `admin`、`tools`
 - 业务：about、dice、hljs、markdown、ping、profile、queue、sticker、to-image、webshot
 - LLM（含 Gelbooru）、GitHub
 - 控制台：Console、Auth、Status、Logger、LlmDashboard、LlmAdmin
 - 内部：HTMLService、FallbackHandler、SilentSwitch、PatchCallme、PiggybackService、DatabaseAdmin、Homo、Reboot、SensitiveFilter、Spawn
-- 访问控制 spec 里的守卫、消息存储 `qqbot_message`、元数据表和 `qqbot-admin` 页面
+- 访问控制 spec 的全部内容：守卫、消息存储 `qqbot_message`、元数据表、`qqbot-admin` 页面
 
-**不装（依赖 OneBot）**：repeater、sili-name、mute、QQNT 表情回应、MgpGroupUtils、MinecraftConnect、FixQQSendLinks、version、Debug、GuildRequestFirewall、ProcessErrorHandler（通知部分）、Autowithdraw
-**不装（被 `qqbot_message` 取代）**：MessagesLogger（文件日志）
-**不装（用了合并转发）**：caniuse、pixiv、mediawiki
-**不装（待重新设计）**：verify-fandom-user
-**不装（能撤销迁移绑定）**：plugin-bind
-**消息存储完成后再装**：who-asked（改读 `qqbot_message`）
-**未决**：Dialogue 问答库、Analytics、Dataview、Explorer、Insight、Sandbox、ComfyUI、NovelAI、Broadcast、Schedule、ImageSearch、Basedata、ManosabaMemes、PowerUser、PluginMinecraft、Youdao
+### 阶段二：频道管理器完成后
+
+装回所有**不依赖 OneBot 专属 API** 的插件，包括 Dialogue 问答库、MessagesLogger（其他平台的文件日志；`qq` 平台由 `qqbot_message` 记录）、控制台其余插件（Analytics、Dataview、Explorer、Insight、Sandbox）、ComfyUI、NovelAI、Broadcast、Schedule、ImageSearch、Basedata、ManosabaMemes、PowerUser、PluginMinecraft。
+
+其中在 `qq` 平台上还不能正常工作的（caniuse、pixiv、mediawiki 用了官方 bot 不支持的合并转发），同样装上，但先只对 `qq` 平台屏蔽，其他平台照常使用。
+
+### 阶段三：逐个适配
+
+依赖 OneBot 专属 API，或在 `qq` 平台上需要改写的部分，逐个决定适配、改写还是移除：
+
+- who-asked（`qq` 平台改读 `qqbot_message`）、LLM 的 `read_channel_history`（`qq` 平台改读 `qqbot_message`）
+- caniuse、pixiv、mediawiki 在 `qq` 平台上的合并转发替代
+- verify-fandom-user（官方 bot 拿不到 QQ 号，需要重新设计）
+- MgpGroupUtils（群管理改用禁言）、GuildRequestFirewall（改用官方的入群申请接口）
+- repeater、sili-name、mute、QQNT 表情回应、MinecraftConnect、version、Debug、FixQQSendLinks、Autowithdraw、ProcessErrorHandler 的通知部分
+
+生产从 `v4` 切到 `v5` 的时机由用户决定，最早在阶段二完成后。
 
 ## 验证
 
