@@ -5,8 +5,8 @@
 ## 目标 / 非目标
 
 - 目标：用一个开关切换 profile；`v4` 行为与现在完全一致；`v5` 能随适配进度逐个加插件。
-- 非目标：同一进程同时跑两个 profile；改动 `v4` 里任何插件的行为；改数据库结构；适配 `v5` 暂不装的插件（各自独立处理）；`v5` 的部署形态（上线时再定，约束见下文）。
-- 不同 profile 是**独立进程**，各连各的机器人。共用同一个 Mongo 时，定时任务、GitHub 推送会各触发一遍，这个问题不在本次范围。
+- 非目标：同时运行多个 profile；改动 `v4` 里任何插件的行为；改数据库结构；适配 `v5` 暂不装的插件（各自独立处理）。
+- **同一时间只运行一个 profile**：`v4` 用于回退，`v5` 是切换后的目标。切换就是改 profile 并重启，部署形态不变。
 
 ## 选择方式
 
@@ -19,7 +19,7 @@
 ```
 src/index.ts              入口：读 profile 名 → loadEnv → 动态 import → createApp → install → start
 src/bootstrap.ts          loadEnv()、createApp(profile)、进程级错误监听
-src/profiles/index.ts     注册表 { v4, v5 }，值是 () => import(...)；迁移期再加 v4-migrate
+src/profiles/index.ts     注册表 { v4, v5 }，值是 () => import(...)
 src/profiles/types.ts     Profile 接口
 src/profiles/v4.ts        现有 index.ts 的全部安装逻辑，只搬不改
 src/profiles/v5.ts        新 profile
@@ -47,7 +47,7 @@ interface Profile {
 
 - 插件的注册顺序与现在**逐行一致**。前置中间件的先后取决于注册顺序（`FallbackHandler` 等依赖它），搬动代码、抽取 `shared/` 时都不能改变调用位置。
 - 原 `index.ts` 里横跨分组的代码随所在分组一起搬：DingTalk 消息去重（在适配器分组里）、novelai 的命令补丁、dialogue 的两个 hotfix 钩子。
-- `v4` 仍会在设置了 `QQBOT_APPID` 时装官方适配器。`v5` 运行期间，`v4` 的环境里不能有 `QQBOT_APPID`：同一个机器人的两条网关连接会互相抢。
+- 回退是安全的：`v5` 期间写进库里的内容（`qqbot_*` 表、`qq` 平台的绑定与频道）`v4` 不读，老用户的 OneBot 绑定始终保留。
 
 ## shared/
 
@@ -58,7 +58,9 @@ interface Profile {
 
 只装平台无关或已适配的部分，随适配进展增减。**Koishi 对缺失的依赖不报错，插件只会静默地不加载**，所以清单必须显式包含被依赖的服务。
 
-**适配器**：只装 QQ 官方（`koishi-plugin-adapter-qq-crack`），使用适配器默认的 intents（包含入群申请等群事件所需的 `GROUP_MEMBER_EVENT`）。`v5` **不加载 OneBot 适配器**，也不含 villa 的前缀分支；其余适配器同样不装。
+**适配器**：QQ 官方（`koishi-plugin-adapter-qq-crack`），使用适配器默认的 intents（包含入群申请等群事件所需的 `GROUP_MEMBER_EVENT`）。不含 villa 的前缀分支，其余适配器不装。
+
+**迁移期的 OneBot**：设置了 `ONEBOT_SELFID` 时额外装 OneBot 适配器，**只用于接收迁移码**，其余消息一概不处理（见迁移 spec 与访问控制 spec）。迁移期结束删除该变量，OneBot 不再加载，不需要改代码。
 
 **装**
 - 核心与通用：help、commands、switch、http、assets-s3、puppeteer（`HTMLService` 依赖它，进而 md、hljs、webshot、reboot、dbadmin、sticker 都依赖它）、silk（适配器发送语音需要）、admin、callme、echo、rate-limit、recall；父命令 `admin`、`tools`
@@ -82,11 +84,8 @@ interface Profile {
 - 写一个一次性脚本，导出程序化快照，对比 `v4` 改动前后：命令列表（含别名、权限）、`ctx.model.tables` 的字段、各事件的监听器数量、中间件顺序。本地日志只有 warn 以上级别，启动日志里没有插件清单，不能靠肉眼比对。
 - 同一脚本对 `v5` 列出所有插件的状态，确认没有因缺少依赖而静默未加载的插件。
 - `v5` 在没有 QQ 凭据时能启动；有凭据时能连上官方网关。
+- `v5` 设置 `ONEBOT_SELFID` 时，OneBot 群里除迁移码以外的消息不触发任何功能、不建用户、不入库。
 - `SILI_PROFILE` 为未知值时报错；compose 传入的 profile 不会被 `.env.*` 覆盖。
-
-## 部署约束（v5 上线时处理）
-
-`v5` 作为第二个容器运行时要解决：`container_name` 和网络别名 `core.sili.local` 冲突；`data/` 目录共用；`sili_node_modules` 卷共用，而 `scripts/docker-entrypoint.sh` 每次启动都会跑 `bun install`，两个容器同时启动会并发写同一个卷；两个容器挂载同一个 `./.env`。
 
 ## 文档
 
@@ -94,4 +93,4 @@ interface Profile {
 
 ## 相关
 
-- 访问控制与消息存储见 `2026-11-13-v5-access-control-design.md`；迁移和 `v4-migrate` 见 `2026-11-13-onebot-to-qqbot-migration-design.md`。
+- 访问控制与消息存储见 `2026-11-13-v5-access-control-design.md`；迁移见 `2026-11-13-onebot-to-qqbot-migration-design.md`。
