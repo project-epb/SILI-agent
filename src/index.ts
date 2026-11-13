@@ -502,6 +502,7 @@ app.plugin(function PluginCollectionSILICore(ctx) {
       env.ACCOUNT_QQ_XIAOYUJUN && `private:${env.ACCOUNT_QQ_XIAOYUJUN}`,
       env.CHANNEL_QQ_SANDBOX,
       env.CHANNEL_QQ_NGNL_COMMON,
+      env.CHANNEL_QQ_FEIFEIYAOREN,
     ].filter(Boolean) as string[],
     // 访问控制（防群友刷爆显卡）：可经 .env 调整，缺省给保护性默认。
     // COMFYUI_GENERATE_MIN_INTERVAL_S 单位为秒（转成 ms）。
