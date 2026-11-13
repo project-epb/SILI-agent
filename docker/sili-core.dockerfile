@@ -9,7 +9,9 @@
 #   - Chrome 装进镜像后，puppeteer 一升级就必须重新打包整个镜像才能换浏览器。
 # 只有"跟着 apt 走、以年为单位变动"的东西才该留在这里。
 
-FROM ubuntu:24.04 AS base
+# Dated tag, not the floating `24.04`: rebuilds must not silently pick up a new
+# base. Bump deliberately.
+FROM ubuntu:noble-20260610 AS base
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
