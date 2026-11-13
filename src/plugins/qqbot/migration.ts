@@ -33,7 +33,8 @@ const BIND_COPY = {
     'self-2': '要用刚才发起绑定的那个账号发，不是当前这个账号。',
     // Either side may see this one, so it must not name 大号 or 小号.
     success: '绑定成功，两个账号现在算同一个人。',
-    'remove-success': '已取消绑定，当前账号恢复成独立账号，原来的数据也回来了。',
+    'remove-success':
+      '已取消绑定，当前账号恢复成独立账号，原来的数据也回来了。',
     'remove-original': '这是大号本身，没有可以取消的绑定。',
   },
 }
@@ -97,13 +98,20 @@ export class MigrationFeatures {
   /** DM menu with one button that fills the bind alias into the input box. */
   private setupMenu() {
     const apply = async (bot: Bot) => {
-      if (bot.platform !== 'qq' || bot.status !== Universal.Status.ONLINE) return
+      if (bot.platform !== 'qq' || bot.status !== Universal.Status.ONLINE)
+        return
       if (this.menuDone.has(bot.selfId)) return
       this.menuDone.add(bot.selfId)
       try {
         await (bot as any).internal.setMenu({
           menu: {
-            items: [{ name: BIND_ALIAS, type: 'send_message', send_message: BIND_ALIAS }],
+            items: [
+              {
+                name: BIND_ALIAS,
+                type: 'send_message',
+                send_message: BIND_ALIAS,
+              },
+            ],
           },
         })
         this.logger.info('DM menu set for %s', bot.selfId)
@@ -131,12 +139,17 @@ export class MigrationFeatures {
           return '请在要迁移到的新群里使用这条命令。'
         }
         oldGroup = oldGroup?.trim()
-        if (!oldGroup || !/^\d+$/.test(oldGroup)) return '请提供旧群的 QQ 群号。'
+        if (!oldGroup || !/^\d+$/.test(oldGroup))
+          return '请提供旧群的 QQ 群号。'
         return this.migrateGroup(session, oldGroup, !!options?.yes)
       })
   }
 
-  private async migrateGroup(session: Session, oldGroup: string, confirmed: boolean) {
+  private async migrateGroup(
+    session: Session,
+    oldGroup: string,
+    confirmed: boolean
+  ) {
     const { selfId, channelId } = session
     const db = this.ctx.database
 
@@ -153,7 +166,11 @@ export class MigrationFeatures {
 
     const modelFields = this.ctx.model.tables.channel.fields
     const fields = COPIED_FIELDS.filter((f) => f in modelFields)
-    const [old] = await db.get('channel', { platform: 'onebot', id: oldGroup }, fields as any)
+    const [old] = await db.get(
+      'channel',
+      { platform: 'onebot', id: oldGroup },
+      fields as any
+    )
     if (!old) return `找不到旧群 ${oldGroup} 的记录。`
 
     const present = fields.filter((f) => hasValue(readPath(old, f)))
@@ -161,7 +178,9 @@ export class MigrationFeatures {
       const name = await this.groupName(session)
       return [
         `将把旧群 ${oldGroup} 的设置迁移到当前群「${name}」，并激活当前群。`,
-        present.length ? `会复制：${present.join('、')}` : '旧群没有需要复制的设置，只会激活当前群。',
+        present.length
+          ? `会复制：${present.join('、')}`
+          : '旧群没有需要复制的设置，只会激活当前群。',
         `确认请发送：${GROUP_MIGRATE_COMMAND} ${oldGroup} -y`,
       ].join('\n')
     }
@@ -182,7 +201,9 @@ export class MigrationFeatures {
     // The old OneBot row keeps no subscriptions, or v5 would keep pushing
     // GitHub events to a channel no bot serves.
     if ('github.webhooks' in modelFields) {
-      await db.set('channel', { platform: 'onebot', id: oldGroup }, { 'github.webhooks': {} } as any)
+      await db.set('channel', { platform: 'onebot', id: oldGroup }, {
+        'github.webhooks': {},
+      } as any)
       this.ctx.emit('github/rebuild-index')
     }
     await db.create('qqbot_migration', {
@@ -204,7 +225,9 @@ export class MigrationFeatures {
 
   private async groupName(session: Session) {
     try {
-      const info = await (session.bot as any).internal.getGroupInfo(session.channelId)
+      const info = await (session.bot as any).internal.getGroupInfo(
+        session.channelId
+      )
       return info?.group_name || session.channelId
     } catch {
       return session.channelId

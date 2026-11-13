@@ -1,4 +1,5 @@
 import { camelize } from 'koishi'
+
 import type { EventFilter, RepoConfig } from './types'
 
 /**

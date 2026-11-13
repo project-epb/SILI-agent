@@ -56,7 +56,10 @@ export class MetadataRecorder {
     this.logger = ctx.logger('qqbot-meta')
     ctx.on('ready', async () => {
       try {
-        const rows = await ctx.database.get('qqbot_channel', {}, ['selfId', 'id'])
+        const rows = await ctx.database.get('qqbot_channel', {}, [
+          'selfId',
+          'id',
+        ])
         for (const row of rows) this.knownGroups.add(`${row.selfId}:${row.id}`)
       } catch (error) {
         this.logger.warn('load known groups', error)
@@ -68,8 +71,12 @@ export class MetadataRecorder {
     ctx.on('guild-added', (session) => this.onGuildAdded(session))
     ctx.on('guild-removed', (session) => this.onGuildRemoved(session))
     // qq-crack emits these non-standard event names.
-    ctx.on('group-msg-reject' as any, (session: Session) => this.setRejected(session, true))
-    ctx.on('group-msg-receive' as any, (session: Session) => this.setRejected(session, false))
+    ctx.on('group-msg-reject' as any, (session: Session) =>
+      this.setRejected(session, true)
+    )
+    ctx.on('group-msg-receive' as any, (session: Session) =>
+      this.setRejected(session, false)
+    )
   }
 
   record(session: Session) {
@@ -180,7 +187,11 @@ export class MetadataRecorder {
       }
       if (members.length) {
         const existing = await this.ctx.database.get('qqbot_member', {
-          $or: members.map(({ selfId, channelId, userId }) => ({ selfId, channelId, userId })),
+          $or: members.map(({ selfId, channelId, userId }) => ({
+            selfId,
+            channelId,
+            userId,
+          })),
         })
         const byKey = new Map(
           existing.map((r) => [`${r.selfId}:${r.channelId}:${r.userId}`, r])
@@ -209,7 +220,10 @@ export class MetadataRecorder {
     if (!GUARDED_PLATFORMS.has(session.platform) || !session.guildId) return
     const { selfId, guildId, platform } = session
     try {
-      const [row] = await this.ctx.database.get('qqbot_channel', { selfId, id: guildId })
+      const [row] = await this.ctx.database.get('qqbot_channel', {
+        selfId,
+        id: guildId,
+      })
       await this.ctx.database.upsert('qqbot_channel', [
         {
           selfId,
@@ -254,7 +268,12 @@ export class MetadataRecorder {
     if (!GUARDED_PLATFORMS.has(session.platform) || !id) return
     try {
       await this.ctx.database.upsert('qqbot_channel', [
-        { selfId: session.selfId, id, platform: session.platform, recvRejected: rejected },
+        {
+          selfId: session.selfId,
+          id,
+          platform: session.platform,
+          recvRejected: rejected,
+        },
       ])
     } catch (error) {
       this.logger.warn('group-msg-reject/receive', error)
@@ -296,7 +315,11 @@ export class MetadataRecorder {
       patch.name = info?.group_name ?? ''
       patch.memberNum = info?.group_member_num ?? 0
     } catch (error) {
-      this.logger.debug('getGroupInfo %s failed: %s', groupId, (error as Error)?.message)
+      this.logger.debug(
+        'getGroupInfo %s failed: %s',
+        groupId,
+        (error as Error)?.message
+      )
     }
     try {
       const state = await bot.internal.getBotGroupState(groupId)
@@ -304,7 +327,11 @@ export class MetadataRecorder {
       patch.recvSetting = state?.recv_msg_setting ?? ''
       patch.allowProactive = !!state?.allow_proactive_msg
     } catch (error) {
-      this.logger.debug('getBotGroupState %s failed: %s', groupId, (error as Error)?.message)
+      this.logger.debug(
+        'getBotGroupState %s failed: %s',
+        groupId,
+        (error as Error)?.message
+      )
     }
     try {
       await this.ctx.database.upsert('qqbot_channel', [patch as any])

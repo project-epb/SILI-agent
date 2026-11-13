@@ -36,7 +36,9 @@ export class ServedState implements ServedLookup {
   }
 
   isGroupActive(platform: string, selfId: string, channelId: string) {
-    return this.activeGroups.has(ServedState.groupKey(platform, selfId, channelId))
+    return this.activeGroups.has(
+      ServedState.groupKey(platform, selfId, channelId)
+    )
   }
 
   isDmAllowed(platform: string, selfId: string, userId: string) {
@@ -54,13 +56,23 @@ export class ServedState implements ServedLookup {
     return isServed(factsOf(session), this)
   }
 
-  setGroupActive(platform: string, selfId: string, channelId: string, active: boolean) {
+  setGroupActive(
+    platform: string,
+    selfId: string,
+    channelId: string,
+    active: boolean
+  ) {
     const key = ServedState.groupKey(platform, selfId, channelId)
     if (active) this.activeGroups.add(key)
     else this.activeGroups.delete(key)
   }
 
-  setDmActive(platform: string, selfId: string, userId: string, active: boolean) {
+  setDmActive(
+    platform: string,
+    selfId: string,
+    userId: string,
+    active: boolean
+  ) {
     const key = ServedState.userKey(platform, selfId, userId)
     if (active) this.dmActive.add(key)
     else this.dmActive.delete(key)
@@ -68,14 +80,15 @@ export class ServedState implements ServedLookup {
 
   async reload(ctx: Context) {
     const platforms = [...GUARDED_PLATFORMS]
-    const channels = await ctx.database.get('channel', { platform: platforms }, [
-      'id',
-      'platform',
-      'assignee',
-    ])
+    const channels = await ctx.database.get(
+      'channel',
+      { platform: platforms },
+      ['id', 'platform', 'assignee']
+    )
     const activeGroups = new Set<string>()
     for (const { id, platform, assignee } of channels) {
-      if (assignee) activeGroups.add(ServedState.groupKey(platform, assignee, id))
+      if (assignee)
+        activeGroups.add(ServedState.groupKey(platform, assignee, id))
     }
 
     const dmRows = await ctx.database.get('qqbot_user', { dmActive: true }, [
@@ -87,7 +100,9 @@ export class ServedState implements ServedLookup {
       dmRows.map((u) => ServedState.userKey(u.platform, u.selfId, u.id))
     )
 
-    const opUsers = await ctx.database.get('user', { authority: { $gte: 4 } }, ['id'])
+    const opUsers = await ctx.database.get('user', { authority: { $gte: 4 } }, [
+      'id',
+    ])
     const ops = new Set<string>()
     if (opUsers.length) {
       const bindings = await ctx.database.get(

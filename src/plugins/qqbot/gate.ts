@@ -113,7 +113,8 @@ export function autoAuthorizeFor(
   if (facts.platform === 'onebot') return 0
   if (!GUARDED_PLATFORMS.has(facts.platform)) return 1
   if (isServed(facts, served)) return 1
-  if (facts.isDirect && commandName && rules.dmCommands.has(commandName)) return 1
+  if (facts.isDirect && commandName && rules.dmCommands.has(commandName))
+    return 1
   return 0
 }
 

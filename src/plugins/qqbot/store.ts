@@ -41,13 +41,18 @@ export class MessageStore {
       // Send sessions carry no userId; a DM's peer is encoded in the channel id.
       const { platform, selfId, channelId } = session
       const served = session.isDirect
-        ? this.state.isDmAllowed(platform, selfId, channelId.replace(/^private:/, ''))
+        ? this.state.isDmAllowed(
+            platform,
+            selfId,
+            channelId.replace(/^private:/, '')
+          )
         : this.state.isGroupActive(platform, selfId, channelId)
       if (!served) return
       this.ctx.database
         .create('qqbot_message', this.rowOf(session, true))
         .catch((error) => {
-          if (!isDuplicate(error)) this.logger.warn('record sent message', error)
+          if (!isDuplicate(error))
+            this.logger.warn('record sent message', error)
         })
     })
   }
@@ -56,7 +61,10 @@ export class MessageStore {
   async insert(session: Session): Promise<boolean> {
     if (!session.messageId) return true
     try {
-      await this.ctx.database.create('qqbot_message', this.rowOf(session, false))
+      await this.ctx.database.create(
+        'qqbot_message',
+        this.rowOf(session, false)
+      )
       return true
     } catch (error) {
       if (isDuplicate(error)) return false
@@ -78,7 +86,9 @@ export class MessageStore {
       channelId: session.channelId,
       messageId: session.messageId,
       userId: isSelf ? session.selfId : (session.userId ?? ''),
-      username: isSelf ? (session.bot.user?.name ?? '') : (session.username ?? ''),
+      username: isSelf
+        ? (session.bot.user?.name ?? '')
+        : (session.username ?? ''),
       isBot: isSelf || !!rawAuthor(session)?.bot,
       isSelf,
       content: session.content ?? '',

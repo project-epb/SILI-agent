@@ -47,7 +47,9 @@ const dm = (platform = 'qq', userId = 'U1'): SessionFacts => ({
 
 describe('isServed', () => {
   it('never serves OneBot, even if its group looks assigned', () => {
-    expect(isServed(group('onebot', 'G1'), lookup({ groups: ['G1'] }))).toBe(false)
+    expect(isServed(group('onebot', 'G1'), lookup({ groups: ['G1'] }))).toBe(
+      false
+    )
   })
   it('serves unguarded platforms unconditionally', () => {
     expect(isServed(group('discord'), lookup())).toBe(true)
@@ -73,32 +75,58 @@ describe('decideGate', () => {
   it('lets ops run whitelisted commands in unactivated groups', () => {
     const ops = lookup({ ops: ['U1'] })
     expect(decideGate(group(), 'assign', 'assign', ops, rules)).toBe('pass')
-    expect(decideGate(group(), 'group-migrate 123', 'group-migrate', ops, rules)).toBe('pass')
+    expect(
+      decideGate(group(), 'group-migrate 123', 'group-migrate', ops, rules)
+    ).toBe('pass')
   })
   it('silently drops whitelisted commands from non-ops in unactivated groups', () => {
     // Passing them would make Koishi reply "权限不足" in an ignored group.
-    expect(decideGate(group(), 'assign', 'assign', lookup(), rules)).toBe('drop')
+    expect(decideGate(group(), 'assign', 'assign', lookup(), rules)).toBe(
+      'drop'
+    )
   })
   it('does not accept DM-only commands in groups', () => {
-    expect(decideGate(group(), 'bind', 'bind', lookup({ ops: ['U1'] }), rules)).toBe('drop')
+    expect(
+      decideGate(group(), 'bind', 'bind', lookup({ ops: ['U1'] }), rules)
+    ).toBe('drop')
   })
   it('passes everything in activated groups', () => {
-    expect(decideGate(group(), 'hello', 'hello', lookup({ groups: ['G1'] }), rules)).toBe('pass')
+    expect(
+      decideGate(group(), 'hello', 'hello', lookup({ groups: ['G1'] }), rules)
+    ).toBe('pass')
   })
   it('drops stranger DMs except bind and its alias', () => {
     expect(decideGate(dm(), 'hi', 'hi', lookup(), rules)).toBe('drop')
     expect(decideGate(dm(), 'bind', 'bind', lookup(), rules)).toBe('pass')
-    expect(decideGate(dm(), '多账号绑定', '多账号绑定', lookup(), rules)).toBe('pass')
+    expect(decideGate(dm(), '多账号绑定', '多账号绑定', lookup(), rules)).toBe(
+      'pass'
+    )
     expect(decideGate(dm(), 'assign', 'assign', lookup(), rules)).toBe('drop')
   })
   it('passes OneBot only for bind codes', () => {
-    expect(decideGate(group('onebot'), 'koishi/abc123', null, lookup(), rules)).toBe('pass')
-    expect(decideGate(group('onebot'), '  koishi/abc123', null, lookup(), rules)).toBe('pass')
-    expect(decideGate(group('onebot'), '[[维基]]', null, lookup(), rules)).toBe('drop')
-    expect(decideGate(group('onebot'), 'bind', 'bind', lookup({ groups: ['G1'] }), rules)).toBe('drop')
+    expect(
+      decideGate(group('onebot'), 'koishi/abc123', null, lookup(), rules)
+    ).toBe('pass')
+    expect(
+      decideGate(group('onebot'), '  koishi/abc123', null, lookup(), rules)
+    ).toBe('pass')
+    expect(decideGate(group('onebot'), '[[维基]]', null, lookup(), rules)).toBe(
+      'drop'
+    )
+    expect(
+      decideGate(
+        group('onebot'),
+        'bind',
+        'bind',
+        lookup({ groups: ['G1'] }),
+        rules
+      )
+    ).toBe('drop')
   })
   it('leaves other platforms alone', () => {
-    expect(decideGate(group('discord'), 'anything', null, lookup(), rules)).toBe('pass')
+    expect(
+      decideGate(group('discord'), 'anything', null, lookup(), rules)
+    ).toBe('pass')
   })
 })
 
@@ -125,7 +153,9 @@ describe('autoAuthorizeFor / autoAssignFor', () => {
     expect(autoAuthorizeFor(dm('qq'), 'bind', lookup(), rules)).toBe(1)
   })
   it('creates users normally when served or on unguarded platforms', () => {
-    expect(autoAuthorizeFor(group('qq'), 'x', lookup({ groups: ['G1'] }), rules)).toBe(1)
+    expect(
+      autoAuthorizeFor(group('qq'), 'x', lookup({ groups: ['G1'] }), rules)
+    ).toBe(1)
     expect(autoAuthorizeFor(group('discord'), null, lookup(), rules)).toBe(1)
   })
   it('auto-assigns only on unguarded platforms', () => {

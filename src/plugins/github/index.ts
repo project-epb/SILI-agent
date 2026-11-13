@@ -1,14 +1,16 @@
 import { Context, Schema, Time } from 'koishi'
+
 import BasePlugin from '~/_boilerplate'
-import { SubscriptionStore } from './subscribe'
-import { applyWebhook } from './webhook'
+
+import { applyCommands, makeRepoStore } from './commands'
+import { HISTORY_TABLE, HistoryStore } from './history'
 import { GitHubHttp } from './http'
 import { applyOAuth } from './oauth'
-import { applyCommands, makeRepoStore } from './commands'
 import { migrateRepoRename } from './rename'
-import { HISTORY_TABLE, HistoryStore } from './history'
-import { ReplyHandler, parseReplyCommand, formatHelp } from './reply'
+import { ReplyHandler, formatHelp, parseReplyCommand } from './reply'
+import { SubscriptionStore } from './subscribe'
 import type { Config as GitHubConfig } from './types'
+import { applyWebhook } from './webhook'
 
 // Re-export the config type and the Schema value under the same public name
 // (koishi's interface+Schema idiom; aliased import avoids a merged-declaration clash).
@@ -74,7 +76,11 @@ export default class PluginGitHub extends BasePlugin<Config> {
     // it on startup, and on 'github/rebuild-index' after something rewrites
     // those rows directly (e.g. v5 group migration).
     const rebuildIndex = async () => {
-      const channels = await ctx.database.get('channel', {}, ['id', 'platform', 'github'])
+      const channels = await ctx.database.get('channel', {}, [
+        'id',
+        'platform',
+        'github',
+      ])
       this.store.clear()
       for (const { id, platform, github } of channels) {
         const webhooks = github?.webhooks ?? {}
@@ -111,7 +117,12 @@ export default class PluginGitHub extends BasePlugin<Config> {
           setHookName: async (id, name, sec) => {
             await ctx.database.set('github', id, { name, secret: sec })
           },
-          getChannels: () => ctx.database.get('channel', {}, ['id', 'platform', 'github']) as any,
+          getChannels: () =>
+            ctx.database.get('channel', {}, [
+              'id',
+              'platform',
+              'github',
+            ]) as any,
           upsertChannels: async (rows) => {
             await ctx.database.upsert('channel', rows)
           },
@@ -152,7 +163,10 @@ export default class PluginGitHub extends BasePlugin<Config> {
         // tell the user the available actions rather than silently dropping to the chat handler.
         if (body.startsWith('.')) {
           session._handled = true
-          return `此消息不支持「.${name}」。\n` + formatHelp(Object.keys(entry.actions))
+          return (
+            `此消息不支持「.${name}」。\n` +
+            formatHelp(Object.keys(entry.actions))
+          )
         }
         return next()
       }
@@ -166,7 +180,14 @@ export default class PluginGitHub extends BasePlugin<Config> {
       // `.close <意见>`, `.merge`, etc. are bare — their message addresses the whole issue/PR,
       // not the quoted comment. buildQuotedComment omits the quote block when quotedText is ''.
       const quotedText = quoted ? entry.body : ''
-      const handler = new ReplyHandler(ctx, http, user, message, quotedText, footer)
+      const handler = new ReplyHandler(
+        ctx,
+        http,
+        user,
+        message,
+        quotedText,
+        footer
+      )
       return (handler as any)[name](...params)
     })
   }

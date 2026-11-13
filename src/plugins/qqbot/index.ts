@@ -19,8 +19,8 @@
 import { Context, Next, Service, Session, Time } from 'koishi'
 
 import {
-  type GateRules,
   GUARDED_PLATFORMS,
+  type GateRules,
   autoAssignFor,
   autoAuthorizeFor,
   decideGate,
@@ -139,7 +139,9 @@ export default class QQBotService extends Service {
         { noticePending: true },
         ['selfId', 'id']
       )
-      this.pendingNotice = new Set(pending.map((row) => `${row.selfId}:${row.id}`))
+      this.pendingNotice = new Set(
+        pending.map((row) => `${row.selfId}:${row.id}`)
+      )
     } catch (error) {
       this.logger.warn('reload served state', error)
     }
@@ -154,7 +156,8 @@ export default class QQBotService extends Service {
     const { content, command } = commandOf(session)
     const rules = rulesOf(this.ctx)
     if (guarded) this.metadata.record(session)
-    if (decideGate(facts, content, command, this.state, rules) === 'drop') return
+    if (decideGate(facts, content, command, this.state, rules) === 'drop')
+      return
 
     if (guarded && isServed(facts, this.state)) {
       // A duplicate push was already handled once.
@@ -163,7 +166,12 @@ export default class QQBotService extends Service {
     }
 
     const result = await next()
-    if (guarded && !session.isDirect && command && commandWords(this.ctx, ['assign']).has(command)) {
+    if (
+      guarded &&
+      !session.isDirect &&
+      command &&
+      commandWords(this.ctx, ['assign']).has(command)
+    ) {
       this.afterAssign(session)
     }
     return result
@@ -177,13 +185,16 @@ export default class QQBotService extends Service {
     const { platform, selfId, channelId } = session
     this.ctx.setTimeout(async () => {
       try {
-        const [row] = await this.ctx.database.get('channel', { platform, id: channelId }, [
-          'assignee',
-        ])
+        const [row] = await this.ctx.database.get(
+          'channel',
+          { platform, id: channelId },
+          ['assignee']
+        )
         const active = row?.assignee === selfId
         const wasActive = this.state.isGroupActive(platform, selfId, channelId)
         this.state.setGroupActive(platform, selfId, channelId, active)
-        if (active && !wasActive) await this.onActivated(platform, selfId, channelId, session)
+        if (active && !wasActive)
+          await this.onActivated(platform, selfId, channelId, session)
       } catch (error) {
         this.logger.warn('after assign', error)
       }
@@ -191,7 +202,12 @@ export default class QQBotService extends Service {
   }
 
   /** Activate a group (admin page, group migration). Equivalent to `assign`. */
-  async activateGroup(platform: string, selfId: string, channelId: string, via?: Session) {
+  async activateGroup(
+    platform: string,
+    selfId: string,
+    channelId: string,
+    via?: Session
+  ) {
     await this.ctx.database.upsert('channel', [
       { platform, id: channelId, assignee: selfId, guildId: channelId },
     ])
@@ -211,7 +227,12 @@ export default class QQBotService extends Service {
   }
 
   /** Serve or stop serving one user's DMs. Ops are always served. */
-  async setDmActive(platform: string, selfId: string, userId: string, active: boolean) {
+  async setDmActive(
+    platform: string,
+    selfId: string,
+    userId: string,
+    active: boolean
+  ) {
     await this.ctx.database.upsert('qqbot_user', [
       { selfId, id: userId, platform, dmActive: active },
     ])
@@ -224,20 +245,28 @@ export default class QQBotService extends Service {
    * group; otherwise a proactive message if allowed; otherwise owe it and send
    * it as a passive reply to the next served message there.
    */
-  private async onActivated(platform: string, selfId: string, channelId: string, via?: Session) {
+  private async onActivated(
+    platform: string,
+    selfId: string,
+    channelId: string,
+    via?: Session
+  ) {
     if (!this.options.migrationWindow || platform !== 'qq') return
     try {
-      const [row] = await this.ctx.database.get('qqbot_channel', { selfId, id: channelId }, [
-        'noticeSentAt',
-        'allowProactive',
-      ])
+      const [row] = await this.ctx.database.get(
+        'qqbot_channel',
+        { selfId, id: channelId },
+        ['noticeSentAt', 'allowProactive']
+      )
       if (row?.noticeSentAt) return
       const text = await this.noticeText(channelId)
       if (via) {
         await via.send(text)
         return this.markNoticeSent(selfId, channelId)
       }
-      const bot = this.ctx.bots.find((b) => b.platform === platform && b.selfId === selfId)
+      const bot = this.ctx.bots.find(
+        (b) => b.platform === platform && b.selfId === selfId
+      )
       if (bot && row?.allowProactive) {
         await bot.sendMessage(channelId, text)
         return this.markNoticeSent(selfId, channelId)
