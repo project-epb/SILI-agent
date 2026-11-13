@@ -120,9 +120,10 @@ const isQQ = (session: Session) =>
 function appOptions(env: NodeJS.ProcessEnv): Partial<Context.Config> {
   return {
     prefix: (session) => {
-      // 官方 QQ：没有 @ 时用 slash
+      // 官方 QQ：slash（QQ 客户端的指令习惯）加上常规前缀，迁移过来的用户沿用
+      // 原来的 `!`。私聊里 Koishi 本就不要求前缀，所以私聊三种写法都能触发。
       if (['qq', 'qqguild'].includes(session.platform)) {
-        return '/'
+        return ['/', ...(env.KOISHI_PREFIX?.split('|') || [])]
       }
       // 钉钉适配器，必须 at 才能收到消息，无需前缀
       if (session.platform === 'dingtalk') {
