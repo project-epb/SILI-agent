@@ -26,7 +26,7 @@ Runtime: **bun**（dev 与生产统一）。bun 同时是包管理器和运行�
 
 **格式化**：`.prettierrc.cjs` 配了 `@trivago/prettier-plugin-sort-imports`，import 有分组顺序（`dotenv → koishi → node: → @/ → ~/ → $utils/ → @koishijs/ → koishi- → 第三方 → 相对`，组间空行）。format 脚本只跑 `src`（根目录 docs/config 不归 prettier 管）。注意 `src` 里仍有一批历史文件未格式化，所以 **别整体跑 `bun run format`（会 reformat 历史文件、污染 diff）——推送前只格式化本次改动过的文件**，单独作为最后一笔提交，别混进功能 diff。
 
-**已知 tsc 噪音**：`npx tsc --noEmit` 会报若干 `ctx.plugin(...)` 的 `No overload matches this call`——koishi 4.9 前后一次较大的类型调整所致，命中的是几个停更的老第三方插件，**不影响实际运行**。别把它们当成自己改动引入的错误。
+**已知 tsc 噪音**：`npx tsc --noEmit` 会报若干 `ctx.plugin(...)` 的 `No overload matches this call`——koishi 4.9 前后一次较大的类型调整所致，命中的是几个停更的老第三方插件，**不影响实际运行**。别把它们当成自己改动引入的错误。另一类是 `plugins/` 下控制台插件（llm-admin、llm-dashboard、qqbot-admin）的 `ctx.console.addListener('xxx/...')` 报 `not assignable to parameter of type '"ping"'`：`@koishijs/console` 的 `Events` 类型扩展在本仓库的 tsc 配置下不生效，同样不影响运行。
 
 ## 路径别名（tsconfig）
 
@@ -64,7 +64,7 @@ src/
 
 加新功能 = 在 `src/plugins/` 加文件（或目录） + 在要启用它的 profile（`src/profiles/v4.ts` / `v5.ts`）里 `ctx.plugin(YourPlugin)` 注册。
 
-**Profile**：同一时间只运行一个。选择顺序：启动参数 `--profile=<name>` > 环境变量 `SILI_PROFILE` > 默认 `v4`。`SILI_PROFILE` 不要写进 `.env.production` / `.env.development` / `.env.local`——它们以 override 方式加载，会覆盖 compose 传入的值。`v4` 是原 `index.ts` 的原样搬迁，插件注册顺序关系到前置中间件的先后，不要调整。`v5` 按阶段装回插件，设计见 `docs/superpowers/specs/2026-11-13-sili-profiles-design.md`。
+**Profile**：同一时间只运行一个。选择顺序：启动参数 `--profile=<name>` > 环境变量 `SILI_PROFILE` > 默认 `v4`。`SILI_PROFILE` 不要写进 `.env.production` / `.env.development` / `.env.local`——它们以 override 方式加载，会覆盖 compose 传入的值。`v4` 是原 `index.ts` 的原样搬迁，插件注册顺序关系到前置中间件的先后，不要调整。`v5` 按阶段装回插件，设计见 `docs/superpowers/specs/2026-11-13-sili-profiles-design.md`。`v5` 的官方 QQ bot 有访问控制（`src/plugins/qqbot/`）：未激活的群和陌生私聊一律静默。**`v5` 新增插件必须装进 `v5.ts` 里的 `served` 上下文**，装在它外面的插件会被未激活的群和陌生人触发。
 
 ## LLM 插件特别说明
 

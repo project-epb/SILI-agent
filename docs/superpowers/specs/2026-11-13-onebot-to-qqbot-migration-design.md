@@ -93,13 +93,13 @@ SILI换新账号啦！旧号上的记忆、称呼和权限可以带过来：
 
 ## 群迁移
 
-- 在官方 bot 所在的新群里 `@bot` 执行，要求 `authority ≥ 4`，参数是旧的真实 QQ 群号。op 在私聊完成用户迁移后，在群里是同一个身份。这条命令是群守卫的白名单命令，可以在未激活的群里执行。
+- 命令 `group-migrate <旧群号>`，别名「迁移群设置」。在官方 bot 所在的新群里 `@bot` 执行，要求 `authority ≥ 4`，参数是旧的真实 QQ 群号。op 在私聊完成用户迁移后，在群里是同一个身份。这条命令是群守卫的白名单命令，可以在未激活的群里执行。
 - 两段式，不用 `session.prompt`（未激活的群里，非白名单消息会被守卫丢弃）：不带 `-y` 时只展示预览，包括新群名称（官方 `info` 接口）和旧群记录摘要；带 `-y` 才执行。
 - 字段处理：
   - 复制：`switch` 的 `enable` / `disable`、`mwApi`、`userBlacklist`、`locales`、`permissions`、`github.webhooks`。
   - 重设：`assignee` 设为官方 bot（即激活这个群）、`guildId` 设为新群 openid、`flag` 设为 0、`createdAt` 设为迁移时间。
   - 新群已有记录时，复制清单内的字段覆盖，清单外的字段保留。
-- `github.webhooks` 的订阅索引只在启动时重建：迁移后要触发重建，并清除旧群（`onebot`）行上的订阅，否则 `v5` 会一直往没有机器人的旧频道推送。
+- `github.webhooks` 的订阅索引原本只在启动时重建：迁移后清除旧群（`onebot`）行上的订阅，并发出 `github/rebuild-index` 事件让 GitHub 插件重建索引，否则 `v5` 会一直往没有机器人的旧频道推送。
 - 新旧两侧都只能迁移一次，记入审计表 `qqbot_migration`：旧群号、新群 openid、appid、操作者、时间。
 - 官方 bot 无法核实旧群号与新群是不是同一个群，信任由 op 保证。
 

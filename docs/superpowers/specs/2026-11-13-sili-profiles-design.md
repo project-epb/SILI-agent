@@ -77,6 +77,8 @@ interface Profile {
 
 其中在 `qq` 平台上还不能正常工作的（caniuse、pixiv、mediawiki 用了官方 bot 不支持的合并转发），同样装上，但先只对 `qq` 平台屏蔽，其他平台照常使用。
 
+ComfyUI、NovelAI 沿用现有的频道变量（OneBot 群号、QQ 号），在官方 bot 上要等改了配置才会放行（见下方过滤清单）。阶段二的插件全部装在访问控制的已服务上下文里，见访问控制 spec。
+
 ### 阶段三：逐个适配
 
 依赖 OneBot 专属 API，或在 `qq` 平台上需要改写的部分，逐个决定适配、改写还是移除：
