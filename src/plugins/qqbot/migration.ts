@@ -61,7 +61,7 @@ export function oldAccountNotice(shareUrl: string) {
 
 export function migrationNotice(oldSiliIsHere: boolean) {
   return [
-    'SILI换新账号啦！旧号上的记忆、称呼和权限可以带过来：',
+    '全新 SILI 闪亮登场！旧号上的记忆、称呼和权限可以带过来：',
     '1. 点我的头像，加我为好友',
     `2. 在私聊里点输入框上方的「${BIND_ALIAS}」，再点发送`,
     oldSiliIsHere
