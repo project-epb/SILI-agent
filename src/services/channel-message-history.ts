@@ -1,6 +1,7 @@
 import { Context, Service, Session, Time, h } from 'koishi'
 
-interface LegacyMessage {
+export interface ChannelMessage {
+  platform: string
   selfId: string
   channelId: string
   messageId: string
@@ -14,10 +15,6 @@ interface LegacyMessage {
   time: Date
 }
 
-export interface ChannelMessage extends LegacyMessage {
-  platform: string
-}
-
 declare module 'koishi' {
   interface Context {
     channelMessageHistory: ChannelMessageHistory
@@ -25,7 +22,6 @@ declare module 'koishi' {
 
   interface Tables {
     channel_message: ChannelMessage
-    qqbot_message: LegacyMessage
   }
 }
 
@@ -93,10 +89,6 @@ export default class ChannelMessageHistory extends Service {
         ],
       }
     )
-    // Register the old schema so Minato can read installations that already have it.
-    ctx.model.extend('qqbot_message', messageFields, {
-      primary: ['selfId', 'channelId', 'messageId'],
-    })
     ctx.on('send', async (session) => {
       await this.record(session, true)
     })
@@ -104,36 +96,11 @@ export default class ChannelMessageHistory extends Service {
   }
 
   protected async start() {
-    await this.importLegacy()
     await this.cleanup()
   }
 
   private cutoff() {
     return new Date(Date.now() - (this.options.retentionDays ?? 30) * Time.day)
-  }
-
-  private async importLegacy() {
-    const filter = { time: { $gte: this.cutoff() } }
-    const limit = 250
-    for (let offset = 0; ; offset += limit) {
-      const rows = await this.ctx.database.get('qqbot_message', filter, {
-        sort: { selfId: 'asc', channelId: 'asc', messageId: 'asc' },
-        offset,
-        limit,
-      })
-      if (!rows.length) return
-      await this.ctx.database.upsert(
-        'channel_message',
-        rows.map((row) => ({
-          ...row,
-          // QQ guild channels use snowflakes, and guild DMs use a pair of them.
-          platform: /^\d{1,20}(?:_\d{1,20})?$/.test(row.channelId)
-            ? 'qqguild'
-            : 'qq',
-        }))
-      )
-      if (rows.length < limit) return
-    }
   }
 
   /** Returns false when the platform already delivered this message. */
