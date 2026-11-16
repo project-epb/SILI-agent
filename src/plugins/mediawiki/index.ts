@@ -26,6 +26,7 @@ import type {
 } from './types/MediaWiki'
 import { isUserRootPage, shotUserInfobox } from './user-infobox'
 import {
+  canConnectWiki,
   getUrl,
   getWikiDisplayTitle,
   isValidApi,
@@ -67,10 +68,23 @@ export default class PluginMediawiki extends BasePlugin<Config> {
 
   /** Only those who may run wiki.connect get its usage; others are told to ask an admin. */
   private unboundHint(session: Session) {
-    const authority = (session.user as { authority?: number })?.authority ?? 0
-    return authority >= this.config.cmdAuthConnect
+    return this.canConnect(session)
       ? session.execute('wiki.connect -h')
       : '本群还没有绑定 wiki，请联系群管理员使用 wiki.connect 进行绑定。'
+  }
+
+  private canConnect(session: Session) {
+    return canConnectWiki(
+      {
+        authority: (session.user as { authority?: number })?.authority ?? 0,
+        isDirect: !!session.isDirect,
+        // Typed as string[], but the QQ adapter stores `[{ id: member_role }]`.
+        roles: ((session.event.member?.roles ?? []) as unknown[]).map((r) =>
+          String((r as { id?: string })?.id ?? r)
+        ),
+      },
+      this.config.cmdAuthConnect
+    )
   }
 
   private initCommands(): void {
@@ -383,8 +397,10 @@ export default class PluginMediawiki extends BasePlugin<Config> {
     // @command wiki.connect
     // @command wiki.link
     this.ctx
+      // Authority 1 so group owners/admins get in; binding itself is checked
+      // by canConnect in the action.
       .command('wiki.connect [api:string]', '将群聊与 MediaWiki 网站连接', {
-        authority: this.config.cmdAuthConnect,
+        authority: 1,
       })
       .alias('wiki.link')
       .channelFields(['mwApi'])
@@ -398,6 +414,10 @@ export default class PluginMediawiki extends BasePlugin<Config> {
             : h.text(
                 '本群未连接到 MediaWiki 网站，请使用“wiki.connect <api网址>”进行连接。'
               )
+        }
+
+        if (!this.canConnect(session)) {
+          return '只有群主、群管理员或 SILI 管理员可以绑定 wiki。'
         }
 
         if (!isValidApi(api)) {

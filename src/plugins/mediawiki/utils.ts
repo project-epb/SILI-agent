@@ -124,6 +124,21 @@ export function resolveQueriedTitle(
   return title
 }
 
+/** QQ group roles (`author.member_role`) allowed to bind a wiki to their group. */
+const WIKI_ADMIN_ROLES = ['owner', 'admin']
+
+/**
+ * Who may bind a wiki: SILI admins anywhere, plus the group's own owner and
+ * admins inside that group.
+ */
+export function canConnectWiki(
+  who: { authority: number; isDirect: boolean; roles: string[] },
+  minAuthority: number
+): boolean {
+  if (who.authority >= minAuthority) return true
+  return !who.isDirect && who.roles.some((r) => WIKI_ADMIN_ROLES.includes(r))
+}
+
 export function getUrl(base: string, params = {}, script = 'index'): string {
   const query = Object.keys(params).length
     ? '?' + new URLSearchParams(params)
