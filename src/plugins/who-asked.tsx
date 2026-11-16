@@ -40,16 +40,14 @@ export default class PluginWhoAsked extends BasePlugin {
       .action(async ({ session }) => {
         const dayAgo = Date.now() - 86400000
         const log = history
-          ? await history
-              .lastMention(session, new Date(dayAgo))
-              .then(
-                (row) =>
-                  row && {
-                    messageId: row.messageId,
-                    author: row.userId,
-                    timestamp: row.time.getTime(),
-                  }
-              )
+          ? await history.lastMention(session, new Date(dayAgo)).then(
+              (row) =>
+                row && {
+                  messageId: row.messageId,
+                  author: row.userId,
+                  timestamp: row.time.getTime(),
+                }
+            )
           : await this.findLastMention(session, dayAgo)
         if (!log) {
           return '谁问你了？'

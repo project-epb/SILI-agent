@@ -3,7 +3,6 @@ import type { Bot } from 'koishi'
 import type ChannelMessageHistory from '@/services/channel-message-history'
 
 import type { ToolDefinition } from '../providers/_base'
-
 import type { ToolHandler } from './types'
 
 export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
@@ -86,13 +85,17 @@ export async function resolveHistoryAnchor(
   const id = input.before_message_id
   if (!id) return { seq: undefined }
   if (typeof bot?.internal?.getMsg !== 'function') {
-    return { error: `无法解析 before_message_id=${id}：当前平台不支持 get_msg。` }
+    return {
+      error: `无法解析 before_message_id=${id}：当前平台不支持 get_msg。`,
+    }
   }
   try {
     const msg = await bot.internal.getMsg(id)
     const found = msg?.message_seq
     if (typeof found !== 'number' || !Number.isFinite(found)) {
-      return { error: `无法解析 before_message_id=${id}：该消息没有可用的 message_seq。` }
+      return {
+        error: `无法解析 before_message_id=${id}：该消息没有可用的 message_seq。`,
+      }
     }
     return { seq: Math.floor(found) }
   } catch (e: any) {
@@ -162,10 +165,7 @@ function pickDisplayName(sender: OneBotHistoryMessage['sender']): string {
 }
 
 function escapeXmlText(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 function escapeAttr(s: string): string {
@@ -223,9 +223,7 @@ export function renderSegment(seg: OneBotSegment | null | undefined): string {
   }
 }
 
-function renderMessageBody(
-  message: OneBotHistoryMessage['message']
-): string {
+function renderMessageBody(message: OneBotHistoryMessage['message']): string {
   if (typeof message === 'string') {
     // raw_message-style CQ string — keep as-is, escape minimally for safety
     return escapeXmlText(message)
@@ -302,7 +300,10 @@ export function renderHistoryMessages(
 
 export function renderHistoryPayload(
   messages: OneBotHistoryMessage[],
-  meta: Omit<RenderedHistoryMeta, 'earliestSeq' | 'earliestTime' | 'latestTime' | 'countReturned'>
+  meta: Omit<
+    RenderedHistoryMeta,
+    'earliestSeq' | 'earliestTime' | 'latestTime' | 'countReturned'
+  >
 ): string {
   if (messages.length === 0) {
     return buildHistoryHeader({ ...meta, countReturned: 0 })
@@ -426,7 +427,10 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
         }
       }
 
-      const { kept: toRender, trimmedCount } = trimAlreadySeen(messages, seenIds)
+      const { kept: toRender, trimmedCount } = trimAlreadySeen(
+        messages,
+        seenIds
+      )
 
       if (cacheKey) {
         // Union, not replace: the agent has seen everything from every call in the
