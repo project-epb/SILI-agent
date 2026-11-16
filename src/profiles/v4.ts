@@ -14,6 +14,7 @@ import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import FallbackHandler from '@/modules/FallbackHandler'
 import { FixQQSendLinks } from '@/modules/FixQQSendLinks'
 import { GuildRequestFirewall } from '@/modules/GuildRequestFirewall'
+import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
 import MessagesLogger from '@/modules/MessagesLogger'
 import { MinecraftConnect } from '@/modules/MinecraftConnect'
 import MgpGroupUtils from '@/modules/MoegirlGroupUtils'
@@ -352,6 +353,7 @@ function install(app: App) {
     ctx.plugin(HTMLService)
     ctx.plugin(FallbackHandler)
     ctx.plugin(SilentSwitch)
+    ctx.plugin(HelpAuthorityHint)
     ctx.plugin(GuildRequestFirewall)
     ctx.plugin(MessagesLogger)
     ctx.plugin(MgpGroupUtils)

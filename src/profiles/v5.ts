@@ -16,6 +16,7 @@ import process from 'node:process'
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import { logProcessErrors } from '@/bootstrap'
 import FallbackHandler from '@/modules/FallbackHandler'
+import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
 import SilentSwitch from '@/modules/SilentSwitch'
 import { PluginCollectionDialogue } from '@/profiles/shared/dialogue'
 import { installNovelAI } from '@/profiles/shared/novelai'
@@ -381,6 +382,7 @@ function install(app: App) {
     ctx.plugin(HTMLService)
     ctx.plugin(FallbackHandler)
     ctx.plugin(SilentSwitch)
+    ctx.plugin(HelpAuthorityHint)
     ctx.plugin(PatchCallme)
     ctx.plugin(PiggybackService)
     ctx.plugin(PluginDatabaseAdmin)

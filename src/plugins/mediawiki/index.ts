@@ -5,7 +5,7 @@
  * @author Koishijs(机智的小鱼君) <dragon-fish@qq.com>
  * @license Apache-2.0
  */
-import { Context, Time, h } from 'koishi'
+import { Context, Session, Time, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
@@ -65,6 +65,14 @@ export default class PluginMediawiki extends BasePlugin<Config> {
     this.initCommands()
   }
 
+  /** Only those who may run wiki.connect get its usage; others are told to ask an admin. */
+  private unboundHint(session: Session) {
+    const authority = (session.user as { authority?: number })?.authority ?? 0
+    return authority >= this.config.cmdAuthConnect
+      ? session.execute('wiki.connect -h')
+      : '本群还没有绑定 wiki，请联系群管理员使用 wiki.connect 进行绑定。'
+  }
+
   private initCommands(): void {
     // @command wiki
     this.ctx
@@ -92,7 +100,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
 
         // Missing connection init
         if (!mwApi) {
-          return options?.quiet ? '' : session.execute('wiki.connect -h')
+          return options?.quiet ? '' : this.unboundHint(session)
         }
         // Missing titles
         if (!titlesInput) {
@@ -409,7 +417,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
       .channelFields(['mwApi'])
       .action(async ({ session }, keywords) => {
         if (!session?.channel?.mwApi) {
-          return session?.execute('wiki.connect -h')
+          return session && this.unboundHint(session)
         }
         if (!keywords) {
           session.sendQueued('要搜索什么呢？(输入空行或句号取消)')
