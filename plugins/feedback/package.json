@@ -1,0 +1,10 @@
+{
+  "name": "koishi-plugin-feedback",
+  "version": "0.0.0",
+  "private": true,
+  "description": "User feedback that only the chat LLM can submit, reviewed on a console page (SILI v5)",
+  "main": "index.ts",
+  "peerDependencies": {
+    "koishi": "^4.18.0"
+  }
+}

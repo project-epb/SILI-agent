@@ -100,6 +100,7 @@ import * as PluginLlmDashboard from 'koishi-plugin-llm-dashboard'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
 import PluginPuppeteer from 'koishi-plugin-puppeteer'
 import * as PluginQQBotAdmin from 'koishi-plugin-qqbot-admin'
+import * as PluginFeedback from 'koishi-plugin-feedback'
 import * as PluginRateLimit from 'koishi-plugin-rate-limit'
 import * as PluginRecall from 'koishi-plugin-recall'
 import * as PluginSchedule from 'koishi-plugin-schedule'
@@ -313,6 +314,8 @@ function install(app: App) {
     ctx.plugin(PluginLlmAdmin)
     // 频道管理器：查看官方 bot 所在的群和私聊过的人，激活或取消（authority 4）
     ctx.plugin(PluginQQBotAdmin)
+    // 用户反馈：只有聊天 LLM 能提交，在控制台查看（authority 4）
+    ctx.plugin(PluginFeedback)
   })
 
   // 第三方

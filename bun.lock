@@ -81,6 +81,13 @@
         "yml-register": "^1.2.5",
       },
     },
+    "plugins/feedback": {
+      "name": "koishi-plugin-feedback",
+      "version": "0.0.0",
+      "peerDependencies": {
+        "koishi": "^4.18.0",
+      },
+    },
     "plugins/llm-admin": {
       "name": "koishi-plugin-llm-admin",
       "version": "0.0.0",
@@ -1159,6 +1166,8 @@
     "koishi-plugin-dialogue-flow": ["koishi-plugin-dialogue-flow@1.0.4", "https://registry.npmmirror.com/koishi-plugin-dialogue-flow/-/koishi-plugin-dialogue-flow-1.0.4.tgz", { "peerDependencies": { "koishi": "4.18.0", "koishi-plugin-dialogue": "4.1.3" } }, "sha512-fM/TqjMgz2Vf/BTQ3PtTvXgi1/TNMT+nNAZMb2EbVZ2gX17LABWZOBWyapOxO61K7Xu/dmzbVM80ezmHbifq5A=="],
 
     "koishi-plugin-dialogue-rate-limit": ["koishi-plugin-dialogue-rate-limit@1.0.3", "https://registry.npmmirror.com/koishi-plugin-dialogue-rate-limit/-/koishi-plugin-dialogue-rate-limit-1.0.3.tgz", { "peerDependencies": { "koishi": "4.18.0", "koishi-plugin-dialogue": "4.1.3" } }, "sha512-onhxh+A4HW3uTo1x5ZdcAZmoyoIpdohwKfjLo002TO3IOJ/btGNrTrFIKvb/4ncziewaWQ5to7ZS7BhMXz9Qdg=="],
+
+    "koishi-plugin-feedback": ["koishi-plugin-feedback@workspace:plugins/feedback"],
 
     "koishi-plugin-github": ["koishi-plugin-github@5.5.1", "https://registry.npmmirror.com/koishi-plugin-github/-/koishi-plugin-github-5.5.1.tgz", { "dependencies": { "@octokit/webhooks-types": "5.8.0", "koishi-plugin-markdown": "1.1.1" }, "peerDependencies": { "koishi": "4.18.0" } }, "sha512-MUbkKVCduefoIndKU7MbAiwXizYjGdmOXHeUWaH+gFs8Mts0TRroHD17x/PYRH3ogAzvVuug8XowQoYZFVG9aA=="],
 

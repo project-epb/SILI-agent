@@ -27,7 +27,7 @@ v5 上线后需要收集用户反馈。用户跟 SILI 聊天时提出的问题�
 
 5. **`feedback` 表。** 字段：`id`（自增）、`uid`（Koishi 用户 ID）、`platform`、`userId`（平台用户 ID）、`channelId`（私聊为空）、`source`、`title`、`summary`、`category`、`original`、`createdAt`、`handled`（布尔，默认 false）。
 
-6. **控制台页面。** 新建本地插件 `plugins/feedback-admin`，结构照 `plugins/qqbot-admin`，需 authority 4。列表按时间倒序，默认只显示未处理的，可以切换显示全部；每条显示来源，可以标记为已处理或取消标记。
+6. **控制台页面。** 表、工具注册和控制台页面放在同一个本地插件 `plugins/feedback` 里，通过 `ctx.llm.tools` 注册工具，页面结构照 `plugins/qqbot-admin`，需 authority 4。列表按时间倒序，默认只显示未处理的，可以切换显示全部；每条显示来源，可以标记为已处理或取消标记。
    Why：维护者只在 WebUI 查看，不需要推送。
 
 ## Acceptance
