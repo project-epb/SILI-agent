@@ -52,7 +52,10 @@ export default class PluginProfile extends BasePlugin {
 
         return this.render(session, isSelf, [
           ['UID', String(user.id)],
-          [`SILI 称${isSelf ? '你' : 'TA'}为`, user.name || '（未设置）'],
+          [
+            `SILI 称${isSelf ? '你' : 'TA'}为`,
+            this.callName(session, isSelf, user.name),
+          ],
           ['权限', String(user.authority ?? 0)],
           null,
           ...bindings.map(
@@ -62,6 +65,15 @@ export default class PluginProfile extends BasePlugin {
           ['GitHub', githubBound ? '已绑定' : '未绑定'],
         ])
       })
+  }
+
+  /** Without callme, SILI uses the platform nickname, known only for oneself. */
+  private callName(session: Session, isSelf: boolean, name?: string) {
+    if (name) return name
+    const nick = isSelf
+      ? session.event.member?.nick || session.event.user?.name
+      : ''
+    return `${nick || ''}（未设置，使用平台昵称）`
   }
 
   /** `null` starts the bindings section. One Markdown message on QQ. */
