@@ -1,4 +1,5 @@
 import { camelize } from 'koishi'
+
 import type { EventFilter, RepoConfig } from './types'
 
 /**
@@ -27,6 +28,10 @@ export class SubscriptionStore {
 
   subscribe(repo: string, cid: string, meta: EventFilter) {
     ;(this.map[repo] ||= Object.create(null))[cid] = meta
+  }
+
+  clear() {
+    this.map = Object.create(null)
   }
 
   unsubscribe(repo: string, cid?: string) {

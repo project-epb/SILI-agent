@@ -18,7 +18,7 @@
 
 ```
 src/index.ts              入口：读 profile 名 → loadEnv → 动态 import → createApp → install → start
-src/bootstrap.ts          loadEnv()、createApp(profile)、进程级错误监听
+src/bootstrap.ts          loadEnv()、createApp(profile)、logProcessErrors(app)
 src/profiles/index.ts     注册表 { v4, v5 }，值是 () => import(...)
 src/profiles/types.ts     Profile 接口
 src/profiles/v4.ts        现有 index.ts 的全部安装逻辑，只搬不改
@@ -41,7 +41,7 @@ interface Profile {
 
 - `createApp` 负责所有 profile 共用的选项（`nickname`、`minSimilarity`、`delay`）、Server 和 Mongo，再合并 profile 的 `appOptions`。`autoAssign`、`autoAuthorize` 是 App 级选项，访问控制依赖它们，所以不能只开放 `prefix`。
 - 入口保留 `logger('INIT')` 和 `app.start()` 之后的「🌈 SILI启动成功~」日志，部署流程以这行判断就绪。
-- `bootstrap` 为所有 profile 注册进程级的 `unhandledRejection` / `uncaughtException` 监听：bun 下未处理的 rejection 会直接让进程退出，而 Koishi 只在 CLI 的 worker 进程里注册这个监听，本项目自己 `new App`，不走 worker。`ProcessErrorHandler` 里「私聊通知站长」的部分留在各 profile，`v4` 保持原样。
+- 每个 profile 都必须有进程级的 `unhandledRejection` / `uncaughtException` 监听：bun 下未处理的 rejection 会直接让进程退出，而 Koishi 只在 CLI 的 worker 进程里注册这个监听，本项目自己 `new App`，不走 worker。`v4` 由原有的 `ProcessErrorHandler` 提供（它还会用 OneBot 私聊通知站长），保持原样；`v5` 不装它（迁移期加载的 OneBot 必须闭麦），改为调用 `bootstrap` 的 `logProcessErrors`，只记日志，站长通知属于阶段三。
 
 ## v4：只搬不改
 
@@ -69,20 +69,20 @@ interface Profile {
 - LLM（含 Gelbooru）、GitHub
 - 控制台：Console、Auth、Status、Logger、LlmDashboard、LlmAdmin
 - 内部：HTMLService、FallbackHandler、SilentSwitch、PatchCallme、PiggybackService、DatabaseAdmin、Homo、Reboot、SensitiveFilter、Spawn
-- 访问控制 spec 的全部内容：守卫、消息存储 `qqbot_message`、元数据表、`qqbot-admin` 页面
+- 访问控制 spec 的全部内容：守卫、统一消息存储 `channel_message`、元数据表、`qqbot-admin` 页面
 
 ### 阶段二：频道管理器完成后
 
-装回所有**不依赖 OneBot 专属 API** 的插件，包括 Dialogue 问答库、MessagesLogger（其他平台的文件日志；`qq` 平台由 `qqbot_message` 记录）、控制台其余插件（Analytics、Dataview、Explorer、Insight、Sandbox）、ComfyUI、NovelAI、Broadcast、Schedule、ImageSearch、Basedata、ManosabaMemes、PowerUser、PluginMinecraft。
+装回所有**不依赖 OneBot 专属 API** 的插件，包括 Dialogue 问答库、统一消息记录及收发日志、控制台其余插件（Analytics、Dataview、Explorer、Insight、Sandbox）、ComfyUI、NovelAI、Broadcast、Schedule、ImageSearch、Basedata、ManosabaMemes、PowerUser、PluginMinecraft。
 
-其中在 `qq` 平台上还不能正常工作的（caniuse、pixiv、mediawiki 用了官方 bot 不支持的合并转发），同样装上，但先只对 `qq` 平台屏蔽，其他平台照常使用。
+Can I Use 只在非 `qq` 平台注册。Pixiv 在已服务上下文中注册，作品和用户查询回复一张图片及正文。MediaWiki 在已服务上下文中注册，官方 QQ 的页面查询和搜索结果用一条原生 Markdown 回复，超长时按完整条目省略。搜索结果包含标题、链接和可用的摘要。通用的 `BulkMessageBuilder` 仅在 OneBot 上发送合并转发，其他平台发送普通消息。
+
+ComfyUI、NovelAI 沿用现有的频道变量（OneBot 群号、QQ 号），在官方 bot 上要等改了配置才会放行（见下方过滤清单）。阶段二的插件全部装在访问控制的已服务上下文里，见访问控制 spec。
 
 ### 阶段三：逐个适配
 
 依赖 OneBot 专属 API，或在 `qq` 平台上需要改写的部分，逐个决定适配、改写还是移除：
 
-- who-asked（`qq` 平台改读 `qqbot_message`）、LLM 的 `read_channel_history`（`qq` 平台改读 `qqbot_message`）
-- caniuse、pixiv、mediawiki 在 `qq` 平台上的合并转发替代
 - GuildRequestFirewall（改用官方的入群申请接口）
 - repeater、sili-name、mute、QQNT 表情回应、MinecraftConnect、version、Debug、FixQQSendLinks、Autowithdraw、ProcessErrorHandler 的通知部分
 
@@ -109,7 +109,7 @@ interface Profile {
 
 ## 本地开发
 
-本地用灰度账号 SILI Noir（`QQBOT_ENTERPRISE_GRAY_*`）实测 `v5`。`v5` 的 QQ 适配器与生产读同一组变量（`QQBOT_APPID`、`QQBOT_APPSECRET`、`QQBOT_TYPE`），本地在 env 里把它们设为 Noir 的值。Noir 只在本地使用：同一个机器人同一时间只能有一条网关连接。
+本地用灰度账号 SILI Noir（`QQBOT_ENTERPRISE_GRAY_*`）实测 `v5`。`v5` 的 QQ 适配器与生产读同一组变量（`QQBOT_APPID`、`QQBOT_SECRET`、`QQBOT_TYPE`），本地在 env 里把它们设为 Noir 的值。Noir 只在本地使用：同一个机器人同一时间只能有一条网关连接。
 
 ## 验证
 
