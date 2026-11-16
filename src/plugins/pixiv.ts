@@ -80,13 +80,12 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
     const req = this.request
     ctx
       .command('pixiv [id:posint]', 'pixiv.net 相关功能')
-      .action(({ session, name }, id) => {
+      .action(({ session, command }, id) => {
         if (!session) return
         if (id) {
-          // return session.execute({ name: 'pixiv.illust', args: [id] })
           return session.execute(`pixiv.illust ${id}`)
         }
-        return session.execute({ name, options: { help: true } })
+        return session.execute({ name: command.name, options: { help: true } })
       })
 
     ctx
@@ -96,10 +95,13 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
       .alias('pixiv插画', 'p站插画', 'pixiv.i', 'pixiv.artwork')
       .option('page', '-p <p:posint> 从多张插画中进行选择', { fallback: 1 })
       .option('original', '-o 显示原画 (可能会慢很多)', { fallback: false })
-      .action(async ({ session, options, name }, id) => {
+      .action(async ({ session, options, command }, id) => {
         if (!session) return
         if (!id) {
-          return session.execute({ name, options: { help: true } })
+          return session.execute({
+            name: command.name,
+            options: { help: true },
+          })
         }
 
         this.logger.info('pixiv.illust:', id, options)
@@ -133,10 +135,13 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
     ctx
       .command('pixiv.user <id:posint>')
       .alias('pixiv用户', 'p站用户', 'pixiv.u')
-      .action(async ({ session, name: cmdName }, id) => {
+      .action(async ({ session, command }, id) => {
         if (!session) return
         if (!id) {
-          return session.execute({ name: cmdName, options: { help: true } })
+          return session.execute({
+            name: command.name,
+            options: { help: true },
+          })
         }
 
         let data: PixivResponse<PixivUser>
