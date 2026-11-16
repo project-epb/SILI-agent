@@ -287,11 +287,18 @@ const Page = defineComponent({
 })
 
 export default (ctx) => {
-  // 侧栏图标：对话气泡加开关，区分于 LLM 的两个页面
+  // 侧栏图标：QQ 开放平台的机器人头像，描成线条以便跟随主题色
   icons.register('qqbot-admin', {
     render: () =>
-      h('svg', { viewBox: '0 0 24 24', fill: 'currentColor', xmlns: 'http://www.w3.org/2000/svg' }, [
-        h('path', { d: 'M4 4h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z' }),
+      h('svg', { viewBox: '0 0 512 512', xmlns: 'http://www.w3.org/2000/svg' }, [
+        h('circle', { cx: 256, cy: 65, r: 48, fill: 'currentColor' }),
+        h('rect', { x: 232, y: 100, width: 48, height: 40, fill: 'currentColor' }),
+        h('path', {
+          d: 'M74 334A182 182 0 0 1 438 334V386A60 60 0 0 1 378 446H134A60 60 0 0 1 74 386Z',
+          fill: 'none', stroke: 'currentColor', 'stroke-width': 48,
+        }),
+        h('rect', { x: 180, y: 232, width: 46, height: 90, rx: 23, fill: 'currentColor' }),
+        h('rect', { x: 286, y: 232, width: 46, height: 90, rx: 23, fill: 'currentColor' }),
       ]),
   })
   ctx.page({
