@@ -155,7 +155,7 @@ function install(app: App) {
     if (env.QQBOT_APPID) {
       ctx.plugin(AdapterQQ, {
         id: env.QQBOT_APPID,
-        secret: env.QQBOT_APPSECRET,
+        secret: env.QQBOT_SECRET,
         type: env.QQBOT_TYPE,
         // Keep off: the adapter writes sender names back by creating a user row
         // for every unknown sender (bypassing the access-control guards), with

@@ -109,7 +109,7 @@ ComfyUI、NovelAI 沿用现有的频道变量（OneBot 群号、QQ 号），在�
 
 ## 本地开发
 
-本地用灰度账号 SILI Noir（`QQBOT_ENTERPRISE_GRAY_*`）实测 `v5`。`v5` 的 QQ 适配器与生产读同一组变量（`QQBOT_APPID`、`QQBOT_APPSECRET`、`QQBOT_TYPE`），本地在 env 里把它们设为 Noir 的值。Noir 只在本地使用：同一个机器人同一时间只能有一条网关连接。
+本地用灰度账号 SILI Noir（`QQBOT_ENTERPRISE_GRAY_*`）实测 `v5`。`v5` 的 QQ 适配器与生产读同一组变量（`QQBOT_APPID`、`QQBOT_SECRET`、`QQBOT_TYPE`），本地在 env 里把它们设为 Noir 的值。Noir 只在本地使用：同一个机器人同一时间只能有一条网关连接。
 
 ## 验证
 
