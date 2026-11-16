@@ -127,9 +127,13 @@ export default class QQBotService extends Service {
     ctx.on('ready', () => this.reload())
     ctx.setInterval(() => this.reload(), 30 * Time.second)
     ctx.middleware((session, next) => this.gate(session, next), true)
-    ctx.on('before-send', (out, options) =>
-      this.rewriteAssignReply(out, options)
-    )
+    ctx.on('before-send', (out, options) => {
+      // The OneBot account only answers bind codes and @-mentions during the
+      // migration window. Sends with no source session (broadcasts: GitHub,
+      // schedules) are cancelled; migrated groups get them via the QQ bot.
+      if (out.platform === 'onebot' && !options?.session) return true
+      return this.rewriteAssignReply(out, options)
+    })
   }
 
   /** Re-read activation, DM permissions and ops from the database. */
