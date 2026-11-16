@@ -18,6 +18,15 @@ export function factsOf(session: Session): SessionFacts {
 }
 
 /**
+ * Whether the sender is another bot. The QQ adapter drops `author.bot` when
+ * decoding group messages, so read it from the raw event.
+ */
+export function isFromBot(session: Session): boolean {
+  const raw = session.event._data
+  return !!(raw?.d?.author?.bot ?? raw?.author?.bot)
+}
+
+/**
  * In-memory served state. Every decision on the hot path (gate, served ctx
  * filter, autoAuthorize) must be synchronous, so this mirrors the database:
  * loaded on start, reloaded periodically, and updated in place by whoever

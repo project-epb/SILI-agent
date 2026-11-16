@@ -34,7 +34,7 @@ import {
   migrationNotice,
   oldAccountNotice,
 } from './migration'
-import { ServedState, factsOf } from './state'
+import { ServedState, factsOf, isFromBot } from './state'
 import { defineTables } from './tables'
 
 export { ServedState } from './state'
@@ -177,6 +177,11 @@ export default class QQBotService extends Service {
       if (!(await this.ctx.channelMessageHistory.record(session))) return
       if (!session.isDirect) void this.deliverPendingNotice(session)
     }
+
+    // Other bots' messages stay in the history (LLM context) but reach no
+    // plugin: their markdown headings start with the non-prod teach prefix
+    // `#`, and bots answering bots loop.
+    if (guarded && isFromBot(session)) return
 
     const result = await next()
     if (
