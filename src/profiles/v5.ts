@@ -297,7 +297,15 @@ function install(app: App) {
     ctx.plugin(PluginExplorer)
     ctx.plugin(PluginInsight)
     ctx.plugin(PluginLogger)
-    ctx.plugin(PluginStatus)
+    // Login events have no channel, but Status needs them to initialize and dispose bot counters.
+    ctx
+      .union(
+        ({ type }) =>
+          type === 'login-added' ||
+          type === 'login-removed' ||
+          type === 'login-updated'
+      )
+      .plugin(PluginStatus)
     ctx.plugin(PluginSandbox)
     ctx.plugin(PluginLlmDashboard)
     ctx.plugin(PluginLlmAdmin)
