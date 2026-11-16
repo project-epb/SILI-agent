@@ -77,9 +77,14 @@ const Page = defineComponent({
         ]),
         h('p', { class: 'fb-summary' }, r.summary),
         h('blockquote', { class: 'fb-original' }, r.original),
-        h('div', { class: 'fb-dim' },
-          `#${r.id} · ${when(r.createdAt)} · UID ${r.uid} · ${r.platform}:${r.userId}` +
-          (r.channelId ? ` · 群 ${r.channelId}` : ' · 私聊')),
+        h('div', { class: 'fb-dim' }, [
+          `#${r.id} · ${when(r.createdAt)} · `,
+          h('span', { title: `${r.platform}:${r.userId}` }, `${r.userName || '未知用户'}（UID ${r.uid}）`),
+          ' · ',
+          r.channelId
+            ? h('span', { title: r.channelId }, r.channelName || '未知群')
+            : '私聊',
+        ]),
       ])
 
     const pager = () => {

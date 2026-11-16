@@ -45,6 +45,8 @@ declare module 'koishi' {
 
 interface FeedbackRow extends Omit<Feedback, 'createdAt'> {
   createdAt: number
+  channelName: string
+  userName: string
 }
 
 declare module '@koishijs/console' {
@@ -176,8 +178,36 @@ export function apply(ctx: Context) {
         // $.sum(1) groups to a plain counter; $.count / $.length build arrays.
         ctx.database.select('feedback', query).execute(() => $.sum(1)),
       ])
+      // Names are looked up at read time: openids alone tell a reader nothing.
+      const [channels, users, accounts] = await Promise.all([
+        ctx.database.get(
+          'qqbot_channel',
+          { id: [...new Set(rows.map((r) => r.channelId).filter(Boolean))] },
+          ['id', 'name']
+        ),
+        ctx.database.get(
+          'qqbot_user',
+          { id: [...new Set(rows.map((r) => r.userId))] },
+          ['id', 'name']
+        ),
+        ctx.database.get(
+          'user',
+          { id: [...new Set(rows.map((r) => r.uid))] },
+          ['id', 'name']
+        ),
+      ])
+      const nameOf = (list: { id: string | number; name: string }[]) =>
+        new Map(list.map((x) => [x.id, x.name]))
+      const channelName = nameOf(channels)
+      const userName = nameOf(users)
+      const accountName = nameOf(accounts)
       return {
-        rows: rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt).valueOf() })),
+        rows: rows.map((r) => ({
+          ...r,
+          createdAt: new Date(r.createdAt).valueOf(),
+          channelName: channelName.get(r.channelId) ?? '',
+          userName: userName.get(r.userId) || accountName.get(r.uid) || '',
+        })),
         total,
       }
     },
