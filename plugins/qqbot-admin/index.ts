@@ -389,7 +389,7 @@ export function apply(ctx: Context) {
   ctx.console.addListener(
     'qqbot-admin/refresh-group',
     async ({ selfId, id }) => {
-      await ctx.qqbot.metadata.refreshGroup(selfId, id)
+      await ctx.qqbot.metadata.queueRefresh(selfId, id)
       return { ok: true }
     },
     { authority: AUTH }

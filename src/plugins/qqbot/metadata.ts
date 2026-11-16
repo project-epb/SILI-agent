@@ -46,7 +46,7 @@ export class MetadataRecorder {
   private members = new Map<string, MemberDelta>()
   /** Groups known to exist in qqbot_channel; first sight triggers an info refresh. */
   private knownGroups = new Set<string>()
-  private refreshQueue: Array<[string, string]> = []
+  private refreshQueue: Array<[string, string, () => void]> = []
   private refreshing = false
 
   constructor(
@@ -77,6 +77,18 @@ export class MetadataRecorder {
     ctx.on('group-msg-receive' as any, (session: Session) =>
       this.setRejected(session, false)
     )
+    // Docs list GROUP_MSG_REJECT/RECEIVE as the only permission events; log
+    // every other non-message group event to learn what else QQ reports.
+    ctx.on('internal/session', (session) => {
+      const type = session.event?._type
+      if (
+        typeof type === 'string' &&
+        type.startsWith('qq/group-') &&
+        !type.endsWith('message-create')
+      ) {
+        this.logger.info('event %s %o', type, session.event._data)
+      }
+    })
   }
 
   record(session: Session) {
@@ -242,15 +254,23 @@ export class MetadataRecorder {
   }
 
   /**
-   * The bot was removed: forget the activation too, so that whoever adds it
-   * back later does not inherit a served group.
+   * The bot was removed: forget the activation and the first-activation
+   * notice too. Whoever adds it back later does not inherit a served group,
+   * and gets the notice again, since QQ resets the bot's permissions on re-add.
    */
   private async onGuildRemoved(session: Session) {
     if (!GUARDED_PLATFORMS.has(session.platform) || !session.guildId) return
     const { selfId, guildId, platform } = session
     try {
       await this.ctx.database.upsert('qqbot_channel', [
-        { selfId, id: guildId, platform, removedAt: new Date() },
+        {
+          selfId,
+          id: guildId,
+          platform,
+          removedAt: new Date(),
+          noticeSentAt: null,
+          noticePending: false,
+        },
       ])
       await this.ctx.database.set(
         'channel',
@@ -275,22 +295,30 @@ export class MetadataRecorder {
           recvRejected: rejected,
         },
       ])
+      this.queueRefresh(session.selfId, id)
     } catch (error) {
       this.logger.warn('group-msg-reject/receive', error)
     }
   }
 
+  /**
+   * The only way to refresh a group: the group info APIs are rate limited,
+   * so every caller goes through this queue. Resolves once the row is saved.
+   */
   queueRefresh(selfId: string, groupId: string) {
-    this.refreshQueue.push([selfId, groupId])
-    if (!this.refreshing) void this.drainRefreshQueue()
+    return new Promise<void>((done) => {
+      this.refreshQueue.push([selfId, groupId, done])
+      if (!this.refreshing) void this.drainRefreshQueue()
+    })
   }
 
   private async drainRefreshQueue() {
     this.refreshing = true
     try {
       while (this.refreshQueue.length) {
-        const [selfId, groupId] = this.refreshQueue.shift()!
+        const [selfId, groupId, done] = this.refreshQueue.shift()!
         await this.refreshGroup(selfId, groupId)
+        done()
         await new Promise((resolve) => setTimeout(resolve, REFRESH_SPACING_MS))
       }
     } finally {
@@ -299,7 +327,7 @@ export class MetadataRecorder {
   }
 
   /** Pull group name / member count and the bot's state in the group. */
-  async refreshGroup(selfId: string, groupId: string) {
+  private async refreshGroup(selfId: string, groupId: string) {
     const bot = this.ctx.bots.find(
       (b: Bot) => b.platform === 'qq' && b.selfId === selfId
     ) as any

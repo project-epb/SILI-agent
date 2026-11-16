@@ -53,6 +53,9 @@ const GROUP_COMMANDS = ['assign', GROUP_MIGRATE_COMMAND]
 /** Allowed in unserved DMs (with their aliases). */
 const DM_COMMANDS = ['bind']
 
+const PERMISSION_HINT =
+  '💡 群主或管理员可以在群设置的机器人页为 SILI 打开「获取群内全部消息」和「发送主动消息」，订阅推送等功能需要它们。'
+
 function commandWords(app: Context, names: string[]) {
   const words = new Set<string>()
   for (const name of names) {
@@ -358,13 +361,15 @@ export default class QQBotService extends Service {
   ) {
     if (!this.options.migrationWindow || platform !== 'qq') return
     try {
+      // The stored bot state dates from when the bot joined; read it fresh.
+      await this.metadata.queueRefresh(selfId, channelId)
       const [row] = await this.ctx.database.get(
         'qqbot_channel',
         { selfId, id: channelId },
         ['noticeSentAt', 'allowProactive']
       )
       if (row?.noticeSentAt) return
-      const text = await this.noticeText(channelId)
+      const text = await this.noticeText(selfId, channelId)
       if (via) {
         await via.send(text)
         return this.markNoticeSent(selfId, channelId)
@@ -451,7 +456,9 @@ export default class QQBotService extends Service {
     if (!this.pendingNotice.has(key)) return
     this.pendingNotice.delete(key)
     try {
-      await session.send(await this.noticeText(session.channelId))
+      await session.send(
+        await this.noticeText(session.selfId, session.channelId)
+      )
       await this.markNoticeSent(session.selfId, session.channelId)
     } catch (error) {
       this.pendingNotice.add(key)
@@ -459,12 +466,21 @@ export default class QQBotService extends Service {
     }
   }
 
-  private async noticeText(channelId: string) {
-    const migrated = await this.ctx.database.get('qqbot_migration', {
-      kind: 'group',
-      newId: channelId,
-    })
-    return migrationNotice(migrated.length > 0)
+  /** The permission hint rides on this one-time notice only; never nag again. */
+  private async noticeText(selfId: string, channelId: string) {
+    const [migrated, [row]] = await Promise.all([
+      this.ctx.database.get('qqbot_migration', {
+        kind: 'group',
+        newId: channelId,
+      }),
+      this.ctx.database.get('qqbot_channel', { selfId, id: channelId }, [
+        'recvSetting',
+        'allowProactive',
+      ]),
+    ])
+    const text = migrationNotice(migrated.length > 0)
+    if (row?.recvSetting === 'all' && row.allowProactive) return text
+    return `${text}\n${PERMISSION_HINT}`
   }
 
   private async markNoticeSent(selfId: string, id: string) {
