@@ -1,4 +1,4 @@
-import { Binding, Context, Session } from 'koishi'
+import { Binding, Context, Session, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
@@ -15,6 +15,7 @@ export default class PluginAbout extends BasePlugin {
       .alias('自我介绍', '关于')
       .action(async ({ session }) => {
         const masterPid = await this.getMasterPlatformId(session as Session)
+        if (session!.platform === 'qq') return this.qqMarkdown(masterPid)
         return (
           <>
             <img src="https://r2.epb.wiki/avatar/SILI.jpg" />
@@ -48,6 +49,35 @@ export default class PluginAbout extends BasePlugin {
           </>
         )
       })
+  }
+
+  /**
+   * QQ groups render an @ only inside a Markdown message, and only in the
+   * `<qqbot-at-user>` form; `<@id>` is deprecated. An image in the same
+   * message would turn it into a media message, so the avatar goes in as
+   * Markdown too. Attribute values of `qqbot-*` tags must be URL-encoded.
+   */
+  qqMarkdown(masterPid: string) {
+    const master = masterPid
+      ? `<qqbot-at-user id="${masterPid}" />`
+      : `@${this.#masterName}`
+    const help = `<qqbot-cmd-input text="${encodeURIComponent('/help')}" show="${encodeURIComponent('帮助')}" />`
+    return h(
+      'markdown',
+      h.text(
+        [
+          '![SILI #160px #160px](https://r2.epb.wiki/avatar/SILI.jpg)',
+          '## ✨ 自我介绍',
+          '您好，我的名字是 The data transmission network with Spatiotemporal Isomorphic and Limitless Interdimensional',
+          '鉴于很少有人能喊对我的全名，我建议您简单称我为 SILI',
+          `我目前隶属于万界规划局项目组，直属上司为 ${master}。`,
+          '## ⚡ 更多信息',
+          `点击 ${help} 查看帮助信息`,
+          '——或者你也可以艾特我后直接输入问题，并以问号结尾，直截了当地提出问题～',
+          '开源地址（记得点✨哦）：[project-epb/SILI-agent](https://github.com/project-epb/SILI-agent)',
+        ].join('\n\n')
+      )
+    )
   }
 
   async getMasterPlatformId(session: Session) {
