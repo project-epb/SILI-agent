@@ -87,3 +87,5 @@
 .qa-flags { margin-top: 0.25rem; }
 .qa-flags .qa-badge { margin: 0 0.3rem 0 0; }
 .qa-badge.is-warn { color: var(--k-color-danger, #e0533d); border-color: currentColor; }
+.qa-pager { display: flex; align-items: center; justify-content: center; gap: 0.8rem; flex-shrink: 0; }
+.qa-pager.is-small { justify-content: flex-start; margin-top: 0.4rem; }

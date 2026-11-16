@@ -74,29 +74,58 @@ const STATUS_OPTIONS = [
   ['inactive', '未激活'],
 ]
 
+const PAGE_SIZE = 50
+
+/** Prev / next with a page counter; hidden when everything fits on one page. */
+function pager(page, total, onGo, small = false) {
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  if (pages <= 1) return null
+  return h('div', { class: `qa-pager ${small ? 'is-small' : ''}` }, [
+    h('button', {
+      class: 'qa-btn is-plain',
+      disabled: page <= 1,
+      onClick: () => onGo(page - 1),
+    }, '上一页'),
+    h('span', { class: 'qa-dim' }, `第 ${page} / ${pages} 页，共 ${total} 条`),
+    h('button', {
+      class: 'qa-btn is-plain',
+      disabled: page >= pages,
+      onClick: () => onGo(page + 1),
+    }, '下一页'),
+  ])
+}
+
 /** Speakers of a group, or groups of a user (qqbot_member). */
 const Members = defineComponent({
   props: { selfId: String, channelId: String, userId: String },
   setup(props) {
     const rows = ref(null)
+    const total = ref(0)
+    const page = ref(1)
     const err = ref('')
-    onMounted(async () => {
+    const load = async (p = page.value) => {
       try {
-        rows.value = await send('qqbot-admin/members', {
+        const res = await send('qqbot-admin/members', {
           selfId: props.selfId,
           channelId: props.channelId,
           userId: props.userId,
+          page: p,
+          pageSize: PAGE_SIZE,
         })
+        rows.value = res.rows
+        total.value = res.total
+        page.value = p
       } catch (e) {
         err.value = String(e?.message ?? e)
       }
-    })
+    }
+    onMounted(() => load(1))
     return () => {
       if (err.value) return h('p', { class: 'qa-err' }, err.value)
       if (!rows.value) return h('p', { class: 'qa-dim' }, '加载中…')
       if (!rows.value.length) return h('p', { class: 'qa-dim' }, '没有记录。')
       const byGroup = !!props.channelId
-      return h('table', { class: 'qa-sub' }, [
+      return h('div', [h('table', { class: 'qa-sub' }, [
         h('thead', h('tr', [
           h('th', byGroup ? '成员' : '群'),
           h('th', '首次'),
@@ -113,7 +142,7 @@ const Members = defineComponent({
             h('td', r.messageCount),
           ])
         )),
-      ])
+      ]), pager(page.value, total.value, load, true)])
     }
   },
 })
@@ -124,30 +153,33 @@ const Page = defineComponent({
     const status = ref('all')
     const q = ref('')
     const rows = ref([])
+    const total = ref(0)
+    const page = ref(1)
     const loading = ref(false)
     const err = ref('')
     const expanded = ref('')
     const busy = ref('')
 
-    const load = async () => {
+    const load = async (p = page.value) => {
       loading.value = true
       err.value = ''
       try {
-        rows.value = await send(
+        const res = await send(
           tab.value === 'groups' ? 'qqbot-admin/groups' : 'qqbot-admin/users',
-          { status: status.value, q: q.value }
+          { status: status.value, q: q.value, page: p, pageSize: PAGE_SIZE }
         )
+        rows.value = res.rows
+        total.value = res.total
+        page.value = p
+        expanded.value = ''
       } catch (e) {
         err.value = String(e?.message ?? e)
       } finally {
         loading.value = false
       }
     }
-    onMounted(load)
-    watch([tab, status], () => {
-      expanded.value = ''
-      load()
-    })
+    onMounted(() => load(1))
+    watch([tab, status], () => load(1))
 
     const act = async (key, event, payload) => {
       busy.value = key
@@ -184,9 +216,9 @@ const Page = defineComponent({
           placeholder: tab.value === 'groups' ? '群名或 openid' : '名称、openid 或账号',
           value: q.value,
           onInput: (e) => (q.value = e.target.value),
-          onKeydown: (e) => e.key === 'Enter' && load(),
+          onKeydown: (e) => e.key === 'Enter' && load(1),
         }),
-        h('button', { class: 'qa-btn', disabled: loading.value, onClick: load }, loading.value ? '加载中…' : '刷新'),
+        h('button', { class: 'qa-btn', disabled: loading.value, onClick: () => load(1) }, loading.value ? '加载中…' : '搜索 / 刷新'),
       ])
 
     const groupTable = () =>
@@ -319,6 +351,7 @@ const Page = defineComponent({
           rows.value.length
             ? h('div', { class: 'qa-card' }, tab.value === 'groups' ? groupTable() : userTable())
             : h('p', { class: 'qa-dim qa-empty' }, loading.value ? '加载中…' : '没有记录。'),
+          pager(page.value, total.value, load),
         ]),
       })
     }
