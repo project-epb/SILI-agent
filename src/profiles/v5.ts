@@ -340,13 +340,10 @@ function install(app: App) {
     ctx.plugin(PluginToImage)
     ctx.plugin(PluginWebShot)
     ctx.plugin(PluginMediawiki, mediawikiConfig())
-  })
-
-  // 用了官方 bot 不支持的合并转发：先只对 qq 平台屏蔽，其他平台照常
-  servedNotQQ.plugin(function PluginCollectionForwardMessages(ctx) {
-    ctx.plugin(PluginCanIUse)
     ctx.plugin(PluginPixiv, pixivConfig(env))
   })
+
+  servedNotQQ.plugin(PluginCanIUse)
 
   // Internal utils
   served.plugin(function PluginCollectionInternal(ctx) {

@@ -8,8 +8,24 @@ import { Context, Time, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
-import { BulkMessageBuilder } from '$utils/BulkMessageBuilder'
 import { Fexios } from 'fexios'
+
+function illustrationReply(
+  messageId: string | undefined,
+  imageUrl: string,
+  lines: (string | null | undefined)[]
+) {
+  const text = lines
+    .map((line) => line?.trim().replace(/\n+/g, '\n'))
+    .filter(Boolean)
+    .join('\n')
+  // QQ flushes pending text before attaching an image. Put the caption last.
+  return [
+    ...(messageId ? [h.quote(messageId)] : []),
+    h.image(imageUrl),
+    h.text(text),
+  ]
+}
 
 const defaultConfigs = {
   apiBaseURL: 'https://www.pixiv.net',
@@ -107,24 +123,20 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
           .replace(/<\/?.+?>/g, '')
         const allTags = info.tags.tags.map((i: any) => `#${i.tag}`)
 
-        const builder = new BulkMessageBuilder(session)
-        builder.prependOriginal()
-        const lines = [
-          h.image(this.makePximgURL(imageUrl)),
-          totalImages ? `第 ${selectedPage} 张，共 ${totalImages} 张` : null,
-          `${info.title}`,
-          desc.length > 500 ? desc.substring(0, 500) + '...' : desc,
-          `作者: ${info.userName} (ID: ${info.userId})`,
-          `👍${info.likeCount} ❤️${info.bookmarkCount} 👀${info.viewCount}`,
-          `发布时间: ${new Date(info.createDate).toLocaleString()}`,
-          allTags.length ? allTags.join(' ') : null,
-          new URL(`/i/${id}`, this.config.webBaseURL).href,
-        ].map((i) =>
-          typeof i === 'string' ? i.trim().replace(/\n+/g, '\n') : i
+        return illustrationReply(
+          session.messageId,
+          this.makePximgURL(imageUrl),
+          [
+            totalImages ? `第 ${selectedPage} 张，共 ${totalImages} 张` : null,
+            `${info.title}`,
+            desc.length > 500 ? desc.substring(0, 500) + '...' : desc,
+            `作者: ${info.userName} (ID: ${info.userId})`,
+            `👍${info.likeCount} ❤️${info.bookmarkCount} 👀${info.viewCount}`,
+            `发布时间: ${new Date(info.createDate).toLocaleString()}`,
+            allTags.length ? allTags.join(' ') : null,
+            new URL(`/i/${id}`, this.config.webBaseURL).href,
+          ]
         )
-        lines.forEach((i) => builder.botSay(i))
-
-        return builder.all()
       })
 
     ctx
@@ -152,18 +164,11 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
 
         const { imageBig, userId, name, comment } = data
 
-        const builder = new BulkMessageBuilder(session)
-        builder.prependOriginal()
-        const lines = [
-          h.image(this.makePximgURL(imageBig)),
-          `${name} (${userId})`,
-          comment,
-        ].map((i) =>
-          typeof i === 'string' ? i.trim().replace(/\n+/g, '\n') : i
+        return illustrationReply(
+          session.messageId,
+          this.makePximgURL(imageBig),
+          [`${name} (${userId})`, comment]
         )
-        lines.forEach((i) => builder.botSay(i))
-
-        return builder.all()
       })
   }
 
