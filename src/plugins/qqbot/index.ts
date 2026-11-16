@@ -137,6 +137,7 @@ export default class QQBotService extends Service {
       // migration window. Sends with no source session (broadcasts: GitHub,
       // schedules) are cancelled; migrated groups get them via the QQ bot.
       if (out.platform === 'onebot' && !options?.session) return true
+      passiveFallback(out, options)
       return this.rewriteAssignReply(out, options)
     })
   }
@@ -488,6 +489,33 @@ export default class QQBotService extends Service {
       { selfId, id, noticeSentAt: new Date(), noticePending: false },
     ])
   }
+}
+
+/** QQ allows this many passive replies to one user message. */
+const PASSIVE_REPLY_LIMIT = 5
+const MEDIA_TYPES = new Set(['img', 'image', 'video', 'audio', 'file'])
+
+/**
+ * Past the passive reply limit, qq-crack still sends with the same msg_id and
+ * QQ rejects it: the message is lost. Send those as proactive messages instead
+ * by handing the encoder a source session without messageId or event id.
+ *
+ * qq-crack counts passive replies in `session.seq`, one per flush, and each
+ * media element flushes on its own: a send needs (media count + 1) of them.
+ * The whole send goes proactive if it would not fit.
+ */
+export function passiveFallback(out: Session, options: any) {
+  const source: Session | undefined = options?.session
+  if (!source || source.platform !== 'qq' || !source.messageId) return
+  const used: number = (source as any).seq ?? 0
+  const media = h
+    .select(out.elements ?? [], [...MEDIA_TYPES].join(','))
+    .length
+  if (used + media + 1 <= PASSIVE_REPLY_LIMIT) return
+  options.session = Object.create(source, {
+    messageId: { value: undefined },
+    qq: { value: undefined },
+  })
 }
 
 /** Filter for the served context of a profile. */
