@@ -16,8 +16,10 @@ const PANEL_REMARK = 'sili-group'
 /** Keep it short: personal, spammy commands (profile, pixiv…) stay off. */
 export const GROUP_PANEL = [
   { name: '/help', desc: '查看指令列表' },
+  { name: '/about', desc: '关于 SILI' },
   { name: '/wiki', desc: '查询 wiki 页面' },
   { name: '/whoasked', desc: '谁艾特我？' },
+  { name: '/github', desc: 'GitHub 相关功能' },
   { name: '/sticker', desc: '生成表情包' },
   { name: '/dice', desc: '掷骰子' },
   { name: '/search', desc: '搜图片' },

@@ -51,20 +51,25 @@ export default class PluginAbout extends BasePlugin {
   }
 
   async getMasterPlatformId(session: Session) {
-    if (this.#masterPidCache.has(session.platform)) {
-      return this.#masterPidCache.get(session.platform)
-    }
-    const [binding] = await session.app.database
-      .get('binding', {
-        aid: this.#masterUid,
-        platform: session.platform,
-      })
+    // QQ openids differ per bot application, so cache per bot.
+    const key = `${session.platform}:${session.selfId}`
+    if (this.#masterPidCache.has(key)) return this.#masterPidCache.get(key)
+    const db = session.app.database
+    const bindings = await db
+      .get('binding', { aid: this.#masterUid, platform: session.platform })
       .catch(() => [] as Binding[])
-    if (binding) {
-      this.#masterPidCache.set(session.platform, binding.pid)
-      return binding.pid
-    } else {
-      return ''
+    let pid = bindings[0]?.pid ?? ''
+    if (bindings.length > 1 && session.platform === 'qq') {
+      // Several QQ openids (one per bot app ever bound): use the one this bot has seen.
+      const [seen] = await db
+        .get('qqbot_user' as any, {
+          selfId: session.selfId,
+          id: bindings.map((b) => b.pid),
+        })
+        .catch(() => [] as { id: string }[])
+      if (seen) pid = (seen as { id: string }).id
     }
+    if (pid) this.#masterPidCache.set(key, pid)
+    return pid
   }
 }

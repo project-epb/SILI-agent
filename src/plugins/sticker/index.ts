@@ -4,7 +4,7 @@
  * @desc 生成表情包
  * @authority 1
  */
-import { Context } from 'koishi'
+import { Command, Context } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
@@ -18,7 +18,17 @@ import 黑橙网站 from './黑橙网站'
 export default class PluginSticker extends BasePlugin {
   constructor(ctx: Context) {
     super(ctx, {}, 'sticker')
-    ctx.command('sticker', '生成表情包！').alias('表情包')
+    const sticker = ctx.command('sticker', '生成表情包！').alias('表情包')
+    // koishi-plugin-manosaba-memes is a sticker pack too: list it under
+    // sticker. Re-parent the existing instance; `ctx.command('sticker/manosaba')`
+    // would also move its caller context to this plugin.
+    const adopt = (command: Command) => {
+      if (command.name === 'manosaba' && command.parent !== sticker)
+        command.parent = sticker
+    }
+    const manosaba = ctx.$commander.get('manosaba')
+    if (manosaba) adopt(manosaba)
+    ctx.on('command-added', adopt)
     // all stickers
     ctx.plugin(加油)
     ctx.plugin(梅因说)
