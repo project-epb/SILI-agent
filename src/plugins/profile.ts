@@ -22,6 +22,8 @@ const PLATFORM_NAMES: Record<string, string> = {
 }
 
 export default class PluginProfile extends BasePlugin {
+  static inject = ['database']
+
   constructor(ctx: Context) {
     super(ctx, null, 'profile')
 
