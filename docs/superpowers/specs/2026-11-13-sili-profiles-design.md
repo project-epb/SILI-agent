@@ -69,11 +69,11 @@ interface Profile {
 - LLM（含 Gelbooru）、GitHub
 - 控制台：Console、Auth、Status、Logger、LlmDashboard、LlmAdmin
 - 内部：HTMLService、FallbackHandler、SilentSwitch、PatchCallme、PiggybackService、DatabaseAdmin、Homo、Reboot、SensitiveFilter、Spawn
-- 访问控制 spec 的全部内容：守卫、消息存储 `qqbot_message`、元数据表、`qqbot-admin` 页面
+- 访问控制 spec 的全部内容：守卫、统一消息存储 `channel_message`、元数据表、`qqbot-admin` 页面
 
 ### 阶段二：频道管理器完成后
 
-装回所有**不依赖 OneBot 专属 API** 的插件，包括 Dialogue 问答库、MessagesLogger（其他平台的文件日志；`qq` 平台由 `qqbot_message` 记录）、控制台其余插件（Analytics、Dataview、Explorer、Insight、Sandbox）、ComfyUI、NovelAI、Broadcast、Schedule、ImageSearch、Basedata、ManosabaMemes、PowerUser、PluginMinecraft。
+装回所有**不依赖 OneBot 专属 API** 的插件，包括 Dialogue 问答库、统一消息记录及收发日志、控制台其余插件（Analytics、Dataview、Explorer、Insight、Sandbox）、ComfyUI、NovelAI、Broadcast、Schedule、ImageSearch、Basedata、ManosabaMemes、PowerUser、PluginMinecraft。
 
 Can I Use 只在非 `qq` 平台注册。Pixiv 在已服务上下文中注册，作品和用户查询回复一张图片及正文。MediaWiki 在已服务上下文中注册，官方 QQ 的页面查询和搜索结果用一条原生 Markdown 回复，超长时按完整条目省略。搜索结果包含标题、链接和可用的摘要。通用的 `BulkMessageBuilder` 仅在 OneBot 上发送合并转发，其他平台发送普通消息。
 
@@ -83,7 +83,6 @@ ComfyUI、NovelAI 沿用现有的频道变量（OneBot 群号、QQ 号），在�
 
 依赖 OneBot 专属 API，或在 `qq` 平台上需要改写的部分，逐个决定适配、改写还是移除：
 
-- who-asked（`qq` 平台改读 `qqbot_message`）、LLM 的 `read_channel_history`（`qq` 平台改读 `qqbot_message`）
 - GuildRequestFirewall（改用官方的入群申请接口）
 - repeater、sili-name、mute、QQNT 表情回应、MinecraftConnect、version、Debug、FixQQSendLinks、Autowithdraw、ProcessErrorHandler 的通知部分
 

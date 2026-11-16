@@ -35,7 +35,6 @@ import {
   oldAccountNotice,
 } from './migration'
 import { ServedState, factsOf } from './state'
-import { MessageStore } from './store'
 import { defineTables } from './tables'
 
 export { ServedState } from './state'
@@ -103,15 +102,12 @@ export interface QQBotConfig {
   state: ServedState
   /** OneBot is loaded for bind codes, and first-activation notices are on. */
   migrationWindow: boolean
-  /** Days to keep stored messages. */
-  retentionDays?: number
 }
 
 export default class QQBotService extends Service {
-  static inject = ['database']
+  static inject = ['database', 'channelMessageHistory']
 
   readonly state: ServedState
-  readonly store: MessageStore
   readonly metadata: MetadataRecorder
   private pendingNotice = new Set<string>()
   /** Last reminder per group (old OneBot account, or unactivated group), by `selfId:channelId`. */
@@ -125,7 +121,6 @@ export default class QQBotService extends Service {
     super(ctx, 'qqbot')
     this.state = options.state
     defineTables(ctx)
-    this.store = new MessageStore(ctx, this.state, options.retentionDays ?? 30)
     this.metadata = new MetadataRecorder(ctx, this.state)
     new MigrationFeatures(ctx, this)
 
@@ -157,7 +152,10 @@ export default class QQBotService extends Service {
   private async gate(session: Session, next: Next) {
     const { platform } = session
     const guarded = GUARDED_PLATFORMS.has(platform)
-    if (!guarded && platform !== 'onebot') return next()
+    if (!guarded && platform !== 'onebot') {
+      if (await this.ctx.channelMessageHistory.record(session)) return next()
+      return
+    }
 
     const facts = factsOf(session)
     const { content, command } = commandOf(session)
@@ -172,7 +170,7 @@ export default class QQBotService extends Service {
 
     if (guarded && isServed(facts, this.state)) {
       // A duplicate push was already handled once.
-      if (!(await this.store.insert(session))) return
+      if (!(await this.ctx.channelMessageHistory.record(session))) return
       if (!session.isDirect) void this.deliverPendingNotice(session)
     }
 

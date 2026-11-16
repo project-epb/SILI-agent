@@ -1,23 +1,5 @@
 import { Context } from 'koishi'
 
-/** Full messages of served qq channels (activated groups, allowed DMs). */
-export interface QQBotMessage {
-  selfId: string
-  /** Group openid, or `private:<openid>` for DMs. */
-  channelId: string
-  messageId: string
-  userId: string
-  username: string
-  isBot: boolean
-  /** Sent by this bot (the platform never pushes the bot's own messages back). */
-  isSelf: boolean
-  content: string
-  /** User ids this message @-mentions. */
-  mentions: string[]
-  quoteId: string
-  time: Date
-}
-
 /** Groups this bot has seen. Metadata only, never message content. */
 export interface QQBotChannel {
   selfId: string
@@ -89,7 +71,6 @@ export interface QQBotMigration {
 
 declare module 'koishi' {
   interface Tables {
-    qqbot_message: QQBotMessage
     qqbot_channel: QQBotChannel
     qqbot_user: QQBotUser
     qqbot_member: QQBotMember
@@ -98,23 +79,6 @@ declare module 'koishi' {
 }
 
 export function defineTables(ctx: Context) {
-  ctx.model.extend(
-    'qqbot_message',
-    {
-      selfId: 'string(64)',
-      channelId: 'string(128)',
-      messageId: 'string(255)',
-      userId: 'string(64)',
-      username: 'string(255)',
-      isBot: 'boolean',
-      isSelf: 'boolean',
-      content: 'text',
-      mentions: 'list',
-      quoteId: 'string(255)',
-      time: 'timestamp',
-    },
-    { primary: ['selfId', 'channelId', 'messageId'] }
-  )
   ctx.model.extend(
     'qqbot_channel',
     {

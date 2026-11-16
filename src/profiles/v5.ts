@@ -16,7 +16,6 @@ import process from 'node:process'
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import { logProcessErrors } from '@/bootstrap'
 import FallbackHandler from '@/modules/FallbackHandler'
-import MessagesLogger from '@/modules/MessagesLogger'
 import SilentSwitch from '@/modules/SilentSwitch'
 import { PluginCollectionDialogue } from '@/profiles/shared/dialogue'
 import { installNovelAI } from '@/profiles/shared/novelai'
@@ -33,6 +32,7 @@ import {
 } from '@/profiles/shared/plugin-configs'
 import type { Profile } from '@/profiles/types'
 import PiggybackService from '@/services/PiggybackService'
+import ChannelMessageHistory from '@/services/channel-message-history'
 import HTMLService from '@/services/html'
 
 import PluginAbout from '~/about'
@@ -65,6 +65,7 @@ import PluginSpawn from '~/spawn'
 import PluginSticker from '~/sticker'
 import PluginToImage from '~/to-image'
 import PluginWebShot from '~/webshot'
+import PluginWhoAsked from '~/who-asked'
 
 import AdapterDingtalk from '@koishijs/plugin-adapter-dingtalk'
 import AdapterDiscord from '@koishijs/plugin-adapter-discord'
@@ -243,6 +244,17 @@ function install(app: App) {
     }
   })
 
+  app.plugin(ChannelMessageHistory, {
+    isServed: (session, outgoing) =>
+      outgoing && session.isDirect && isQQ(session)
+        ? state.isDmAllowed(
+            session.platform,
+            session.selfId,
+            session.channelId?.replace(/^private:/, '') ?? ''
+          )
+        : state.isServedSession(session),
+  })
+
   // 访问控制与迁移入口：必须在已服务上下文之外，未激活的群和陌生私聊也要能用到
   // assign、bind 和群迁移命令。
   app.plugin(function PluginCollectionAccess(ctx) {
@@ -320,7 +332,10 @@ function install(app: App) {
       env.CHANNEL_QQ_NGNL_COMMON,
       env.CHANNEL_QQ_IPE,
     ])
-    ctx.plugin(PluginLLM, llmConfig(env))
+    ctx.inject(['channelMessageHistory'], (ctx) => {
+      ctx.plugin(PluginLLM, llmConfig(env))
+      ctx.plugin(PluginWhoAsked)
+    })
     // 同上：放行的频道仍是 OneBot 的群号与 QQ 号，待改配置
     ctx.plugin(
       PluginComfyUI,
@@ -360,9 +375,6 @@ function install(app: App) {
     ctx.plugin(PluginSensitiveFilter)
     ctx.plugin(PluginSpawn)
   })
-
-  // 文件日志：qq 平台的消息由 qqbot_message 记录
-  servedNotQQ.plugin(MessagesLogger)
 }
 
 const v5: Profile = { appOptions, install }

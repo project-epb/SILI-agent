@@ -21,19 +21,36 @@ interface MentionLog {
 }
 
 export default class PluginWhoAsked extends BasePlugin {
-  static inject = ['database']
+  static inject = {
+    database: { required: true },
+    channelMessageHistory: { required: false },
+  }
 
   constructor(ctx: Context) {
     super(ctx, {}, 'who_asked')
-    this.initDatabase()
-    ctx.on('message', this.onMessage.bind(this))
+    const history = ctx.channelMessageHistory
+    if (!history) {
+      this.initDatabase()
+      ctx.on('message', this.onMessage.bind(this))
+    }
 
     ctx
       .command('whoasked', '谁艾特我？', { minInterval: 10 * 1000 })
       .alias('谁艾特我', '谁@我', '谁at我')
       .action(async ({ session }) => {
         const dayAgo = Date.now() - 86400000
-        const log = await this.findLastMention(session, dayAgo)
+        const log = history
+          ? await history
+              .lastMention(session, new Date(dayAgo))
+              .then(
+                (row) =>
+                  row && {
+                    messageId: row.messageId,
+                    author: row.userId,
+                    timestamp: row.time.getTime(),
+                  }
+              )
+          : await this.findLastMention(session, dayAgo)
         if (!log) {
           return '谁问你了？'
         }
@@ -50,23 +67,25 @@ export default class PluginWhoAsked extends BasePlugin {
         )
       })
 
-    ctx
-      .command('whoasked.prune [time]', '清理过期的提及记录', {
-        authority: 3,
-        hidden: true,
-      })
-      .option('silent', '-s 静默模式')
-      .action(async ({ session, options }, time) => {
-        const msg = this.deleteOldLogs(time)
-          .then((res) => `已清理 ${res.removed || 0} 条记录`)
-          .catch((e) => '清理失败：' + e)
-        return options.silent ? '' : msg
-      })
+    if (!history)
+      ctx
+        .command('whoasked.prune [time]', '清理过期的提及记录', {
+          authority: 3,
+          hidden: true,
+        })
+        .option('silent', '-s 静默模式')
+        .action(async ({ session, options }, time) => {
+          const msg = this.deleteOldLogs(time)
+            .then((res) => `已清理 ${res.removed || 0} 条记录`)
+            .catch((e) => '清理失败：' + e)
+          return options.silent ? '' : msg
+        })
 
     ctx.middleware(async (session, next) => {
       // Post-processing middleware: run downstream first, then maybe answer "who asked".
       // Forward the downstream result so a returned Fragment isn't swallowed.
       const result = await next()
+      if (history && session.argv?.command?.name === 'whoasked') return result
       const keywords = ['谁艾特我', '谁@我', '谁at我']
       if (keywords.some((keyword) => session.content.endsWith(keyword))) {
         session.execute({ name: 'whoasked' })

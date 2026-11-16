@@ -1,5 +1,7 @@
 import type { Bot } from 'koishi'
 
+import type ChannelMessageHistory from '@/services/channel-message-history'
+
 import type { ToolDefinition } from '../providers/_base'
 
 import type { ToolHandler } from './types'
@@ -447,6 +449,77 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
         alreadySeenCount: trimmedCount,
         earliestMessageId: toRender[0]?.message_id ?? messages[0]?.message_id,
       })
+    },
+  }
+}
+
+export function buildStoredChannelHistoryHandler(
+  history: ChannelMessageHistory
+): ToolHandler {
+  const parameters = READ_CHANNEL_HISTORY_TOOL.parameters
+  return {
+    definition: {
+      ...READ_CHANNEL_HISTORY_TOOL,
+      description:
+        '查看当前群聊或频道中机器人实际记录到的消息，私聊不可用。需要群聊上下文时使用。可传被引用消息的 ID 作为锚点，或用上次结果给出的 before_message_id 向前翻页。',
+      parameters: {
+        type: 'object',
+        properties: {
+          count: parameters.properties.count,
+          before_message_id: {
+            type: 'string',
+            description:
+              '读取此消息及更早的记录。省略时从触发本轮对话的消息开始。',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+    async execute(args, { session, logger }) {
+      if (session.isDirect || !session.channelId) {
+        return 'Error: read_channel_history 只适用于群聊频道。'
+      }
+      const requested = args?.count
+      const count =
+        typeof requested === 'number' && Number.isFinite(requested)
+          ? Math.min(30, Math.max(1, Math.floor(requested)))
+          : 20
+      const before =
+        typeof args?.before_message_id === 'string'
+          ? args.before_message_id
+          : undefined
+      try {
+        const { messages, nextMessageId } = await history.read(
+          session,
+          count,
+          before
+        )
+        if (!messages.length) return '（当前频道在指定范围内没有记录到消息。）'
+        const header = buildHistoryHeader({
+          channelId: session.channelId,
+          countReturned: messages.length,
+          countRequested: count,
+          earliestTime: messages[0].time.getTime() / 1000,
+          latestTime: messages[messages.length - 1].time.getTime() / 1000,
+        })
+        const lines = messages.map((row) => {
+          const name = (row.username || 'unknown').replace(/[\r\n]+/g, ' ')
+          const sender = `${row.userId}${row.isSelf ? ', self' : ''}`
+          const quote = row.quoteId ? `<quote${attr('id', row.quoteId)}/>` : ''
+          const body = row.content.replace(
+            /(src|url)="(?:base64:|data:)[^"]*"/gi,
+            '$1="[inline media]"'
+          )
+          return `[${formatTime(row.time.getTime() / 1000)}] ${name} (${sender}): ${quote}${body}`
+        })
+        const footer = nextMessageId
+          ? `\n\n（如需更早的消息，下次调用传 before_message_id=${nextMessageId}）`
+          : ''
+        return `${header}\n\n${lines.join('\n')}${footer}`
+      } catch (error) {
+        logger.warn('[read_channel_history] stored query failed:', error)
+        return `Error: ${error instanceof Error ? error.message : String(error)}`
+      }
     },
   }
 }
