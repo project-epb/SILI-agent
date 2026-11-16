@@ -41,6 +41,7 @@ import PluginCanIUse from '~/caniuse'
 import PluginComfyUI from '~/comfy-ui'
 import PluginDatabaseAdmin from '~/dbadmin'
 import PluginDice from '~/dice'
+import PluginFandomJoinVerify from '~/fandom-join-verify'
 import PluginGelbooru from '~/gelbooru'
 import PluginGithub from '~/github'
 import PluginHljs from '~/hljs'
@@ -364,6 +365,11 @@ function install(app: App) {
     ctx.plugin(PluginWebShot)
     ctx.plugin(PluginMediawiki, mediawikiConfig())
     ctx.plugin(PluginPixiv, pixivConfig(env))
+    // Group openids (per bot) whose join requests are verified against Fandom.
+    ctx.plugin(PluginFandomJoinVerify, {
+      channels:
+        env.FANDOM_VERIFY_CHANNELS?.split(',').map((id) => id.trim()) ?? [],
+    })
   })
 
   servedNotQQ.plugin(PluginCanIUse)
