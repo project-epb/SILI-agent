@@ -340,7 +340,7 @@ export default class PluginLLM extends BasePlugin<Config> {
         default:
           process.env.KOISHI_ENV === 'dev'
             ? PluginLLM.readPromptFile('Noir.prompt.md')
-            : PluginLLM.readPromptFile('SILI-v6.prompt.md'),
+            : PluginLLM.readPromptFile('SILI-v7.prompt.md'),
       },
     }
     config = {
