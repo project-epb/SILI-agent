@@ -1,4 +1,4 @@
-import { defineComponent, h, onMounted, ref, watch } from '../vue.js'
+import { defineComponent, h, onMounted, ref, resolveComponent, watch } from '../vue.js'
 import { icons, send } from '../client.js'
 
 function when(ts) {
@@ -14,6 +14,20 @@ function short(id) {
 function badge(text, cls = '') {
   return h('span', { class: `qa-badge ${cls}` }, text)
 }
+function statusPill(on, onText = '已激活', offText = '未激活') {
+  return h('span', { class: `qa-pill ${on ? 'is-on' : ''}` }, on ? onText : offText)
+}
+function idCell(name, id, extra = []) {
+  return [
+    h('div', { class: 'qa-name' }, name),
+    h('div', { class: 'qa-id', title: id }, short(id)),
+    extra.some(Boolean) ? h('div', { class: 'qa-flags' }, extra) : null,
+  ]
+}
+const ROLE_LABELS = { owner: '群主', admin: '管理员', member: '成员' }
+// recv_msg_setting from the group bot_state API
+const RECV_LABELS = { all: '全部消息', at: '仅 @' }
+const actions = (children) => h('td', h('div', { class: 'qa-actions' }, children))
 
 const STATUS_OPTIONS = [
   ['all', '全部'],
@@ -140,6 +154,7 @@ const Page = defineComponent({
       h('table', { class: 'qa-table' }, [
         h('thead', h('tr', [
           h('th', '群'),
+          h('th', '状态'),
           h('th', '成员'),
           h('th', '机器人'),
           h('th', '最近活跃'),
@@ -150,20 +165,22 @@ const Page = defineComponent({
         ])),
         h('tbody', rows.value.flatMap((r) => {
           const key = `${r.selfId}:${r.id}`
-          const main = h('tr', { key, class: r.active ? 'is-on' : '' }, [
-            h('td', [
-              h('div', r.name || '（未知群名）'),
-              h('div', { class: 'qa-dim' }, short(r.id)),
+          const main = h('tr', { key }, [
+            h('td', idCell(r.name || '（未知群名）', r.id, [
               r.removedAt ? badge('已被移出', 'is-warn') : null,
               r.recvRejected ? badge('已关闭接收', 'is-warn') : null,
-            ]),
+            ])),
+            h('td', statusPill(r.active)),
             h('td', r.memberNum || '—'),
-            h('td', [r.role || '—', ' ', h('span', { class: 'qa-dim' }, r.recvSetting || '')]),
+            h('td', [
+              h('div', ROLE_LABELS[r.role] || r.role || '—'),
+              r.recvSetting ? h('div', { class: 'qa-dim' }, RECV_LABELS[r.recvSetting] || r.recvSetting) : null,
+            ]),
             h('td', when(r.lastSeen)),
             h('td', r.messageCount),
             h('td', { class: 'qa-dim' }, short(r.addedBy)),
             h('td', r.noticeSentAt ? when(r.noticeSentAt) : r.noticePending ? badge('待发送') : '—'),
-            h('td', { class: 'qa-actions' }, [
+            actions([
               h('button', {
                 class: `qa-btn ${r.active ? 'is-danger' : ''}`,
                 disabled: busy.value === key,
@@ -181,7 +198,7 @@ const Page = defineComponent({
             ]),
           ])
           const detail = expanded.value === key
-            ? h('tr', { key: key + ':m' }, h('td', { colspan: 8 }, h(Members, { selfId: r.selfId, channelId: r.id })))
+            ? h('tr', { key: key + ':m' }, h('td', { colspan: 9, class: 'qa-detail' }, h(Members, { selfId: r.selfId, channelId: r.id })))
             : null
           return [main, detail]
         })),
@@ -191,6 +208,7 @@ const Page = defineComponent({
       h('table', { class: 'qa-table' }, [
         h('thead', h('tr', [
           h('th', '用户'),
+          h('th', '私聊'),
           h('th', '绑定账号'),
           h('th', '最近活跃'),
           h('th', '消息数'),
@@ -200,15 +218,16 @@ const Page = defineComponent({
         h('tbody', rows.value.flatMap((r) => {
           const key = `${r.selfId}:${r.id}`
           const served = r.isOp || r.dmActive
-          const main = h('tr', { key, class: served ? 'is-on' : '' }, [
-            h('td', [h('div', r.name || '（无名称）'), h('div', { class: 'qa-dim' }, short(r.id))]),
+          const main = h('tr', { key }, [
+            h('td', idCell(r.name || '（无名称）', r.id)),
+            h('td', statusPill(served, r.isOp ? '始终放行' : '已放行', '未放行')),
             h('td', r.account
               ? [r.account.name || '（未命名）', ' ', h('span', { class: 'qa-dim' }, `#${r.account.id}`), r.isOp ? badge(`权限 ${r.account.authority}`) : null]
               : h('span', { class: 'qa-dim' }, '未绑定')),
             h('td', when(r.lastSeen)),
             h('td', r.messageCount),
             h('td', r.dmCount),
-            h('td', { class: 'qa-actions' }, [
+            actions([
               h('select', {
                 class: 'qa-input qa-level',
                 disabled: busy.value === key,
@@ -219,7 +238,7 @@ const Page = defineComponent({
                 ...[0, 1, 2, 3, 4, 5].map((n) => h('option', { value: String(n) }, `权限 ${n}`)),
               ]),
               r.isOp
-                ? h('span', { class: 'qa-dim' }, '权限 ≥ 4：私聊始终放行')
+                ? null
                 : h('button', {
                     class: `qa-btn ${r.dmActive ? 'is-danger' : ''}`,
                     disabled: busy.value === key,
@@ -232,22 +251,38 @@ const Page = defineComponent({
             ]),
           ])
           const detail = expanded.value === key
-            ? h('tr', { key: key + ':m' }, h('td', { colspan: 6 }, h(Members, { selfId: r.selfId, userId: r.id })))
+            ? h('tr', { key: key + ':m' }, h('td', { colspan: 7, class: 'qa-detail' }, h(Members, { selfId: r.selfId, userId: r.id })))
             : null
           return [main, detail]
         })),
       ])
 
-    return () =>
-      h('div', { class: 'qa-root' }, [
-        h('p', { class: 'qa-notice' },
-          '只记录元数据，不展示消息内容。成员只覆盖发过言的人，不是完整的群成员名单。激活群等同于在群里 assign。授予权限：先让对方给机器人发一条消息（会被静默，但会出现在用户列表），再在这里选择权限等级；只能授予低于你自己的等级，权限 ≥ 4 才能激活群、私聊始终放行。'),
-        toolbar(),
-        err.value ? h('p', { class: 'qa-err' }, err.value) : null,
-        rows.value.length
-          ? (tab.value === 'groups' ? groupTable() : userTable())
-          : h('p', { class: 'qa-dim' }, loading.value ? '加载中…' : '没有记录。'),
-      ])
+    const notice = () =>
+      h('ul', { class: 'qa-notice' }, (tab.value === 'groups'
+        ? [
+            '激活群等同于在群里 assign。',
+            '「出现过的人」只含发过言的成员，不是完整名单。',
+          ]
+        : [
+            '要给某人授权，先让他私聊机器人一句（会被静默，但会出现在这里），再选权限等级。',
+            '只能授予低于你自己的等级；权限 ≥ 4 的人私聊始终放行，也能激活群。',
+          ]).map((t) => h('li', t)))
+
+    // Must render inside k-layout: a bare root sits under the activity bar
+    // and its left edge is clipped.
+    return () => {
+      const KLayout = resolveComponent('k-layout')
+      return h(KLayout, null, {
+        default: () => h('div', { class: 'qa-root' }, [
+          toolbar(),
+          notice(),
+          err.value ? h('p', { class: 'qa-err' }, err.value) : null,
+          rows.value.length
+            ? h('div', { class: 'qa-card' }, tab.value === 'groups' ? groupTable() : userTable())
+            : h('p', { class: 'qa-dim qa-empty' }, loading.value ? '加载中…' : '没有记录。'),
+        ]),
+      })
+    }
   },
 })
 
