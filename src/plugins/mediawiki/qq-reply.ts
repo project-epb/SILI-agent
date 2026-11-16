@@ -2,8 +2,13 @@ import { type Session, h } from 'koishi'
 
 const MAX_MARKDOWN_LENGTH = 800
 
+/**
+ * QQ's Markdown renders LaTeX: `\(...\)` becomes inline math and `\[`/`\]`
+ * keep their backslash. Never escape brackets or parentheses; escape only the
+ * emphasis, heading, quote, list and math markers QQ is known to unescape cleanly.
+ */
 export function markdownText(text: string) {
-  return text.replace(/\s+/g, ' ').replace(/[!-\/:-@\[-`{-~]/g, '\\$&')
+  return text.replace(/\s+/g, ' ').replace(/[\\`*_~#<>|$-]/g, '\\$&')
 }
 
 export function markdownLink(label: string, url: string) {
