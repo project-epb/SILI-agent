@@ -35,6 +35,7 @@ import {
   oldAccountNotice,
 } from './migration'
 import { setupGroupPanel } from './panel'
+import { passiveFallback } from './passive'
 import { ServedState, factsOf, isFromBot } from './state'
 import { defineTables } from './tables'
 
@@ -137,6 +138,7 @@ export default class QQBotService extends Service {
       // migration window. Sends with no source session (broadcasts: GitHub,
       // schedules) are cancelled; migrated groups get them via the QQ bot.
       if (out.platform === 'onebot' && !options?.session) return true
+      passiveFallback(out, options)
       return this.rewriteAssignReply(out, options)
     })
   }

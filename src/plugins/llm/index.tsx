@@ -339,8 +339,8 @@ export default class PluginLLM extends BasePlugin<Config> {
       systemPrompt: {
         default:
           process.env.KOISHI_ENV === 'dev'
-            ? PluginLLM.readPromptFile('Noir.prompt.md')
-            : PluginLLM.readPromptFile('SILI-v6.prompt.md'),
+            ? PluginLLM.readPersonaPrompt('Noir-v2.prompt.md')
+            : PluginLLM.readPersonaPrompt('SILI-v7.prompt.md'),
       },
     }
     config = {
@@ -623,6 +623,14 @@ export default class PluginLLM extends BasePlugin<Config> {
     } catch (e) {
       return ''
     }
+  }
+
+  /** A persona prompt followed by the chat voice every persona shares. */
+  static readPersonaPrompt(file: string) {
+    return [
+      PluginLLM.readPromptFile(file),
+      PluginLLM.readPromptFile('IM-voice.prompt.md'),
+    ].join('\n\n')
   }
 
   /**
