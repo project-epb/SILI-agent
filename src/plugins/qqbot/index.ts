@@ -34,6 +34,7 @@ import {
   migrationNotice,
   oldAccountNotice,
 } from './migration'
+import { setupGroupPanel } from './panel'
 import { ServedState, factsOf, isFromBot } from './state'
 import { defineTables } from './tables'
 
@@ -123,6 +124,7 @@ export default class QQBotService extends Service {
     defineTables(ctx)
     this.metadata = new MetadataRecorder(ctx, this.state)
     new MigrationFeatures(ctx, this)
+    setupGroupPanel(ctx)
 
     ctx.on('ready', () => this.reload())
     ctx.setInterval(() => this.reload(), 30 * Time.second)
