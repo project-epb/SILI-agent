@@ -11,6 +11,45 @@ function short(id) {
   if (!id) return '—'
   return id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id
 }
+// execCommand first: it is synchronous inside the click and never prompts.
+// navigator.clipboard needs a secure context (the console may be plain http by
+// IP) and can hang on a permission prompt, so it is only the fallback.
+function copyText(text) {
+  const area = document.createElement('textarea')
+  area.value = text
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  document.body.appendChild(area)
+  area.select()
+  const ok = document.execCommand('copy')
+  area.remove()
+  if (!ok && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {})
+}
+
+/** Shortened id; click copies the full value. */
+const CopyId = defineComponent({
+  props: { id: String, block: Boolean },
+  setup(props) {
+    const copied = ref(false)
+    let timer
+    const onClick = (e) => {
+      e.stopPropagation()
+      if (!props.id) return
+      copyText(props.id)
+      copied.value = true
+      clearTimeout(timer)
+      timer = setTimeout(() => (copied.value = false), 1200)
+    }
+    return () =>
+      h(props.block ? 'div' : 'span', {
+        class: ['qa-id', props.id ? 'is-copyable' : ''],
+        title: props.id ? `${props.id}\n点击复制` : '',
+        onClick,
+      }, copied.value ? '已复制' : short(props.id))
+  },
+})
+const copyId = (id, block = false) => h(CopyId, { id, block })
+
 function badge(text, cls = '') {
   return h('span', { class: `qa-badge ${cls}` }, text)
 }
@@ -20,7 +59,7 @@ function statusPill(on, onText = '已激活', offText = '未激活') {
 function idCell(name, id, extra = []) {
   return [
     h('div', { class: 'qa-name' }, name),
-    h('div', { class: 'qa-id', title: id }, short(id)),
+    copyId(id, true),
     extra.some(Boolean) ? h('div', { class: 'qa-flags' }, extra) : null,
   ]
 }
@@ -67,8 +106,8 @@ const Members = defineComponent({
         h('tbody', rows.value.map((r) =>
           h('tr', { key: `${r.channelId}:${r.userId}` }, [
             h('td', byGroup
-              ? [r.userName || '（无名称）', ' ', h('span', { class: 'qa-dim' }, short(r.userId))]
-              : [r.channelName || '（未知群名）', ' ', h('span', { class: 'qa-dim' }, short(r.channelId))]),
+              ? [r.userName || '（无名称）', ' ', copyId(r.userId)]
+              : [r.channelName || '（未知群名）', ' ', copyId(r.channelId)]),
             h('td', when(r.firstSeen)),
             h('td', when(r.lastSeen)),
             h('td', r.messageCount),
@@ -178,7 +217,7 @@ const Page = defineComponent({
             ]),
             h('td', when(r.lastSeen)),
             h('td', r.messageCount),
-            h('td', { class: 'qa-dim' }, short(r.addedBy)),
+            h('td', r.addedBy ? copyId(r.addedBy) : h('span', { class: 'qa-dim' }, '—')),
             h('td', r.noticeSentAt ? when(r.noticeSentAt) : r.noticePending ? badge('待发送') : '—'),
             actions([
               h('button', {

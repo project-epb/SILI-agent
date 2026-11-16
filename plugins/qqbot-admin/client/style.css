@@ -57,6 +57,8 @@
 .qa-table tbody tr:hover > td { background: var(--k-hover-bg, rgba(127, 127, 127, 0.06)); }
 .qa-name { font-weight: 500; }
 .qa-id { font-family: ui-monospace, monospace; font-size: 0.75rem; color: var(--k-text-light, #999); }
+.qa-id.is-copyable { cursor: copy; border-radius: 3px; }
+.qa-id.is-copyable:hover { color: var(--k-color-primary, #6a5acd); text-decoration: underline dotted; }
 
 .qa-pill {
   display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem;
