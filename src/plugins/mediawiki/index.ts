@@ -463,6 +463,9 @@ export default class PluginMediawiki extends BasePlugin<Config> {
         if (search.length < 1) {
           return h.text(`💔找不到与“${keywords}”匹配的结果。`)
         }
+        if (search.length === 1) {
+          return session.execute(`wiki -d ${search[0].title}`)
+        }
         if (qq) {
           const extracts = new Map(
             pages?.map(({ pageid, extract }) => [pageid, extract])
@@ -476,9 +479,6 @@ export default class PluginMediawiki extends BasePlugin<Config> {
             }),
             `🔍 共找到 ${searchinfo?.totalhits ?? search.length} 个结果`
           )
-        }
-        if (search.length === 1) {
-          return session.execute(`wiki -d ${search[0].title}`)
         }
         const bulk = new BulkMessageBuilder(session)
         bulk.prependOriginal()
