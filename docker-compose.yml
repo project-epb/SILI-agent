@@ -24,6 +24,8 @@ services:
       - ./src/:/app/src
       - ./package.json:/app/package.json
       - ./bun.lock:/app/bun.lock
+      # bun patch files (package.json patchedDependencies); install fails without them
+      - ./patches/:/app/patches
       - ./tsconfig.json:/app/tsconfig.json
       - ./plugins/:/app/plugins
       - ./.npmrc:/app/.npmrc

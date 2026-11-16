@@ -96,5 +96,8 @@
   "workspaces": [
     ".",
     "plugins/*"
-  ]
+  ],
+  "patchedDependencies": {
+    "@koishijs/plugin-auth@4.1.7": "patches/@koishijs%2Fplugin-auth@4.1.7.patch"
+  }
 }
