@@ -10,22 +10,38 @@ import BasePlugin from '~/_boilerplate'
 
 import { Fexios } from 'fexios'
 
-function illustrationReply(
-  messageId: string | undefined,
-  imageUrl: string,
-  lines: (string | null | undefined)[]
-) {
-  const text = lines
-    .map((line) => line?.trim().replace(/\n+/g, '\n'))
-    .filter(Boolean)
-    .join('\n')
-  // QQ flushes pending text before attaching an image. Put the caption last.
-  return [
-    ...(messageId ? [h.quote(messageId)] : []),
-    h.image(imageUrl),
-    h.text(text),
-  ]
+interface PixivIllustration {
+  title: string
+  description: string
+  tags: { tags: { tag: string }[] }
+  userName: string
+  userId: string | number
+  likeCount: number
+  bookmarkCount: number
+  viewCount: number
+  createDate: string
 }
+
+type PixivPage = { urls: { original: string; regular: string } }
+
+interface PixivUser {
+  imageBig: string
+  userId: string | number
+  name: string
+  comment?: string
+}
+
+type PixivResponse<T> = T | { body: T }
+
+type PixivReplyData =
+  | PixivUser
+  | {
+      id: number
+      info: PixivIllustration
+      pages: PixivPage[]
+      page?: number
+      original?: boolean
+    }
 
 const defaultConfigs = {
   apiBaseURL: 'https://www.pixiv.net',
@@ -88,22 +104,15 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
 
         this.logger.info('pixiv.illust:', id, options)
 
-        // FIXME: no idea why
-        options.page ??= 1
-        options.original ??= false
-
-        let info, pages
+        let info: PixivResponse<PixivIllustration>
+        let pages: PixivResponse<PixivPage[]>
         try {
           ;[{ data: info }, { data: pages }] = await Promise.all([
-            req.get(`ajax/illust/${id}?full=1`),
-            req.get(`ajax/illust/${id}/pages`),
+            req.get<PixivResponse<PixivIllustration>>(
+              `ajax/illust/${id}?full=1`
+            ),
+            req.get<PixivResponse<PixivPage[]>>(`ajax/illust/${id}/pages`),
           ])
-          if (info.body) {
-            info = info.body
-          }
-          if (pages.body) {
-            pages = pages.body
-          }
         } catch (error) {
           this.logger.warn(error)
           return [
@@ -112,31 +121,13 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
           ].join('')
         }
 
-        const totalImages = pages.length
-        const selectedPage = Math.min(totalImages, options!.page as number)
-        const imageUrl = options!.original
-          ? pages[selectedPage - 1].urls.original
-          : pages[selectedPage - 1].urls.regular
-
-        const desc = info.description
-          .replace(/<br.*?>/g, '\n')
-          .replace(/<\/?.+?>/g, '')
-        const allTags = info.tags.tags.map((i: any) => `#${i.tag}`)
-
-        return illustrationReply(
-          session.messageId,
-          this.makePximgURL(imageUrl),
-          [
-            totalImages ? `第 ${selectedPage} 张，共 ${totalImages} 张` : null,
-            `${info.title}`,
-            desc.length > 500 ? desc.substring(0, 500) + '...' : desc,
-            `作者: ${info.userName} (ID: ${info.userId})`,
-            `👍${info.likeCount} ❤️${info.bookmarkCount} 👀${info.viewCount}`,
-            `发布时间: ${new Date(info.createDate).toLocaleString()}`,
-            allTags.length ? allTags.join(' ') : null,
-            new URL(`/i/${id}`, this.config.webBaseURL).href,
-          ]
-        )
+        return this.#illustrationReply(session.messageId, {
+          id,
+          info: 'body' in info ? info.body : info,
+          pages: 'body' in pages ? pages.body : pages,
+          page: options?.page,
+          original: options?.original,
+        })
       })
 
     ctx
@@ -148,12 +139,11 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
           return session.execute({ name: cmdName, options: { help: true } })
         }
 
-        let data: any
+        let data: PixivResponse<PixivUser>
         try {
-          data = (await req.get(`ajax/user/${id}?full=1`)).data
-          if (data.body) {
-            data = data.body
-          }
+          ;({ data } = await req.get<PixivResponse<PixivUser>>(
+            `ajax/user/${id}?full=1`
+          ))
         } catch (error) {
           this.logger.warn(error)
           return [
@@ -162,14 +152,53 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
           ].join('')
         }
 
-        const { imageBig, userId, name, comment } = data
-
-        return illustrationReply(
+        return this.#illustrationReply(
           session.messageId,
-          this.makePximgURL(imageBig),
-          [`${name} (${userId})`, comment]
+          'body' in data ? data.body : data
         )
       })
+  }
+
+  #illustrationReply(messageId: string | undefined, data: PixivReplyData) {
+    let imageUrl: string
+    let lines: (string | undefined)[]
+
+    if ('info' in data) {
+      const { id, info, pages, page = 1, original } = data
+      const selectedPage = Math.min(pages.length, page)
+      const { urls } = pages[selectedPage - 1]
+      imageUrl = original ? urls.original : urls.regular
+
+      const description = info.description
+        .replace(/<br.*?>/g, '\n')
+        .replace(/<\/?.+?>/g, '')
+      lines = [
+        `第 ${selectedPage} 张，共 ${pages.length} 张`,
+        info.title,
+        description.length > 500
+          ? description.slice(0, 500) + '...'
+          : description,
+        `作者: ${info.userName} (ID: ${info.userId})`,
+        `👍${info.likeCount} ❤️${info.bookmarkCount} 👀${info.viewCount}`,
+        `发布时间: ${new Date(info.createDate).toLocaleString()}`,
+        info.tags.tags.map(({ tag }) => `#${tag}`).join(' '),
+        new URL(`/i/${id}`, this.config.webBaseURL).href,
+      ]
+    } else {
+      imageUrl = data.imageBig
+      lines = [`${data.name} (${data.userId})`, data.comment]
+    }
+
+    const text = lines
+      .map((line) => line?.trim().replace(/\n+/g, '\n'))
+      .filter(Boolean)
+      .join('\n')
+    // QQ flushes pending text before attaching an image. Put the caption last.
+    return [
+      ...(messageId ? [h.quote(messageId)] : []),
+      h.image(this.makePximgURL(imageUrl)),
+      h.text(text),
+    ]
   }
 
   #setupMiddlewares() {
