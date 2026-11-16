@@ -49,6 +49,11 @@ export interface VerifySource {
   ): Promise<{ content: string; editor: string } | undefined>
   /** Whether this page hash already let someone in. */
   isUsed(hash: string): Promise<boolean>
+  /** Earlier accepted joins of this group by this wiki user or this applicant. */
+  priorJoins(
+    wikiUserId: number,
+    applicantId: string
+  ): Promise<{ wikiUserId: number; wikiUserName: string; userId: string }[]>
 }
 
 export type VerifyResult =
@@ -58,6 +63,7 @@ export type VerifyResult =
 /** Errors thrown by `source` propagate: the caller reports them verbatim. */
 export async function verifyAnswer(
   content: string,
+  applicantId: string,
   source: VerifySource,
   now = Date.now()
 ): Promise<VerifyResult> {
@@ -85,6 +91,22 @@ export async function verifyAnswer(
   if (sha1(`${record.time}#${answer.code}`) !== record.hash)
     return fail(mismatch)
   if (await source.isUsed(record.hash)) return fail('这个验证码已经用过了')
+
+  // One Fandom account per QQ: a second pairing goes to a human (new QQ,
+  // alt account) instead of being approved.
+  const prior = await source.priorJoins(answer.wikiUserId, applicantId)
+  if (
+    prior.some(
+      (row) =>
+        row.wikiUserId === answer.wikiUserId && row.userId !== applicantId
+    )
+  )
+    return fail(`Fandom 账号「${name}」之前已经带另一个 QQ 入过群`)
+  const other = prior.find(
+    (row) => row.userId === applicantId && row.wikiUserId !== answer.wikiUserId
+  )
+  if (other)
+    return fail(`这个 QQ 之前已经用 Fandom 账号「${other.wikiUserName}」入过群`)
 
   return {
     ok: true,

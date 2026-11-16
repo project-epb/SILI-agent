@@ -20,12 +20,13 @@ function source(over: Partial<VerifySource> = {}): VerifySource {
       editor: 'Foo_Bar',
     }),
     isUsed: async () => false,
+    priorJoins: async () => [],
     ...over,
   }
 }
 
 const reasonOf = async (content: string, src = source(), now = NOW) => {
-  const result = await verifyAnswer(content, src, now)
+  const result = await verifyAnswer(content, 'me', src, now)
   return 'reason' in result ? result.reason : 'ok'
 }
 
@@ -42,12 +43,12 @@ describe('parseAnswer', () => {
 
 describe('verifyAnswer', () => {
   it('accepts a fresh, matching, unused code', async () => {
-    expect(await verifyAnswer(`32769624-${CODE}`, source(), NOW)).toMatchObject(
-      {
-        ok: true,
-        wikiUserName: 'Foo Bar',
-      }
-    )
+    expect(
+      await verifyAnswer(`32769624-${CODE}`, 'me', source(), NOW)
+    ).toMatchObject({
+      ok: true,
+      wikiUserName: 'Foo Bar',
+    })
   })
 
   it('reports each failure', async () => {
@@ -82,5 +83,21 @@ describe('verifyAnswer', () => {
     expect(
       await reasonOf(`32769624-${CODE}`, source({ isUsed: async () => true }))
     ).toContain('用过')
+  })
+
+  it('sends a second pairing of Fandom account and QQ to a human', async () => {
+    const joined = (wikiUserId: number, userId: string) =>
+      source({
+        priorJoins: async () => [{ wikiUserId, wikiUserName: 'Old', userId }],
+      })
+    expect(
+      await reasonOf(`32769624-${CODE}`, joined(32769624, 'other'))
+    ).toContain('带另一个 QQ')
+    expect(await reasonOf(`32769624-${CODE}`, joined(1, 'me'))).toContain(
+      '「Old」'
+    )
+    expect(await reasonOf(`32769624-${CODE}`, joined(32769624, 'me'))).toBe(
+      'ok'
+    )
   })
 })

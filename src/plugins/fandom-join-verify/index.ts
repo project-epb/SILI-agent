@@ -74,34 +74,48 @@ export default class PluginFandomJoinVerify {
     })
   }
 
-  private source: VerifySource = {
-    userName: async (id) => {
-      const { data } = await this.api.get('', {
-        query: { action: 'query', list: 'users', ususerids: String(id) },
-      })
-      const user = data?.query?.users?.[0]
-      return user && !user.missing ? user.name : undefined
-    },
-    verifyPage: async (name) => {
-      const { data } = await this.api.get('', {
-        query: {
-          action: 'query',
-          prop: 'revisions',
-          rvprop: 'user|content',
-          rvslots: 'main',
-          titles: `User:${name}/qq-hash`,
-        },
-      })
-      const revision = data?.query?.pages?.[0]?.revisions?.[0]
-      if (!revision) return
-      return {
-        content: revision.slots?.main?.content ?? '',
-        editor: revision.user ?? '',
-      }
-    },
-    isUsed: async (hash) =>
-      !!(await this.ctx.database.get('fandom_verify', { hash }, ['hash']))
-        .length,
+  /** Lookups for one join request; prior joins are scoped to its group. */
+  private sourceFor(session: Session): VerifySource {
+    return {
+      userName: async (id) => {
+        const { data } = await this.api.get('', {
+          query: { action: 'query', list: 'users', ususerids: String(id) },
+        })
+        const user = data?.query?.users?.[0]
+        return user && !user.missing ? user.name : undefined
+      },
+      verifyPage: async (name) => {
+        const { data } = await this.api.get('', {
+          query: {
+            action: 'query',
+            prop: 'revisions',
+            rvprop: 'user|content',
+            rvslots: 'main',
+            titles: `User:${name}/qq-hash`,
+          },
+        })
+        const revision = data?.query?.pages?.[0]?.revisions?.[0]
+        if (!revision) return
+        return {
+          content: revision.slots?.main?.content ?? '',
+          editor: revision.user ?? '',
+        }
+      },
+      priorJoins: (wikiUserId, applicantId) =>
+        this.ctx.database.get(
+          'fandom_verify',
+          {
+            platform: session.platform,
+            selfId: session.selfId,
+            groupId: session.channelId!,
+            $or: [{ wikiUserId }, { userId: applicantId }],
+          },
+          ['wikiUserId', 'wikiUserName', 'userId']
+        ),
+      isUsed: async (hash) =>
+        !!(await this.ctx.database.get('fandom_verify', { hash }, ['hash']))
+          .length,
+    }
   }
 
   private async handle(session: Session) {
@@ -113,7 +127,11 @@ export default class PluginFandomJoinVerify {
 
     let lines: string[]
     try {
-      const result = await verifyAnswer(session.content ?? '', this.source)
+      const result = await verifyAnswer(
+        session.content ?? '',
+        session.userId!,
+        this.sourceFor(session)
+      )
       if (!('reason' in result)) {
         lines = [
           `✅ 已自动同意入群：${applicant}`,
