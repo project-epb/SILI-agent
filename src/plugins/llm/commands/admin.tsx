@@ -181,7 +181,7 @@ export default class AdminCommands extends BasePlugin {
         if (!session.user.openai_last_conversation_id) {
           return (
             <random>
-              <>嗯……我们好像还没聊过什么呀……</>
+              <>嗯……SILI 跟你好像还没聊过什么呀</>
               <>咦？你还没有和SILI分享过你的故事呢！</>
               <>欸？SILI好像还没和你讨论过什么哦。</>
             </random>
@@ -191,9 +191,9 @@ export default class AdminCommands extends BasePlugin {
           await session.user.$update()
           return (
             <random>
-              <>让我们开始新话题吧！</>
-              <>嗯……那我们聊点别的吧！</>
-              <>好吧，那我就不提之前的事了。</>
+              <>好 换个话题！</>
+              <>嗯……那聊点别的吧</>
+              <>好吧 那 SILI 就不提之前的事了</>
               <>你有更好的点子和SILI分享吗？</>
               <>咦？是还有其他问题吗？</>
             </random>
