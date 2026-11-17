@@ -73,14 +73,21 @@ const WIKI_LINK = /\[\[.+?\]\]/
 const PERMISSION_HINT =
   '💡 想获得最佳体验的话，请群主点击 SILI 的头像，在机器人权限中开启「接收全部消息」和「推送主动消息」'
 
+/**
+ * Names and aliases of these commands and all their subcommands (`wiki` lets
+ * `wiki.connect` through too). Each command still checks its own authority.
+ */
 function commandWords(app: Context, names: string[]) {
   const words = new Set<string>()
+  const add = (command: any) => {
+    words.add(command.name.toLowerCase())
+    for (const alias in command._aliases) words.add(alias.toLowerCase())
+    for (const child of command.children ?? []) add(child)
+  }
   for (const name of names) {
     words.add(name.toLowerCase())
     const command = app.$commander.get(name)
-    if (command) {
-      for (const alias in command._aliases) words.add(alias.toLowerCase())
-    }
+    if (command) add(command)
   }
   return words
 }
