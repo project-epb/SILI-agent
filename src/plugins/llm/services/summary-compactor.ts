@@ -55,6 +55,11 @@ export interface SummaryCompactorOptions {
 export interface CompactIfNeededInput {
   conversation_id: string
   conversation_owner: number
+  /**
+   * Seed the new session with the user's memory snapshot. False for a group
+   * conversation, which must never carry one member's memory.
+   */
+  includeMemory?: boolean
   /** Cached system prompt — same string a regular chat turn would use. */
   systemPrompt: string
   provider: LLMProviderBase
@@ -152,12 +157,15 @@ export class SummaryCompactor {
       return { ran: false, reason: 'no history to summarize' }
     }
 
-    const memorySnapshot = await buildMemorySnapshot(
-      this.memory,
-      input.platform,
-      input.userId,
-      this.logger
-    )
+    const memorySnapshot =
+      input.includeMemory === false
+        ? ''
+        : await buildMemorySnapshot(
+            this.memory,
+            input.platform,
+            input.userId,
+            this.logger
+          )
     const compactInstruction = [
       PROTOCOL_TAGS.SYSTEM_COMPACT.open,
       this.options.prompt ?? DEFAULT_SUMMARY_PROMPT,

@@ -22,6 +22,7 @@ import { CopilotProvider } from './providers/copilot'
 import { OpenAIProvider } from './providers/openai'
 import { ActiveChatRegistry } from './services/active-chats'
 import { ChatHistoryService } from './services/chat-history'
+import { resolveConversationScope } from './services/conversation-scope'
 import { CommandCatalogService } from './services/command-catalog'
 import { ImageReferenceCache } from './services/image-cache'
 import { MemoryStore } from './services/memory'
@@ -56,6 +57,10 @@ declare module 'koishi' {
     openai_chat: OpenAIConversationLog
   }
   export interface User {
+    openai_last_conversation_id: string
+  }
+  export interface Channel {
+    /** Current conversation of a group-shared session (see conversation-scope). */
     openai_last_conversation_id: string
   }
   interface Context {
@@ -425,12 +430,12 @@ export default class PluginLLM extends BasePlugin<Config> {
       definition: buildSaveUserMemoryTool(this.getMemoryHardLimit()),
       execute: async (args, { ctx, session, turnState }) => {
         const { platform, userId } = this.resolveMemoryKey(session)
-        const conversationId =
-          (session.user as any)?.openai_last_conversation_id ?? ''
+        const scope = resolveConversationScope(session)
+        const conversationId = scope.conversationId
         if (!conversationId) {
           return 'Error: no active conversation. Skip this turn and try again on the next user message.'
         }
-        const conversationOwner = (session.user as any)?.id ?? 0
+        const conversationOwner = scope.owner
         const state = getMemoryToolState(turnState)
         return runSaveUserMemory(args as any, state, {
           memory: this.memory,
@@ -576,6 +581,9 @@ export default class PluginLLM extends BasePlugin<Config> {
 
   async #initDatabase() {
     this.ctx.model.extend('user', {
+      openai_last_conversation_id: 'string',
+    })
+    this.ctx.model.extend('channel', {
       openai_last_conversation_id: 'string',
     })
     this.ctx.model.extend(
