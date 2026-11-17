@@ -11,7 +11,7 @@ import {
   aggregateUserOverview,
 } from './aggregate-user'
 import { matchUser, paginate } from './filters'
-import { parseEnvelopes } from './envelope'
+import { parseEnvelopes, splitSteer } from './envelope'
 import { checkMemoryWrite, utf8ByteLength } from './memory-edit'
 import { turnWindow } from './turns'
 
@@ -31,6 +31,18 @@ interface AdminUser {
   name: string
   account: string
 }
+/** One row of the subject list: a user or a group, with its usage at a glance. */
+interface SubjectRow extends AdminUser {
+  kind: 'user' | 'group'
+  /** Every bound account (`platform:pid`), or the group's `platform:channel`. */
+  accounts: string[]
+  lastActive: number | null
+  sessions: number
+  calls: number
+  totalTokens: number
+  /** Long-term memory size in bytes; null for groups and users without one. */
+  memoryBytes: number | null
+}
 interface SessionRow {
   conversationId: string
   title: string
@@ -41,7 +53,14 @@ interface SessionRow {
   turns: number
 }
 type ChatMsg = { time: number } & (
-  | { role: 'user'; content: string; speaker?: string; raw?: string }
+  | {
+      role: 'user'
+      content: string
+      speaker?: string
+      raw?: string
+      /** Arrived while SILI was working; it read it from a tool result. */
+      steered?: boolean
+    }
   | { role: 'system'; content: string }
   | {
       role: 'assistant'
@@ -58,9 +77,10 @@ declare module '@koishijs/console' {
   interface Events {
     'llm-admin/search'(payload: {
       q: string
+      kind?: 'all' | 'user' | 'group'
       limit?: number
       offset?: number
-    }): { total: number; users: AdminUser[] }
+    }): { total: number; users: SubjectRow[] }
     'llm-admin/overview'(payload: { id: number | string }): UserOverview
     'llm-admin/sessions'(payload: {
       id: number | string
@@ -185,30 +205,123 @@ export function apply(ctx: Context) {
     return { nameMap, acctMap }
   }
 
-  // ---- 搜索：#id 精确 / platform:pid 子串 / 昵称子串 ----
+  // ---- 列表：有过会话的用户和群，按最近活跃倒序 ----
+  // 搜索：#id 精确 / 账号子串 / 名称子串。表都不大（几千行），直接在内存里聚合。
   ctx.console.addListener(
     'llm-admin/search',
-    async ({ q, limit = 50, offset = 0 }) => {
-      // 候选池 = 有过会话的用户
-      const sessions = await db.get(
-        'openai_session',
-        {},
-        { fields: ['conversation_owner'] }
+    async ({ q, kind = 'all', limit = 50, offset = 0 }) => {
+      const sessions = await db.get('openai_session', {}, {
+        fields: [
+          'conversation_owner',
+          'conversation_id',
+          'platform',
+          'user_id',
+          'last_used_at',
+        ],
+      })
+      const subjectOf = (s: (typeof sessions)[number]) =>
+        s.conversation_owner === GROUP_OWNER
+          ? `group:${s.platform}:${s.user_id}`
+          : s.conversation_owner
+      const stats = new Map<
+        number | string,
+        { sessions: number; lastActive: number; calls: number; tokens: number }
+      >()
+      const convSubject = new Map<string, number | string>()
+      for (const s of sessions) {
+        const key = subjectOf(s)
+        const st = stats.get(key) ?? { sessions: 0, lastActive: 0, calls: 0, tokens: 0 }
+        st.sessions++
+        st.lastActive = Math.max(st.lastActive, s.last_used_at ?? 0)
+        stats.set(key, st)
+        convSubject.set(s.conversation_id, key)
+      }
+      const calls = (await db.get(
+        'openai_chat',
+        { role: 'assistant' },
+        { fields: ['conversation_id', 'usage'] }
+      )) as unknown as Array<{ conversation_id: string; usage?: Usage | null }>
+      for (const c of calls) {
+        const st = stats.get(convSubject.get(c.conversation_id) ?? '')
+        if (!st) continue
+        st.calls++
+        st.tokens += c.usage?.totalTokens ?? 0
+      }
+
+      const userIds = [...stats.keys()].filter(
+        (k): k is number => typeof k === 'number'
       )
-      const ids = [...new Set(sessions.map((s) => s.conversation_owner))]
-      const { nameMap, acctMap } = await resolveIdentities(ids)
-      const users: AdminUser[] = ids
-        .filter((id) => id !== GROUP_OWNER)
-        .map((id) => ({
-          id,
-          name: nameMap.get(id) || '',
-          account: acctMap.get(id) || '',
-        }))
-        .sort((a, b) => (a.id as number) - (b.id as number))
-      const all = [...users, ...(await groupCandidates())].filter((u) =>
-        matchUser(u, q)
+      const [users, bindings, memories, groups] = await Promise.all([
+        db.get('user', { id: userIds }, { fields: ['id', 'name'] }),
+        db.get('binding', { aid: userIds }, { fields: ['aid', 'platform', 'pid', 'bid'] }),
+        db.get('openai_user_memory', { user_id: userIds.map(String) }, {
+          fields: ['user_id', 'byte_size'],
+        } as any),
+        groupCandidates(),
+      ])
+      const names = new Map(users.map((u) => [u.id, u.name]))
+      const accounts = new Map<number, string[]>()
+      for (const b of [...bindings].sort((x, y) => x.bid - y.bid)) {
+        const list = accounts.get(b.aid) ?? []
+        list.push(`${b.platform}:${b.pid}`)
+        accounts.set(b.aid, list)
+      }
+      // A QQ-only user often has no Koishi name: use the name the bot saw.
+      const qqPids = bindings.filter((b) => b.platform === 'qq').map((b) => b.pid)
+      const qqNames = new Map<string, string>()
+      try {
+        const seen = await db.get('qqbot_user' as any, { id: qqPids }, {
+          fields: ['id', 'name'],
+        } as any)
+        for (const u of seen as any[]) if (u.name) qqNames.set(u.id, u.name)
+      } catch {
+        // qqbot_user only exists under the v5 profile.
+      }
+      const memoryBytes = new Map(
+        (memories as any[]).map((m) => [Number(m.user_id), m.byte_size as number])
       )
-      const { total, page } = paginate(all, limit, offset)
+
+      const rows: SubjectRow[] = []
+      for (const [key, st] of stats) {
+        const base = {
+          lastActive: st.lastActive || null,
+          sessions: st.sessions,
+          calls: st.calls,
+          totalTokens: st.tokens,
+        }
+        if (typeof key === 'number') {
+          const accts = accounts.get(key) ?? []
+          const qqName = accts
+            .filter((a) => a.startsWith('qq:'))
+            .map((a) => qqNames.get(a.slice(3)))
+            .find(Boolean)
+          rows.push({
+            ...base,
+            id: key,
+            kind: 'user',
+            name: names.get(key) || qqName || '',
+            account: accts[0] ?? '',
+            accounts: accts,
+            memoryBytes: memoryBytes.get(key) ?? null,
+          })
+        } else {
+          const g = groups.find((x) => x.id === key)
+          rows.push({
+            ...base,
+            id: key,
+            kind: 'group',
+            name: g?.name ?? '(群)',
+            account: g?.account ?? key,
+            accounts: [g?.account ?? key],
+            memoryBytes: null,
+          })
+        }
+      }
+      const filtered = rows
+        .filter((r) => kind === 'all' || r.kind === kind)
+        .filter((r) => matchUser({ ...r, account: r.accounts.join(' ') }, q))
+        .sort((a, b) => (b.lastActive ?? 0) - (a.lastActive ?? 0))
+      const { total, page } = paginate(filtered, limit, offset)
       return { total, users: page }
     },
     { authority: AUTH }
@@ -370,7 +483,7 @@ export function apply(ctx: Context) {
         }
       }
 
-      const messages = rows.map((r): ChatMsg => {
+      const messages = rows.flatMap((r): ChatMsg | ChatMsg[] => {
         if (r.role === 'user') {
           const { speaker, text } = extractUser(r.content)
           return {
@@ -383,13 +496,21 @@ export function apply(ctx: Context) {
         }
         if (r.role === 'system')
           return { time: r.time, role: 'system', content: r.content }
-        if (r.role === 'tool')
-          return {
-            time: r.time,
-            role: 'tool',
-            toolName: r.tool_name,
-            content: r.content,
-          }
+        if (r.role === 'tool') {
+          const { tool, steered } = splitSteer(r.content)
+          return [
+            { time: r.time, role: 'tool', toolName: r.tool_name, content: tool },
+            ...steered.map(
+              (m): ChatMsg => ({
+                time: r.time,
+                role: 'user',
+                content: m.text,
+                speaker: m.speaker || undefined,
+                steered: true,
+              })
+            ),
+          ]
+        }
         return {
           time: r.time,
           role: 'assistant',
