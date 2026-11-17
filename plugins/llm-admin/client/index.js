@@ -21,7 +21,8 @@ function ident(u) {
   const parts = []
   if (u?.name) parts.push(h('span', { class: 'la-nick' }, u.name))
   if (u?.account) parts.push(h('span', { class: 'la-acct' }, u.account))
-  parts.push(h('span', { class: 'la-uid' }, `(#${u?.id ?? '?'})`))
+  // A group's id is `group:<platform>:<channel>`; its account already shows the channel.
+  parts.push(h('span', { class: 'la-uid' }, typeof u?.id === 'string' ? '(群会话)' : `(#${u?.id ?? '?'})`))
   return parts
 }
 function toolNames(json) {
@@ -246,7 +247,8 @@ function overviewView(o) {
           : h('p', { class: 'la-dim' }, '（无数据）'),
       ],
     }),
-    h(MemoryCard, { id: o.id, key: o.id }),
+    // Groups have no long-term memory of their own.
+    typeof o.id === 'number' ? h(MemoryCard, { id: o.id, key: o.id }) : null,
   ])
 }
 
@@ -280,7 +282,7 @@ function renderMsg(m) {
     kids.push(fold('la-envelope', '📄 原始 envelope', m.raw))
   if (m.role === 'assistant' && m.toolCalls)
     kids.push(fold('la-tool', `🔧 调用 ${toolNames(m.toolCalls)}`, prettyJson(m.toolCalls)))
-  const label = m.role === 'user' ? '用户' : m.role === 'assistant' ? 'SILI' : m.role
+  const label = m.role === 'user' ? m.speaker || '用户' : m.role === 'assistant' ? 'SILI' : m.role
   const roleKids = [h('span', { class: 'la-msg-name' }, label)]
   if (m.role === 'assistant' && m.model)
     roleKids.push(h('span', { class: 'la-msg-model' }, m.model))
@@ -339,7 +341,12 @@ const Admin = defineComponent({
     const ready = ref(false)
     const rotating = ref(false)
 
-    const uid = () => (route.query.user ? Number(route.query.user) : null)
+    // A user id, or `group:<platform>:<channel>` for a group's shared conversation.
+    const uid = () => {
+      const q = route.query.user
+      if (!q) return null
+      return String(q).startsWith('group:') ? String(q) : Number(q)
+    }
     const cid = () => route.query.session || null
 
     async function doSearch() {
@@ -427,7 +434,9 @@ const Admin = defineComponent({
       if (id == null || rotating.value) return
       if (
         !window.confirm(
-          '确认给该用户强制轮转 session？下条消息将从空白新会话开始。'
+          typeof id === 'string'
+            ? '确认给这个群强制轮转 session？群里所有人的上下文都会清空，下条消息将从空白新会话开始。'
+            : '确认给该用户强制轮转 session？下条消息将从空白新会话开始。'
         )
       )
         return
