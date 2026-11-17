@@ -92,6 +92,7 @@ export default class PluginMediawiki extends BasePlugin<Config> {
     this.ctx
       .command('wiki [titles:text]', 'MediaWiki 相关功能', {
         authority: this.config.cmdAuthWiki,
+        captureQuote: false,
       })
       .example('wiki 页面 - 获取页面链接')
       .channelFields(['mwApi'])
