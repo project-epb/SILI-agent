@@ -12,6 +12,11 @@ export interface ChannelMessage {
   content: string
   mentions: string[]
   quoteId: string
+  /**
+   * QQ official bot: the message's reference index (`REFIDX_…`). Quotes name
+   * a message by it, not by its id; '' elsewhere.
+   */
+  refIdx: string
   time: Date
 }
 
@@ -41,6 +46,7 @@ const messageFields = {
   content: 'text',
   mentions: 'list',
   quoteId: 'string(255)',
+  refIdx: 'string(255)',
   time: 'timestamp',
 } as const
 
@@ -49,6 +55,23 @@ const newestFirst = { time: 'desc', messageId: 'desc' } as const
 
 function scopeOf({ platform, selfId, channelId }: Session) {
   return { platform, selfId, channelId }
+}
+
+/**
+ * A QQ official message's reference index: from the send response for the
+ * bot's own messages (the adapter is patched to expose it as `_data`), from
+ * `message_scene.ext` (`msg_idx=REFIDX_…`) for received ones.
+ */
+function refIdxOf(raw: any): string {
+  const sent = raw?.ext_info?.ref_idx
+  if (typeof sent === 'string') return sent
+  const ext: unknown = raw?.d?.message_scene?.ext
+  if (!Array.isArray(ext)) return ''
+  for (const item of ext) {
+    const m = /^msg_idx=(REFIDX_.+)$/.exec(String(item))
+    if (m) return m[1]
+  }
+  return ''
 }
 
 function slimMessageContent(content: string) {
@@ -85,6 +108,7 @@ export default class ChannelMessageHistory extends Service {
         indexes: [
           [...channelKey, 'time', 'messageId'],
           [...channelKey, 'mentions', 'time'],
+          [...channelKey, 'refIdx'],
           ['time'],
         ],
       }
@@ -138,6 +162,7 @@ export default class ChannelMessageHistory extends Service {
           quoteId:
             session.event.message?.quote?.id ??
             String(h.select(elements, 'quote')[0]?.attrs.id ?? ''),
+          refIdx: refIdxOf(raw),
           time: new Date(session.timestamp || Date.now()),
         })
       } catch (error) {
@@ -153,6 +178,19 @@ export default class ChannelMessageHistory extends Service {
       `${session.isDirect ? '[DM] ' : ''}${label}${sender}\n${slimMessageContent(content) || '<empty>'}`
     )
     return true
+  }
+
+  /**
+   * The id of the message a QQ reference index (`REFIDX_…`, what a quote
+   * carries) points to in this channel; undefined when not recorded.
+   */
+  async messageIdByRef(session: Session, refIdx: string): Promise<string | undefined> {
+    const [row] = await this.ctx.database.get(
+      'channel_message',
+      { ...scopeOf(session), refIdx },
+      { fields: ['messageId'], limit: 1 }
+    )
+    return row?.messageId
   }
 
   /** Oldest first. An explicit cursor includes its message. */

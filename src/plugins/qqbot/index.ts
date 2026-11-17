@@ -73,14 +73,21 @@ const WIKI_LINK = /\[\[.+?\]\]/
 const PERMISSION_HINT =
   '💡 想获得最佳体验的话，请群主点击 SILI 的头像，在机器人权限中开启「接收全部消息」和「推送主动消息」'
 
+/**
+ * Names and aliases of these commands and all their subcommands (`wiki` lets
+ * `wiki.connect` through too). Each command still checks its own authority.
+ */
 function commandWords(app: Context, names: string[]) {
   const words = new Set<string>()
+  const add = (command: any) => {
+    words.add(command.name.toLowerCase())
+    for (const alias in command._aliases) words.add(alias.toLowerCase())
+    for (const child of command.children ?? []) add(child)
+  }
   for (const name of names) {
     words.add(name.toLowerCase())
     const command = app.$commander.get(name)
-    if (command) {
-      for (const alias in command._aliases) words.add(alias.toLowerCase())
-    }
+    if (command) add(command)
   }
   return words
 }
@@ -151,6 +158,20 @@ export default class QQBotService extends Service {
     new MigrationFeatures(ctx, this)
     setupGroupPanel(ctx)
     this.setupActivateCommands()
+    // QQ group events carry no group name, and the adapter (qq-crack 1.0.33)
+    // drops the group card QQ added to them: fill both in before anything
+    // reads the session.
+    ctx.on('internal/session', (session) => {
+      if (session.platform !== 'qq' || session.isDirect) return
+      const nick = (session.event as any)._data?.d?.author?.member_nickname
+      if (typeof nick === 'string' && nick)
+        session.event.member = { ...session.event.member, nick }
+      const name = session.channelId
+        ? this.metadata.groupName(session.selfId, session.channelId)
+        : undefined
+      if (name && !session.event.channel?.name)
+        session.event.channel = { ...session.event.channel!, name }
+    })
 
     ctx.on('ready', () => this.reload())
     ctx.setInterval(() => this.reload(), 30 * Time.second)

@@ -1,0 +1,20 @@
+diff --git a/lib/index.js b/lib/index.js
+index 5cc288ee1c20fc08cd182fb54dddd96a84af88b6..9f3aa4217fde9aab26e088685cb1b340bbeb0edb 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -2585,6 +2585,7 @@ var _QQGuildMessageEncoder = class _QQGuildMessageEncoder extends import_koishi6
+         this.reference
+       );
+       session.event.message = message;
++      session.event._data = r;
+       session.messageId = r.id;
+       session.timestamp = r.timestamp ? new Date(r.timestamp).valueOf() : Date.now();
+       session.app.emit(session, "send", session);
+@@ -2897,6 +2898,7 @@ var _QQMessageEncoder = class _QQMessageEncoder extends import_koishi6.MessageEn
+             this.reference
+           );
+           session.event.message = message;
++          session.event._data = resp;
+           session.messageId = resp.id;
+           session.timestamp = new Date(resp.timestamp).valueOf();
+           session.channelId = this.session.channelId;
