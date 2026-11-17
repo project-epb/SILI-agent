@@ -41,11 +41,10 @@ export const DEFAULT_SUMMARY_PROMPT = [
 
 export interface SummaryCompactorOptions {
   /**
-   * Trigger threshold: when user message count in current conversation
-   * reaches this value, compact (rotate to new conversation seeded with
-   * a summary pair). Set to 0 to disable.
+   * Compact once the conversation's context (prompt tokens of its latest
+   * model call) reaches this; 0 disables threshold-triggered compaction.
    */
-  threshold: number
+  maxContextTokens: number
   /** Max tokens to allow for the summary completion. */
   maxTokens?: number
   /** Override the summary user prompt (defaults to DEFAULT_SUMMARY_PROMPT). */
@@ -55,6 +54,11 @@ export interface SummaryCompactorOptions {
 export interface CompactIfNeededInput {
   conversation_id: string
   conversation_owner: number
+  /**
+   * Seed the new session with the user's memory snapshot. False for a group
+   * conversation, which must never carry one member's memory.
+   */
+  includeMemory?: boolean
   /** Cached system prompt — same string a regular chat turn would use. */
   systemPrompt: string
   provider: LLMProviderBase
@@ -117,19 +121,17 @@ export class SummaryCompactor {
   // `services/memory-snapshot.ts` — see buildMemorySnapshot().
 
   /**
-   * Threshold-gated entry called by the chat command on every turn.
-   * Delegates the actual work to `compactNow` once the user-turn count
-   * crosses the configured threshold.
+   * Called by the chat command on every turn: compacts once the context
+   * reaches `maxContextTokens`, otherwise does nothing.
    */
   async compactIfNeeded(input: CompactIfNeededInput): Promise<CompactionResult> {
-    const { threshold } = this.options
-    if (!threshold || threshold <= 0) {
+    const { maxContextTokens } = this.options
+    if (!maxContextTokens || maxContextTokens <= 0) {
       return { ran: false, reason: 'disabled' }
     }
-
-    const count = await this.history.countUserMessages(input.conversation_id)
-    if (count < threshold) {
-      return { ran: false, reason: `under threshold (${count}/${threshold})` }
+    const tokens = await this.history.latestPromptTokens(input.conversation_id)
+    if (tokens < maxContextTokens) {
+      return { ran: false, reason: `under threshold (${tokens}/${maxContextTokens})` }
     }
     return this.compactNow(input)
   }
@@ -142,22 +144,23 @@ export class SummaryCompactor {
    * provider failure) by returning `{ ran: false, reason: ... }`.
    */
   async compactNow(input: CompactIfNeededInput): Promise<CompactionResult> {
-    // Load the same shape of history that a normal chat turn would see,
-    // so the prefix sent to the summary model byte-matches the live
-    // chat path and benefits from existing prompt cache state. Use a
-    // generous cap so we don't accidentally truncate just because
-    // historyTurnCount is small.
-    const history = await this.history.getById(input.conversation_id, 200)
+    // Load the same full history a normal chat turn sees, so the prefix
+    // sent to the summary model byte-matches the live chat path and
+    // benefits from existing prompt cache state.
+    const history = await this.history.getById(input.conversation_id)
     if (history.length === 0) {
       return { ran: false, reason: 'no history to summarize' }
     }
 
-    const memorySnapshot = await buildMemorySnapshot(
-      this.memory,
-      input.platform,
-      input.userId,
-      this.logger
-    )
+    const memorySnapshot =
+      input.includeMemory === false
+        ? ''
+        : await buildMemorySnapshot(
+            this.memory,
+            input.platform,
+            input.userId,
+            this.logger
+          )
     const compactInstruction = [
       PROTOCOL_TAGS.SYSTEM_COMPACT.open,
       this.options.prompt ?? DEFAULT_SUMMARY_PROMPT,

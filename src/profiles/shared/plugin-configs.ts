@@ -64,9 +64,6 @@ export function llmConfig(env: Env) {
     maxTokens: env.LLM_MAX_TOKENS ? Number(env.LLM_MAX_TOKENS) : 16384,
     model: env.LLM_MODEL || 'gpt-4o',
     memoryModel: env.LLM_AGENT_MEMORY_MODEL,
-    // IM 场景下 50 turn 就几千 token，DeepSeek 类便宜模型完全 cover；
-    // 切贵模型时记得把这个数字也调小。
-    historyTurnCount: 50,
     sessionIdleTimeoutMs: env.LLM_SESSION_IDLE_HOURS
       ? Number(env.LLM_SESSION_IDLE_HOURS) * 60 * 60 * 1000
       : undefined,

@@ -1,4 +1,4 @@
-import { Context, Service, Session, Time, h } from 'koishi'
+import { $, Context, Service, Session, Time, h } from 'koishi'
 
 export interface ChannelMessage {
   platform: string
@@ -203,6 +203,29 @@ export default class ChannelMessageHistory extends Service {
       { limit: 1, sort: newestFirst }
     )
     return row
+  }
+
+  /**
+   * How many messages arrived in this channel since the bot last spoke
+   * there, the current message excluded. Null when it has not spoken
+   * within the retention window.
+   */
+  async countSinceSelf(session: Session): Promise<number | null> {
+    const [last] = await this.ctx.database.get(
+      'channel_message',
+      { ...scopeOf(session), isSelf: true },
+      { fields: ['time'], limit: 1, sort: newestFirst }
+    )
+    if (!last) return null
+    return this.ctx.database
+      .select('channel_message', {
+        ...scopeOf(session),
+        isSelf: false,
+        time: { $gt: last.time },
+        messageId: { $ne: session.messageId },
+      })
+      // $.sum(1) groups to a plain counter; $.count / $.length build arrays.
+      .execute(() => $.sum(1))
   }
 
   private async cleanup() {

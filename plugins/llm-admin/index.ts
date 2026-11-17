@@ -11,6 +11,7 @@ import {
   aggregateUserOverview,
 } from './aggregate-user'
 import { matchUser, paginate } from './filters'
+import { parseEnvelopes } from './envelope'
 import { checkMemoryWrite, utf8ByteLength } from './memory-edit'
 import { turnWindow } from './turns'
 
@@ -23,8 +24,10 @@ export const name = 'llm-admin'
 export const inject = ['console', 'database', 'llm']
 
 // ---- 类型（供前端参考） ----
+/** A user, or a group whose members share one conversation. */
 interface AdminUser {
-  id: number
+  /** User id, or `group:<platform>:<channel>` (see groupOf). */
+  id: number | string
   name: string
   account: string
 }
@@ -38,7 +41,7 @@ interface SessionRow {
   turns: number
 }
 type ChatMsg = { time: number } & (
-  | { role: 'user'; content: string; raw?: string }
+  | { role: 'user'; content: string; speaker?: string; raw?: string }
   | { role: 'system'; content: string }
   | {
       role: 'assistant'
@@ -58,9 +61,9 @@ declare module '@koishijs/console' {
       limit?: number
       offset?: number
     }): { total: number; users: AdminUser[] }
-    'llm-admin/overview'(payload: { id: number }): UserOverview
+    'llm-admin/overview'(payload: { id: number | string }): UserOverview
     'llm-admin/sessions'(payload: {
-      id: number
+      id: number | string
       limit?: number
       offset?: number
     }): { total: number; rows: SessionRow[] }
@@ -85,15 +88,84 @@ declare module '@koishijs/console' {
     }
     'llm-admin/memory-clear'(payload: { id: number }): { ok: boolean }
     // 写操作：强制轮转 session（纯新开，不压缩、不带 prev_session_id）。
-    'llm-admin/rotate'(payload: { id: number }): {
+    'llm-admin/rotate'(payload: { id: number | string }): {
       ok: true
       conversationId: string
     }
   }
 }
 
+const GROUP_OWNER = 0
+
+/** `group:<platform>:<channel>` → its parts; null for a user id. */
+function groupOf(id: number | string) {
+  if (typeof id !== 'string' || !id.startsWith('group:')) return null
+  const [, platform, ...rest] = id.split(':')
+  return { platform, channelId: rest.join(':') }
+}
+
 export function apply(ctx: Context) {
   const db = ctx.database
+
+  /** openai_session filter for a user's or a group's conversations. */
+  function sessionsQuery(id: number | string) {
+    const group = groupOf(id)
+    return group
+      ? {
+          conversation_owner: GROUP_OWNER,
+          platform: group.platform,
+          user_id: group.channelId,
+        }
+      : { conversation_owner: Number(id) }
+  }
+
+  async function currentConversation(id: number | string) {
+    const group = groupOf(id)
+    const [row] = group
+      ? await db.get(
+          'channel',
+          { platform: group.platform, id: group.channelId },
+          { fields: ['openai_last_conversation_id'] }
+        )
+      : await db.get(
+          'user',
+          { id: Number(id) },
+          { fields: ['openai_last_conversation_id'] }
+        )
+    return (row as any)?.openai_last_conversation_id ?? ''
+  }
+
+  /** Groups with a shared conversation, named after the QQ group when known. */
+  async function groupCandidates(): Promise<AdminUser[]> {
+    const rows = await db.get(
+      'openai_session',
+      { conversation_owner: GROUP_OWNER },
+      { fields: ['platform', 'user_id'] }
+    )
+    const seen = new Map<string, { platform: string; channelId: string }>()
+    for (const r of rows) {
+      seen.set(`group:${r.platform}:${r.user_id}`, {
+        platform: r.platform,
+        channelId: r.user_id,
+      })
+    }
+    const names = new Map<string, string>()
+    try {
+      const channels = await db.get(
+        'qqbot_channel' as any,
+        { id: [...seen.values()].map((g) => g.channelId) },
+        { fields: ['id', 'name'] } as any
+      )
+      for (const c of channels as any[]) names.set(c.id, c.name)
+    } catch {
+      // qqbot_channel only exists under the v5 profile.
+    }
+    return [...seen].map(([id, g]) => ({
+      id,
+      name: names.get(g.channelId) || '(群)',
+      account: `${g.platform}:${g.channelId}`,
+    }))
+  }
 
   // 身份解析（复刻仪表盘：user.name + 首个 binding platform:pid）
   async function resolveIdentities(ids: number[]) {
@@ -125,14 +197,17 @@ export function apply(ctx: Context) {
       )
       const ids = [...new Set(sessions.map((s) => s.conversation_owner))]
       const { nameMap, acctMap } = await resolveIdentities(ids)
-      const all: AdminUser[] = ids
+      const users: AdminUser[] = ids
+        .filter((id) => id !== GROUP_OWNER)
         .map((id) => ({
           id,
           name: nameMap.get(id) || '',
           account: acctMap.get(id) || '',
         }))
-        .filter((u) => matchUser(u, q))
-        .sort((a, b) => a.id - b.id)
+        .sort((a, b) => (a.id as number) - (b.id as number))
+      const all = [...users, ...(await groupCandidates())].filter((u) =>
+        matchUser(u, q)
+      )
       const { total, page } = paginate(all, limit, offset)
       return { total, users: page }
     },
@@ -143,22 +218,36 @@ export function apply(ctx: Context) {
   ctx.console.addListener(
     'llm-admin/overview',
     async ({ id }) => {
-      const { nameMap, acctMap } = await resolveIdentities([id])
+      const group = groupOf(id)
+      const sessionsOfUser = await db.get('openai_session', sessionsQuery(id), {
+        fields: ['id', 'conversation_id'],
+      })
+      // Group conversations all share owner 0: select by conversation id.
       const rows = (await db.get(
         'openai_chat',
-        { conversation_owner: id, role: 'assistant' },
+        group
+          ? {
+              conversation_id: sessionsOfUser.map((s) => s.conversation_id),
+              role: 'assistant',
+            }
+          : { conversation_owner: Number(id), role: 'assistant' },
         { fields: ['time', 'model', 'usage'] }
       )) as unknown as UserUsageRow[]
-      const sessionsOfUser = await db.get(
-        'openai_session',
-        { conversation_owner: id },
-        { fields: ['id'] }
-      )
 
-      const identity = {
-        id,
-        name: nameMap.get(id) || '',
-        account: acctMap.get(id) || '',
+      let identity: AdminUser
+      if (group) {
+        identity = (await groupCandidates()).find((g) => g.id === id) ?? {
+          id,
+          name: '(群)',
+          account: `${group.platform}:${group.channelId}`,
+        }
+      } else {
+        const { nameMap, acctMap } = await resolveIdentities([Number(id)])
+        identity = {
+          id,
+          name: nameMap.get(Number(id)) || '',
+          account: acctMap.get(Number(id)) || '',
+        }
       }
       return aggregateUserOverview(
         rows,
@@ -176,7 +265,7 @@ export function apply(ctx: Context) {
     async ({ id, limit = 30, offset = 0 }) => {
       const rows = await db.get(
         'openai_session',
-        { conversation_owner: id },
+        sessionsQuery(id),
         {
           fields: [
             'conversation_id',
@@ -187,12 +276,7 @@ export function apply(ctx: Context) {
           ],
         }
       )
-      const user = await db.get(
-        'user',
-        { id },
-        { fields: ['openai_last_conversation_id'] }
-      )
-      const currentConv = (user[0] as any)?.openai_last_conversation_id ?? ''
+      const currentConv = await currentConversation(id)
 
       const sorted = [...rows].sort((a, b) => b.last_used_at - a.last_used_at)
       const { total, page } = paginate(sorted, limit, offset)
@@ -275,20 +359,28 @@ export function apply(ctx: Context) {
         model: string
       }>
 
-      // user 行存的是包装 envelope，抽取 <user_message> 内层供展示
+      // user 行存的是包装 envelope：取出说话人和正文。群会话一行可能
+      // 有多条（上一轮没赶上的 steer 消息），逐条带上说话人。
       const extractUser = (c: string) => {
-        const m = c.match(/<user_message>([\s\S]*?)<\/user_message>/)
-        return (m ? m[1] : c).trim()
+        const parts = parseEnvelopes(c)
+        if (parts.length === 1) return parts[0]
+        return {
+          speaker: '多人',
+          text: parts.map((p) => `${p.speaker || '?'}：${p.text}`).join('\n'),
+        }
       }
 
       const messages = rows.map((r): ChatMsg => {
-        if (r.role === 'user')
+        if (r.role === 'user') {
+          const { speaker, text } = extractUser(r.content)
           return {
             time: r.time,
             role: 'user',
-            content: extractUser(r.content),
+            content: text,
+            speaker: speaker || undefined,
             raw: r.content, // 完整 envelope（<turn_context> + <user_message>）供折叠查看
           }
+        }
         if (r.role === 'system')
           return { time: r.time, role: 'system', content: r.content }
         if (r.role === 'tool')
@@ -410,23 +502,39 @@ export function apply(ctx: Context) {
     'llm-admin/rotate',
     async ({ id }) => {
       const newId = crypto.randomUUID()
-      const platform = await memoryPlatform(id)
-      await ctx.llm.sessions.create({
-        conversationId: newId,
-        conversationOwner: id,
-        platform,
-        userId: String(id),
-        userFirstMsg: '', // fresh blank session; no seeded utterance
-      })
-      await db.set('user', { id }, {
-        openai_last_conversation_id: newId,
-      } as any)
-      // activeChats 按 owner id 键；有在飞 chat 则把它写向新会话
+      const group = groupOf(id)
+      if (group) {
+        await ctx.llm.sessions.create({
+          conversationId: newId,
+          conversationOwner: GROUP_OWNER,
+          platform: group.platform,
+          userId: group.channelId,
+          userFirstMsg: '', // fresh blank session; no seeded utterance
+        })
+        await db.set(
+          'channel',
+          { platform: group.platform, id: group.channelId },
+          { openai_last_conversation_id: newId } as any
+        )
+      } else {
+        await ctx.llm.sessions.create({
+          conversationId: newId,
+          conversationOwner: Number(id),
+          platform: await memoryPlatform(Number(id)),
+          userId: String(id),
+          userFirstMsg: '', // fresh blank session; no seeded utterance
+        })
+        await db.set('user', { id: Number(id) }, {
+          openai_last_conversation_id: newId,
+        } as any)
+      }
+      // activeChats 的键与 id 同形（用户 id / group:<platform>:<channel>）；
+      // 有在飞 chat 则把它写向新会话
       const active = ctx.llm.activeChats.get(id)
       if (active) active.conversationId = newId
       ctx
         .logger('llm-admin')
-        .info('[rotate] user #%d rotated to fresh session %s', id, newId)
+        .info('[rotate] %s rotated to fresh session %s', id, newId)
       return { ok: true, conversationId: newId }
     },
     { authority: AUTH }

@@ -2,6 +2,11 @@ import { Context, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
+import {
+  canResetGroupConversation,
+  resolveConversationScope,
+} from '../services/conversation-scope'
+
 /**
  * Subplugin: admin/utility commands.
  *
@@ -172,13 +177,20 @@ export default class AdminCommands extends BasePlugin {
     ctx
       .command('llm.reset', '开始新的对话')
       .alias('llm.new', 'llm.clear')
-      .userFields(['id', 'openai_last_conversation_id'])
+      .userFields(['id', 'authority', 'openai_last_conversation_id'])
+      .channelFields(['openai_last_conversation_id'])
       .shortcut('聊点别的', { prefix: true, fuzzy: false })
       .action(async ({ session }) => {
+        // In a group this resets the conversation shared by the whole group,
+        // so only the group's owner/admins or SILI moderators may do it.
+        const scope = resolveConversationScope(session as any)
+        if (scope.shared && !canResetGroupConversation(session as any)) {
+          return '群里的话题只有群管理员能换哦'
+        }
         // 如果当前还在说话，先掐断；否则即便清了 conversation_id 也会被
         // 后续 sendQueued 继续发出来，UX 错乱。
-        ctx.llm.activeChats.abort(session.user.id, 'user-reset')
-        if (!session.user.openai_last_conversation_id) {
+        ctx.llm.activeChats.abort(scope.key, 'user-reset')
+        if (!scope.conversationId) {
           return (
             <random>
               <>嗯……SILI 跟你好像还没聊过什么呀</>
@@ -187,8 +199,7 @@ export default class AdminCommands extends BasePlugin {
             </random>
           )
         } else {
-          session.user.openai_last_conversation_id = ''
-          await session.user.$update()
+          await scope.setConversationId('')
           return (
             <random>
               <>好 换个话题！</>
@@ -207,7 +218,8 @@ export default class AdminCommands extends BasePlugin {
       .command('llm.stop', 'Stop SILI from talking right now', { hidden: true })
       .userFields(['id'])
       .action(async ({ session }) => {
-        const aborted = ctx.llm.activeChats.abort(session.user.id, 'user-stop')
+        const scope = resolveConversationScope(session as any)
+        const aborted = ctx.llm.activeChats.abort(scope.key, 'user-stop')
         if (aborted) {
           session?.setReaction?.('🤐').catch(() => {})
         }
@@ -314,9 +326,11 @@ export default class AdminCommands extends BasePlugin {
         { hidden: true, authority: 3 }
       )
       .userFields(['id', 'openai_last_conversation_id'])
+      .channelFields(['openai_last_conversation_id'])
       .action(async ({ session }) => {
         const llm = ctx.llm
-        const conversation_id = session.user.openai_last_conversation_id
+        const scope = resolveConversationScope(session as any)
+        const conversation_id = scope.conversationId
         if (!conversation_id) return 'No active conversation to compact.'
 
         const provider = llm.defaultProvider
@@ -329,12 +343,13 @@ export default class AdminCommands extends BasePlugin {
         const t0 = Date.now()
         const res = await llm.summary.compactNow({
           conversation_id,
-          conversation_owner: session.user.id,
+          conversation_owner: scope.owner,
+          includeMemory: !scope.shared,
           systemPrompt: systemPromptText,
           provider,
           model,
           platform,
-          userId,
+          userId: scope.shared ? scope.sessionUserId : userId,
         })
         const elapsed = Date.now() - t0
 
@@ -345,9 +360,8 @@ export default class AdminCommands extends BasePlugin {
         // Adopt the new id so the next chat turn from this user continues
         // on the compacted session — same handoff the chat command does
         // when threshold-triggered compaction fires.
-        session.user.openai_last_conversation_id = res.newConversationId!
-        await session.user.$update()
-        const active = llm.activeChats.get(session.user.id)
+        await scope.setConversationId(res.newConversationId!)
+        const active = llm.activeChats.get(scope.key)
         if (active) active.conversationId = res.newConversationId!
 
         return [
