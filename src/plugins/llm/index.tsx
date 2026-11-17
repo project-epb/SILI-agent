@@ -124,28 +124,21 @@ export interface Config {
   providers: ProviderConfig[]
   model?: string
   /**
-   * 单次拉多少 user turn 进 prompt。一个 turn = 1 user + 0..N
-   * assistant(tool_calls) + 0..N tool result + 1 final assistant，整 turn
-   * 完整入选，不会被截断到中间。落到实际 ChatMessage 行数会比这个数大
-   * （工具调用越密越大），但 IM 场景一般就 1.5-3 倍。
+   * Summary compaction. Every turn loads the conversation's full history
+   * since the last compaction; compaction keeps it in check. The context
+   * size is the prompt tokens of the conversation's latest model call.
    *
-   * 注意：滑窗一旦触发就会让 prompt 前缀变化、prefix cache 全部失效。
-   * 推荐设置 >= `summarizeAfterUserTurns`，让 summary 比滑窗先触发，
-   * 这样 cache 命中率才能真正受益于摘要压缩。
+   * - compactAtContextTokens: compact before the next turn once the
+   *   context reaches this. 0 disables it.
+   * - idleCompactAfterMs / idleCompactMinTokens: a background pass
+   *   compacts a current conversation idle that long whose context is at
+   *   least that big. A provider's prompt cache can outlive a short idle
+   *   spell (DeepSeek's lasts hours), so compacting early only throws a
+   *   warm cache away.
    */
-  historyTurnCount?: number
-  /**
-   * 同一 conversation 内累计多少条 user message 后触发一次 summary
-   * compaction：把当前 system + 历史 + "请总结" 发给主模型，把得到的
-   * 摘要作为新的会话基点持久化（is_summary 标记）。后续 turn 只加载
-   * 摘要之后的 row，从而把整个早期上下文压缩成一对稳定的 user+
-   * assistant 消息——cache 在长会话里仍能维持高命中率。
-   *
-   * 计数是「自上一次 summary 以来的 user turn 数」（无 summary 则从
-   * conversation 起点算），所以默认 50 意味着每 50 条用户消息触发一次
-   * 摘要。设为 0 关闭功能（保留旧的纯滑窗行为）。
-   */
-  summarizeAfterUserTurns?: number
+  compactAtContextTokens?: number
+  idleCompactAfterMs?: number
+  idleCompactMinTokens?: number
   /**
    * 是否把 user 消息以「chat_info 包裹后的完整 envelope」形式入库。
    * 默认 true。开启后，下一轮 chat 拼 prompt 时上一条 user 消息的
@@ -309,28 +302,16 @@ export default class PluginLLM extends BasePlugin<Config> {
   readonly memoryFork: MemoryForkScheduler = new MemoryForkScheduler(this)
   readonly turns: TurnAllocator = new TurnAllocator(this.ctx)
   // Summary compactor — instantiated post-construct so it can read the
-  // resolved config (threshold from `summarizeAfterUserTurns`).
+  // resolved config (`compactAtContextTokens`).
   summary!: SummaryCompactor
 
   constructor(ctx: Context, config: Config) {
-    // One-time compat: 旧字段名 historyMessageCount → historyTurnCount。
-    // 单位语义不变（一直是 user turn 数）；仅改名以避免误导成"消息行数"。
-    // 读完即丢，下游代码统一只看 historyTurnCount。
-    const legacy = (config as any).historyMessageCount
-    let migratedFromLegacyName = false
-    if (legacy !== undefined && config.historyTurnCount === undefined) {
-      config.historyTurnCount = legacy
-      migratedFromLegacyName = true
-    }
-    if ('historyMessageCount' in (config as any)) {
-      delete (config as any).historyMessageCount
-    }
-
     const defaultConfigs: Partial<Config> = {
       model: 'gpt-4o-mini',
       maxTokens: 8192,
-      historyTurnCount: 50,
-      summarizeAfterUserTurns: 50,
+      compactAtContextTokens: 256_000,
+      idleCompactAfterMs: 6 * 60 * 60 * 1000, // 6 hours
+      idleCompactMinTokens: 24_000,
       persistWrappedUserMessage: true,
       enableAgent: true,
       maxToolIterations: 5,
@@ -358,12 +339,6 @@ export default class PluginLLM extends BasePlugin<Config> {
     }
     super(ctx, config, 'llm')
 
-    if (migratedFromLegacyName) {
-      this.logger.warn(
-        '[config] "historyMessageCount" is deprecated; rename to "historyTurnCount" (semantics unchanged — counts user turns, not raw message rows).'
-      )
-    }
-
     this.summary = new SummaryCompactor(
       this.ctx,
       this.logger,
@@ -371,7 +346,7 @@ export default class PluginLLM extends BasePlugin<Config> {
       this.sessions,
       this.turns,
       this.memory,
-      { threshold: config.summarizeAfterUserTurns ?? 50 }
+      { maxContextTokens: config.compactAtContextTokens ?? 256_000 }
     )
 
     for (const providerConfig of config.providers) {

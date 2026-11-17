@@ -532,7 +532,7 @@ export default class ChatCommand extends BasePlugin {
             provider,
             model,
             platform,
-            userId,
+            userId: scope.shared ? scope.sessionUserId : userId,
             features: { signal: abortController.signal },
           })
           if (compactRes.ran && compactRes.newConversationId) {
@@ -553,10 +553,9 @@ export default class ChatCommand extends BasePlugin {
           llm.logger.warn('[chat] summary compaction errored (non-fatal):', e)
         }
 
-        const histories = await llm.chatHistory.getById(
-          conversation_id,
-          llm.config.historyTurnCount
-        )
+        // Everything since the last compaction: compaction keeps it in
+        // check, and a stable prefix keeps the prompt cache warm.
+        const histories = await llm.chatHistory.getById(conversation_id)
         llm.logger.info('[chat] user data', {
           conversation_owner,
           conversation_id,

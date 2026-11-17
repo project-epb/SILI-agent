@@ -9,7 +9,7 @@ import { SummaryCompactor } from '../services/summary-compactor'
 
 /** Build the minimal mocked surface SummaryCompactor depends on. */
 function mkDeps(over: {
-  countUserMessages?: number
+  promptTokens?: number
   history?: ChatMessage[]
   summary?: string | Error
   memory?: { content?: string; last_updated_at?: number } | null | Error
@@ -30,7 +30,7 @@ function mkDeps(over: {
     success: vi.fn(),
   } as any
   const history = {
-    countUserMessages: vi.fn(async () => over.countUserMessages ?? 0),
+    latestPromptTokens: vi.fn(async () => over.promptTokens ?? 0),
     getById: vi.fn(async () => over.history ?? []),
   } as any
   const sessions = {
@@ -76,8 +76,8 @@ const INPUT = {
 }
 
 describe('SummaryCompactor', () => {
-  it('returns ran=false when threshold is 0 (disabled)', async () => {
-    const d = mkDeps({ countUserMessages: 100 })
+  it('returns ran=false when maxContextTokens is 0 (disabled)', async () => {
+    const d = mkDeps({ promptTokens: 100 })
     const c = new SummaryCompactor(
       d.ctx,
       d.logger,
@@ -85,16 +85,16 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 0 }
+      { maxContextTokens: 0 }
     )
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
     expect(r.ran).toBe(false)
     expect(r.reason).toBe('disabled')
-    expect(d.history.countUserMessages).not.toHaveBeenCalled()
+    expect(d.history.latestPromptTokens).not.toHaveBeenCalled()
   })
 
-  it('returns ran=false when user count is under threshold', async () => {
-    const d = mkDeps({ countUserMessages: 5 })
+  it('returns ran=false when the context is under the threshold', async () => {
+    const d = mkDeps({ promptTokens: 5 })
     const c = new SummaryCompactor(
       d.ctx,
       d.logger,
@@ -102,7 +102,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10 }
+      { maxContextTokens: 10 }
     )
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
     expect(r.ran).toBe(false)
@@ -111,7 +111,7 @@ describe('SummaryCompactor', () => {
   })
 
   it('returns ran=false when history is empty (nothing to summarize)', async () => {
-    const d = mkDeps({ countUserMessages: 50, history: [] })
+    const d = mkDeps({ promptTokens: 50, history: [] })
     const c = new SummaryCompactor(
       d.ctx,
       d.logger,
@@ -119,7 +119,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10 }
+      { maxContextTokens: 10 }
     )
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
     expect(r.ran).toBe(false)
@@ -128,7 +128,7 @@ describe('SummaryCompactor', () => {
 
   it('returns ran=false when summary call yields empty text', async () => {
     const d = mkDeps({
-      countUserMessages: 50,
+      promptTokens: 50,
       history: [{ role: 'user', content: 'hi' }],
       summary: '   ',
     })
@@ -139,7 +139,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10 }
+      { maxContextTokens: 10 }
     )
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
     expect(r.ran).toBe(false)
@@ -149,7 +149,7 @@ describe('SummaryCompactor', () => {
 
   it('returns ran=false when summary call errors', async () => {
     const d = mkDeps({
-      countUserMessages: 50,
+      promptTokens: 50,
       history: [{ role: 'user', content: 'hi' }],
       summary: new Error('boom'),
     })
@@ -160,7 +160,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10 }
+      { maxContextTokens: 10 }
     )
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
     expect(r.ran).toBe(false)
@@ -170,7 +170,7 @@ describe('SummaryCompactor', () => {
 
   it('happy path: persists summary pair + new session, returns new id', async () => {
     const d = mkDeps({
-      countUserMessages: 50,
+      promptTokens: 50,
       history: [
         { role: 'user', content: 'turn1' },
         { role: 'assistant', content: 'reply1' },
@@ -184,7 +184,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10 }
+      { maxContextTokens: 10 }
     )
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
 
@@ -226,7 +226,7 @@ describe('SummaryCompactor', () => {
   it('passes the summary call through provider with tools disabled', async () => {
     let receivedOptions: any
     const d = mkDeps({
-      countUserMessages: 50,
+      promptTokens: 50,
       history: [{ role: 'user', content: 'hi' }],
     })
     d.provider.streamChatCompletion = (async function* (
@@ -245,7 +245,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10, maxTokens: 999 }
+      { maxContextTokens: 10, maxTokens: 999 }
     )
     await c.compactIfNeeded({ ...INPUT, provider: d.provider })
 
@@ -258,7 +258,7 @@ describe('SummaryCompactor', () => {
   it('prepends a <long_term_memory> snapshot when the user has memory', async () => {
     let receivedMessages: ChatMessage[] = []
     const d = mkDeps({
-      countUserMessages: 50,
+      promptTokens: 50,
       history: [{ role: 'user', content: 'hi' }],
       summary: 'compacted',
       memory: { content: '- 喜欢吃热干面\n- 在杭州' },
@@ -278,7 +278,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10 }
+      { maxContextTokens: 10 }
     )
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
 
@@ -295,10 +295,48 @@ describe('SummaryCompactor', () => {
     expect(chatRows[0].row.content).toContain('喜欢吃热干面')
   })
 
+  it('never seeds a group conversation with a member\'s memory', async () => {
+    let receivedMessages: ChatMessage[] = []
+    const d = mkDeps({
+      promptTokens: 50,
+      history: [{ role: 'user', content: 'hi' }],
+      summary: 'compacted',
+      memory: { content: '- 喜欢吃热干面' },
+    })
+    d.provider.streamChatCompletion = (async function* (
+      msgs: ChatMessage[]
+    ): AsyncGenerator<StreamChatDelta> {
+      receivedMessages = msgs
+      yield { kind: 'content', content: 'compacted' }
+      yield { kind: 'finish', reason: 'stop' }
+    }) as any
+
+    const c = new SummaryCompactor(
+      d.ctx,
+      d.logger,
+      d.history,
+      d.sessions,
+      d.turns,
+      d.memory,
+      { maxContextTokens: 10 }
+    )
+    const r = await c.compactIfNeeded({
+      ...INPUT,
+      provider: d.provider,
+      includeMemory: false,
+    })
+
+    expect(r.ran).toBe(true)
+    const lastUserMessage = receivedMessages[receivedMessages.length - 1]
+    expect((lastUserMessage as { content: string }).content).not.toContain('喜欢吃热干面')
+    const chatRows = d.createCalls.filter((c) => c.table === 'openai_chat')
+    expect(chatRows[0].row.content).not.toContain('<long_term_memory>')
+  })
+
   it('skips the memory block when user has no memory', async () => {
     let receivedMessages: ChatMessage[] = []
     const d = mkDeps({
-      countUserMessages: 50,
+      promptTokens: 50,
       history: [{ role: 'user', content: 'hi' }],
       summary: 'compacted',
       memory: null,
@@ -318,7 +356,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10 }
+      { maxContextTokens: 10 }
     )
     await c.compactIfNeeded({ ...INPUT, provider: d.provider })
 
@@ -330,7 +368,7 @@ describe('SummaryCompactor', () => {
 
   it('proceeds normally when memory fetch errors', async () => {
     const d = mkDeps({
-      countUserMessages: 50,
+      promptTokens: 50,
       history: [{ role: 'user', content: 'hi' }],
       summary: 'compacted',
       memory: new Error('memory db unavailable'),
@@ -343,7 +381,7 @@ describe('SummaryCompactor', () => {
       d.sessions,
       d.turns,
       d.memory,
-      { threshold: 10 }
+      { maxContextTokens: 10 }
     )
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
 

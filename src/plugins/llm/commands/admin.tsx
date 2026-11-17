@@ -342,7 +342,7 @@ export default class AdminCommands extends BasePlugin {
           provider,
           model,
           platform,
-          userId,
+          userId: scope.shared ? scope.sessionUserId : userId,
         })
         const elapsed = Date.now() - t0
 
