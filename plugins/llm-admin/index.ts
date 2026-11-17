@@ -4,6 +4,8 @@ import { resolve } from 'node:path'
 
 import '@koishijs/console'
 
+import type { MemoryTier } from '../../src/plugins/llm/tools/read-user-memory'
+
 import {
   type Usage,
   type UserOverview,
@@ -40,7 +42,7 @@ interface SubjectRow extends AdminUser {
   sessions: number
   calls: number
   totalTokens: number
-  /** Long-term memory size in bytes; null for groups and users without one. */
+  /** Private + shared record size in bytes; null for groups and users without either. */
   memoryBytes: number | null
 }
 interface SessionRow {
@@ -93,7 +95,7 @@ declare module '@koishijs/console' {
       beforeTurn?: number | null
     }): { messages: ChatMsg[]; earliestTurn: number | null; hasMore: boolean }
     // 隐私敏感：读也需 authority 4。content 绝不落服务端日志。
-    'llm-admin/memory-get'(payload: { id: number }): {
+    'llm-admin/memory-get'(payload: { id: number; tier?: MemoryTier }): {
       content: string
       byteSize: number
       updateCount: number
@@ -101,12 +103,18 @@ declare module '@koishijs/console' {
       platform: string | null
       hardLimit: number
     }
-    'llm-admin/memory-save'(payload: { id: number; content: string }): {
+    'llm-admin/memory-save'(payload: {
+      id: number
+      tier?: MemoryTier
+      content: string
+    }): {
       ok: boolean
       byteSize: number
       error?: string
     }
-    'llm-admin/memory-clear'(payload: { id: number }): { ok: boolean }
+    'llm-admin/memory-clear'(payload: { id: number; tier?: MemoryTier }): {
+      ok: boolean
+    }
     // 写操作：强制轮转 session（纯新开，不压缩、不带 prev_session_id）。
     'llm-admin/rotate'(payload: { id: number | string }): {
       ok: true
@@ -251,9 +259,12 @@ export function apply(ctx: Context) {
       const userIds = [...stats.keys()].filter(
         (k): k is number => typeof k === 'number'
       )
-      const [users, bindings, memories, groups] = await Promise.all([
+      const [users, bindings, sharedMemories, memories, groups] = await Promise.all([
         db.get('user', { id: userIds }, { fields: ['id', 'name'] }),
         db.get('binding', { aid: userIds }, { fields: ['aid', 'platform', 'pid', 'bid'] }),
+        db.get('openai_user_shared_memory' as any, { user_id: userIds.map(String) }, {
+          fields: ['user_id', 'byte_size'],
+        } as any),
         db.get('openai_user_memory', { user_id: userIds.map(String) }, {
           fields: ['user_id', 'byte_size'],
         } as any),
@@ -277,9 +288,12 @@ export function apply(ctx: Context) {
       } catch {
         // qqbot_user only exists under the v5 profile.
       }
-      const memoryBytes = new Map(
-        (memories as any[]).map((m) => [Number(m.user_id), m.byte_size as number])
-      )
+      // Both records together: private + shared.
+      const memoryBytes = new Map<number, number>()
+      for (const m of [...(memories as any[]), ...(sharedMemories as any[])]) {
+        const id = Number(m.user_id)
+        memoryBytes.set(id, (memoryBytes.get(id) ?? 0) + (m.byte_size as number))
+      }
 
       const rows: SubjectRow[] = []
       for (const [key, st] of stats) {
@@ -527,15 +541,22 @@ export function apply(ctx: Context) {
   )
 
   // ---- 长期记忆读/改/清（隐私敏感，仅 sysop；日志不落 content）----
+  // 每位用户两份：private（openai_user_memory）与 shared（openai_user_shared_memory）。
   // 记忆键：(platform, user_id)。前端只传 aid，故先按 user_id 查现有行拿 platform；
   // 无现有行时从 binding 推断（onebot→qq 归一化）。
-  async function memoryRow(id: number) {
-    const rows = await db.get('openai_user_memory', { user_id: String(id) })
-    return rows[0] ?? null
+  const MEMORY_TABLE = {
+    private: 'openai_user_memory',
+    shared: 'openai_user_shared_memory',
+  } as const
+  async function memoryRow(id: number, tier: MemoryTier = 'private') {
+    const rows = await db.get(MEMORY_TABLE[tier] as any, { user_id: String(id) })
+    return (rows[0] as any) ?? null
   }
   async function memoryPlatform(id: number): Promise<string> {
-    const existing = await memoryRow(id)
-    if (existing?.platform) return existing.platform
+    for (const tier of ['private', 'shared'] as const) {
+      const existing = await memoryRow(id, tier)
+      if (existing?.platform) return existing.platform
+    }
     const bindings = await db.get(
       'binding',
       { aid: id },
@@ -545,24 +566,18 @@ export function apply(ctx: Context) {
     const p = first?.platform
     return p === 'onebot' ? 'qq' : p || 'unknown'
   }
-  // getMemoryHardLimit() 在 llm 插件里是 private，此处按同一策略自算
-  // （memory-fork.ts / index.tsx 均为 ceil(soft * 1.1)），避免上限漂移。
-  function memoryHardLimit(): number {
-    const soft = (ctx.llm as any).config?.memoryByteLimit ?? 3000
-    return Math.ceil(soft * 1.1)
-  }
 
   ctx.console.addListener(
     'llm-admin/memory-get',
-    async ({ id }) => {
-      const row = await memoryRow(id)
+    async ({ id, tier = 'private' as MemoryTier }) => {
+      const row = await memoryRow(id, tier)
       return {
         content: row?.content ?? '',
         byteSize: row?.byte_size ?? 0,
         updateCount: row?.update_count ?? 0,
         lastUpdated: row?.last_updated_at ?? null,
         platform: row?.platform ?? null,
-        hardLimit: memoryHardLimit(),
+        hardLimit: ctx.llm.getMemoryHardLimit(tier),
       }
     },
     { authority: AUTH }
@@ -570,10 +585,10 @@ export function apply(ctx: Context) {
 
   ctx.console.addListener(
     'llm-admin/memory-save',
-    async ({ id, content }) => {
-      const check = checkMemoryWrite(content, memoryHardLimit())
+    async ({ id, tier = 'private' as MemoryTier, content }) => {
+      const check = checkMemoryWrite(content, ctx.llm.getMemoryHardLimit(tier))
       if (!check.ok) return check
-      const existing = await memoryRow(id)
+      const existing = await memoryRow(id, tier)
       const platform = existing?.platform ?? (await memoryPlatform(id))
       // Orphan guard: with no binding and no existing memory row, platform
       // falls back to 'unknown'. The llm runtime resolves a real platform (e.g.
@@ -586,6 +601,10 @@ export function apply(ctx: Context) {
           error:
             '无法解析该用户的平台（无 binding 且无现有记忆行），写入将成为不会被读取的孤儿记忆行，已拒绝保存',
         }
+      if (tier === 'shared') {
+        await ctx.llm.sharedMemory.set(platform, String(id), content)
+        return { ok: true, byteSize: utf8ByteLength(content) }
+      }
       // 保留 fork 节流元数据，避免打乱后台记忆调度
       await ctx.llm.memory.set(
         platform,
@@ -601,12 +620,11 @@ export function apply(ctx: Context) {
 
   ctx.console.addListener(
     'llm-admin/memory-clear',
-    async ({ id }) => {
-      // memoryPlatform is existing-first internally (queries memoryRow before
-      // falling back to bindings), so this matches memory-save's platform
-      // resolution — no need to re-express the `existing?.platform ?? ...` form.
-      const platform = await memoryPlatform(id)
-      const ok = await ctx.llm.memory.delete(platform, String(id))
+    async ({ id, tier = 'private' as MemoryTier }) => {
+      // Same platform resolution as memory-save.
+      const existing = await memoryRow(id, tier)
+      const platform = existing?.platform ?? (await memoryPlatform(id))
+      const ok = await ctx.llm.memoryStore(tier).delete(platform, String(id))
       return { ok }
     },
     { authority: AUTH }
