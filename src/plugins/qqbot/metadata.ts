@@ -46,6 +46,11 @@ export class MetadataRecorder {
   private members = new Map<string, MemberDelta>()
   /** Groups known to exist in qqbot_channel; first sight triggers an info refresh. */
   private knownGroups = new Set<string>()
+  /**
+   * Group names by `selfId:groupId`. QQ group events carry no group name, so
+   * sessions get theirs from here (kept in step with qqbot_channel.name).
+   */
+  private groupNames = new Map<string, string>()
   private refreshQueue: Array<[string, string, () => void]> = []
   private refreshing = false
 
@@ -59,8 +64,13 @@ export class MetadataRecorder {
         const rows = await ctx.database.get('qqbot_channel', {}, [
           'selfId',
           'id',
+          'name',
         ])
-        for (const row of rows) this.knownGroups.add(`${row.selfId}:${row.id}`)
+        for (const row of rows) {
+          const key = `${row.selfId}:${row.id}`
+          this.knownGroups.add(key)
+          if (row.name) this.groupNames.set(key, row.name)
+        }
       } catch (error) {
         this.logger.warn('load known groups', error)
       }
@@ -109,7 +119,10 @@ export class MetadataRecorder {
       user.lastSeen = now
       user.count++
       if (session.isDirect) user.dmCount++
-      if (session.username) user.name = session.username
+      // The account's own nickname, not a group card (session.username
+      // prefers member.nick).
+      const name = session.event.user?.name
+      if (name) user.name = name
       this.users.set(key, user)
     }
     if (session.isDirect || !channelId) return
@@ -323,6 +336,11 @@ export class MetadataRecorder {
     }
   }
 
+  /** The group's name as last fetched, if known. */
+  groupName(selfId: string, groupId: string): string | undefined {
+    return this.groupNames.get(`${selfId}:${groupId}`)
+  }
+
   /** Pull group name / member count and the bot's state in the group. */
   private async refreshGroup(selfId: string, groupId: string) {
     const bot = this.ctx.bots.find(
@@ -338,6 +356,7 @@ export class MetadataRecorder {
     try {
       const info = await bot.internal.getGroupInfo(groupId)
       patch.name = info?.group_name ?? ''
+      if (patch.name) this.groupNames.set(`${selfId}:${groupId}`, patch.name as string)
       patch.memberNum = info?.group_member_num ?? 0
     } catch (error) {
       this.logger.debug(
