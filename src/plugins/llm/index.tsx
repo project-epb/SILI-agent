@@ -737,7 +737,16 @@ export default class PluginLLM extends BasePlugin<Config> {
    */
   memoryOwners(session: any): Record<MemoryTier, MemoryOwner> {
     const { userId } = this.resolveMemoryKey(session)
-    const user = { name: session.username || userId, uid: userId }
+    // The name others see here (group card, then platform nickname), not the
+    // Koishi name, which can be a private nickname set with `callme`.
+    const user = {
+      name:
+        session.event?.member?.nick ||
+        session.event?.user?.name ||
+        session.username ||
+        userId,
+      uid: userId,
+    }
     const channelId = String(session.channelId ?? '')
     return {
       private: user,
