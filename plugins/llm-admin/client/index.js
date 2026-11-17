@@ -312,12 +312,11 @@ function speakerColor(name) {
   return SPEAKER_COLORS[n % SPEAKER_COLORS.length]
 }
 
-function chatView(msgs, sentinelRef, loadingMore, group = false) {
+function chatView(msgs, sentinelRef, loadingMore) {
   if (msgs === null) return h('div', { class: 'la-dim la-chat-empty' }, '加载中…')
   if (!msgs.length) return h('div', { class: 'la-dim la-chat-empty' }, '（空会话）')
   // 顶部哨兵：滚动容器是 .la-right，IntersectionObserver 盯这个哨兵进视口触发上滚加载。
-  // 群会话：群友在左、SILI 在右（从 SILI 的视角看群聊）。
-  return h('div', { class: ['la-chat', group ? 'la-chat-group' : ''] }, [
+  return h('div', { class: 'la-chat' }, [
     h('div', { class: 'la-chat-top', ref: sentinelRef }),
     loadingMore ? h('div', { class: 'la-dim la-chat-more' }, '加载更早…') : null,
     ...msgs.map(renderMsg),
@@ -754,7 +753,7 @@ const Admin = defineComponent({
         h('div', { class: 'la-right', ref: chatEl }, [
           err.value ? h('div', { class: 'la-err' }, err.value) : null,
           inSession
-            ? chatView(msgs.value, sentinelEl, loadingMoreMsgs.value, typeof uid() === 'string')
+            ? chatView(msgs.value, sentinelEl, loadingMoreMsgs.value)
             : o
               ? overviewView(o)
               : h('div', { class: 'la-dim' }, '加载中…'),

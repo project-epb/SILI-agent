@@ -138,8 +138,8 @@
   border: 1px solid var(--k-color-border, #eee); background: var(--k-card-bg, #fff);
   max-width: 85%; word-break: break-word; white-space: pre-wrap;
 }
-.la-msg-user { align-items: flex-end; }
-.la-msg-user .la-bubble { background: var(--k-color-primary-fade, rgba(106,90,205,0.12)); }
+/* 单列左对齐，SILI 的气泡用紫色区分 */
+.la-msg-assistant .la-bubble { background: var(--k-color-primary-fade, rgba(106,90,205,0.12)); }
 /* 工具结果不占大气泡，紧凑折叠、左对齐、弱化 */
 .la-msg-tool { margin: -0.2rem 0; }
 .la-msg-tool .la-fold { margin: 0; }
@@ -237,9 +237,4 @@
 .la-cell-id, .la-cell-accts { font-size: 0.72rem; }
 .la-table .la-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* ---------- 群会话：群友在左、SILI 在右 ---------- */
-.la-chat-group .la-msg-user { align-items: flex-start; }
-.la-chat-group .la-msg-user .la-bubble { background: var(--k-card-bg, #fff); }
-.la-chat-group .la-msg-assistant { align-items: flex-end; }
-.la-chat-group .la-msg-assistant .la-bubble { background: var(--k-color-primary-fade, rgba(106,90,205,0.12)); }
 .la-msg-steered { font-size: 0.68rem; color: var(--k-color-warning, #d4a017); }
