@@ -45,6 +45,13 @@ export interface GateRules {
    * the bot is supposed to ignore.
    */
   groupCommands: ReadonlySet<string>
+  /**
+   * Command names and aliases anyone may use in an unactivated group: the
+   * cheap everyday features, so a group works before anyone activates it.
+   */
+  publicGroupCommands: ReadonlySet<string>
+  /** Message content anyone may send in an unactivated group (wiki links). */
+  publicGroupContent: RegExp
   /** Command names and aliases allowed in unserved DMs. */
   dmCommands: ReadonlySet<string>
   /** OneBot messages starting with this pass through (plugin-bind codes). */
@@ -69,8 +76,10 @@ export function decideGate(
     return content.trim().startsWith(rules.bindTokenPrefix) ? 'pass' : 'drop'
   }
   if (isServed(facts, served)) return 'pass'
+  if (!facts.isDirect && rules.publicGroupContent.test(content)) return 'pass'
   if (!commandName) return 'drop'
   if (facts.isDirect) return rules.dmCommands.has(commandName) ? 'pass' : 'drop'
+  if (rules.publicGroupCommands.has(commandName)) return 'pass'
   return rules.groupCommands.has(commandName) &&
     served.isOp(facts.platform, facts.userId)
     ? 'pass'
@@ -114,6 +123,10 @@ export function autoAuthorizeFor(
   if (!GUARDED_PLATFORMS.has(facts.platform)) return 1
   if (isServed(facts, served)) return 1
   if (facts.isDirect && commandName && rules.dmCommands.has(commandName))
+    return 1
+  // A public command needs the caller's user row: without one its authority
+  // is 0 and Koishi answers "权限不足".
+  if (!facts.isDirect && commandName && rules.publicGroupCommands.has(commandName))
     return 1
   return 0
 }

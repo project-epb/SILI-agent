@@ -53,9 +53,21 @@ export const BIND_TOKEN_PREFIX = 'koishi/'
 const GROUP_COMMANDS = ['assign', GROUP_MIGRATE_COMMAND]
 /** Allowed in unserved DMs (with their aliases). */
 const DM_COMMANDS = ['bind']
+/** Usable by anyone in an unactivated group; everything else needs activation. */
+const PUBLIC_GROUP_COMMANDS = [
+  'help',
+  'about',
+  'wiki',
+  'dice',
+  'sticker',
+  'manosaba',
+  'github',
+]
+/** `[[wiki links]]`, expanded by the mediawiki plugin. */
+const WIKI_LINK = /\[\[.+?\]\]/
 
 const PERMISSION_HINT =
-  '💡 群主或管理员可以在群设置的机器人页为 SILI 打开「获取群内全部消息」和「发送主动消息」，订阅推送等功能需要它们。'
+  '💡 想获得最佳体验的话，请群主点击 SILI 的头像，在机器人权限中开启「接收全部消息」和「推送主动消息」'
 
 function commandWords(app: Context, names: string[]) {
   const words = new Set<string>()
@@ -72,6 +84,8 @@ function commandWords(app: Context, names: string[]) {
 function rulesOf(app: Context): GateRules {
   return {
     groupCommands: commandWords(app, GROUP_COMMANDS),
+    publicGroupCommands: commandWords(app, PUBLIC_GROUP_COMMANDS),
+    publicGroupContent: WIKI_LINK,
     dmCommands: commandWords(app, DM_COMMANDS),
     bindTokenPrefix: BIND_TOKEN_PREFIX,
   }
@@ -115,6 +129,8 @@ export default class QQBotService extends Service {
   readonly state: ServedState
   readonly metadata: MetadataRecorder
   private pendingNotice = new Set<string>()
+  /** Groups whose permission hint is being decided right now. */
+  private hinting = new Set<string>()
   /** Last reminder per group (old OneBot account, or unactivated group), by `selfId:channelId`. */
   private remindedAt = new Map<string, number>()
   private shareUrl?: string
@@ -191,6 +207,9 @@ export default class QQBotService extends Service {
     if (guarded && isFromBot(session)) return
 
     const result = await next()
+    if (guarded && !session.isDirect && (command || session.stripped?.atSelf)) {
+      void this.hintPermissionsOnce(session)
+    }
     if (
       guarded &&
       !session.isDirect &&
@@ -429,7 +448,7 @@ export default class QQBotService extends Service {
     this.remindedAt.set(key, Date.now())
     try {
       await session.send(
-        'SILI尚未开通本群服务，提醒群管找维护者（或小鱼君）激活本群服务哦'
+        'SILI 还没在本群开通这个功能，需要找小鱼君（824399619）激活本群服务哦'
       )
     } catch (error) {
       this.logger.warn('unactivated group hint', error)
@@ -468,21 +487,48 @@ export default class QQBotService extends Service {
     }
   }
 
-  /** The permission hint rides on this one-time notice only; never nag again. */
-  private async noticeText(selfId: string, channelId: string) {
-    const [migrated, [row]] = await Promise.all([
-      this.ctx.database.get('qqbot_migration', {
-        kind: 'group',
-        newId: channelId,
-      }),
-      this.ctx.database.get('qqbot_channel', { selfId, id: channelId }, [
-        'recvSetting',
-        'allowProactive',
-      ]),
-    ])
-    const text = migrationNotice(migrated.length > 0)
-    if (row?.recvSetting === 'all' && row.allowProactive) return text
-    return `${text}\n${PERMISSION_HINT}`
+  private async noticeText(_selfId: string, channelId: string) {
+    const migrated = await this.ctx.database.get('qqbot_migration', {
+      kind: 'group',
+      newId: channelId,
+    })
+    return migrationNotice(migrated.length > 0)
+  }
+
+  /**
+   * The first time a group uses SILI, tell its owner how to enable the full
+   * message and proactive permissions if either is off. Once per group, and
+   * again after the bot is removed and re-added (QQ resets the permissions).
+   * Activated or not: unactivated groups use the public commands too.
+   */
+  private async hintPermissionsOnce(session: Session) {
+    const { selfId, channelId } = session
+    const key = `${selfId}:${channelId}`
+    if (this.hinting.has(key)) return
+    this.hinting.add(key)
+    try {
+      const db = this.ctx.database
+      const [row] = await db.get('qqbot_channel', { selfId, id: channelId }, [
+        'permissionHintAt',
+      ])
+      if (row?.permissionHintAt) return
+      await this.metadata.queueRefresh(selfId, channelId!)
+      const [state] = await db.get(
+        'qqbot_channel',
+        { selfId, id: channelId },
+        ['recvSetting', 'allowProactive']
+      )
+      if (state?.recvSetting !== 'all' || !state.allowProactive) {
+        await session.send(PERMISSION_HINT)
+      }
+      await db.upsert('qqbot_channel', [
+        { selfId, id: channelId, permissionHintAt: new Date() },
+      ])
+    } catch (error) {
+      this.logger.warn('permission hint', error)
+    } finally {
+      this.hinting.delete(key)
+    }
   }
 
   private async markNoticeSent(selfId: string, id: string) {
@@ -490,6 +536,14 @@ export default class QQBotService extends Service {
       { selfId, id, noticeSentAt: new Date(), noticePending: false },
     ])
   }
+}
+
+/**
+ * A group on a guarded platform that is not activated. The gate lets only
+ * the public group commands and wiki links through from such a group.
+ */
+export function isUnactivatedGroup(session: Session) {
+  return GUARDED_PLATFORMS.has(session.platform) && !session.isDirect
 }
 
 /** Filter for the served context of a profile. */

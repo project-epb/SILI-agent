@@ -270,6 +270,7 @@ export class MetadataRecorder {
           removedAt: new Date(),
           noticeSentAt: null,
           noticePending: false,
+          permissionHintAt: null,
         },
       ])
       await this.ctx.database.set(
