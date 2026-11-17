@@ -8,8 +8,40 @@ import { Context, Time, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
-import { BulkMessageBuilder } from '$utils/BulkMessageBuilder'
 import { Fexios } from 'fexios'
+
+interface PixivIllustration {
+  title: string
+  description: string
+  tags: { tags: { tag: string }[] }
+  userName: string
+  userId: string | number
+  likeCount: number
+  bookmarkCount: number
+  viewCount: number
+  createDate: string
+}
+
+type PixivPage = { urls: { original: string; regular: string } }
+
+interface PixivUser {
+  imageBig: string
+  userId: string | number
+  name: string
+  comment?: string
+}
+
+type PixivResponse<T> = T | { body: T }
+
+type PixivReplyData =
+  | PixivUser
+  | {
+      id: number
+      info: PixivIllustration
+      pages: PixivPage[]
+      page?: number
+      original?: boolean
+    }
 
 const defaultConfigs = {
   apiBaseURL: 'https://www.pixiv.net',
@@ -48,13 +80,12 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
     const req = this.request
     ctx
       .command('pixiv [id:posint]', 'pixiv.net 相关功能')
-      .action(({ session, name }, id) => {
+      .action(({ session, command }, id) => {
         if (!session) return
         if (id) {
-          // return session.execute({ name: 'pixiv.illust', args: [id] })
           return session.execute(`pixiv.illust ${id}`)
         }
-        return session.execute({ name, options: { help: true } })
+        return session.execute({ name: command.name, options: { help: true } })
       })
 
     ctx
@@ -64,30 +95,26 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
       .alias('pixiv插画', 'p站插画', 'pixiv.i', 'pixiv.artwork')
       .option('page', '-p <p:posint> 从多张插画中进行选择', { fallback: 1 })
       .option('original', '-o 显示原画 (可能会慢很多)', { fallback: false })
-      .action(async ({ session, options, name }, id) => {
+      .action(async ({ session, options, command }, id) => {
         if (!session) return
         if (!id) {
-          return session.execute({ name, options: { help: true } })
+          return session.execute({
+            name: command.name,
+            options: { help: true },
+          })
         }
 
         this.logger.info('pixiv.illust:', id, options)
 
-        // FIXME: no idea why
-        options.page ??= 1
-        options.original ??= false
-
-        let info, pages
+        let info: PixivResponse<PixivIllustration>
+        let pages: PixivResponse<PixivPage[]>
         try {
           ;[{ data: info }, { data: pages }] = await Promise.all([
-            req.get(`ajax/illust/${id}?full=1`),
-            req.get(`ajax/illust/${id}/pages`),
+            req.get<PixivResponse<PixivIllustration>>(
+              `ajax/illust/${id}?full=1`
+            ),
+            req.get<PixivResponse<PixivPage[]>>(`ajax/illust/${id}/pages`),
           ])
-          if (info.body) {
-            info = info.body
-          }
-          if (pages.body) {
-            pages = pages.body
-          }
         } catch (error) {
           this.logger.warn(error)
           return [
@@ -96,52 +123,32 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
           ].join('')
         }
 
-        const totalImages = pages.length
-        const selectedPage = Math.min(totalImages, options!.page as number)
-        const imageUrl = options!.original
-          ? pages[selectedPage - 1].urls.original
-          : pages[selectedPage - 1].urls.regular
-
-        const desc = info.description
-          .replace(/<br.*?>/g, '\n')
-          .replace(/<\/?.+?>/g, '')
-        const allTags = info.tags.tags.map((i: any) => `#${i.tag}`)
-
-        const builder = new BulkMessageBuilder(session)
-        builder.prependOriginal()
-        const lines = [
-          h.image(this.makePximgURL(imageUrl)),
-          totalImages ? `第 ${selectedPage} 张，共 ${totalImages} 张` : null,
-          `${info.title}`,
-          desc.length > 500 ? desc.substring(0, 500) + '...' : desc,
-          `作者: ${info.userName} (ID: ${info.userId})`,
-          `👍${info.likeCount} ❤️${info.bookmarkCount} 👀${info.viewCount}`,
-          `发布时间: ${new Date(info.createDate).toLocaleString()}`,
-          allTags.length ? allTags.join(' ') : null,
-          new URL(`/i/${id}`, this.config.webBaseURL).href,
-        ].map((i) =>
-          typeof i === 'string' ? i.trim().replace(/\n+/g, '\n') : i
-        )
-        lines.forEach((i) => builder.botSay(i))
-
-        return builder.all()
+        return this.#illustrationReply(session.messageId, {
+          id,
+          info: 'body' in info ? info.body : info,
+          pages: 'body' in pages ? pages.body : pages,
+          page: options?.page,
+          original: options?.original,
+        })
       })
 
     ctx
       .command('pixiv.user <id:posint>')
       .alias('pixiv用户', 'p站用户', 'pixiv.u')
-      .action(async ({ session, name: cmdName }, id) => {
+      .action(async ({ session, command }, id) => {
         if (!session) return
         if (!id) {
-          return session.execute({ name: cmdName, options: { help: true } })
+          return session.execute({
+            name: command.name,
+            options: { help: true },
+          })
         }
 
-        let data: any
+        let data: PixivResponse<PixivUser>
         try {
-          data = (await req.get(`ajax/user/${id}?full=1`)).data
-          if (data.body) {
-            data = data.body
-          }
+          ;({ data } = await req.get<PixivResponse<PixivUser>>(
+            `ajax/user/${id}?full=1`
+          ))
         } catch (error) {
           this.logger.warn(error)
           return [
@@ -150,21 +157,53 @@ export default class PluginPixiv extends BasePlugin<typeof defaultConfigs> {
           ].join('')
         }
 
-        const { imageBig, userId, name, comment } = data
-
-        const builder = new BulkMessageBuilder(session)
-        builder.prependOriginal()
-        const lines = [
-          h.image(this.makePximgURL(imageBig)),
-          `${name} (${userId})`,
-          comment,
-        ].map((i) =>
-          typeof i === 'string' ? i.trim().replace(/\n+/g, '\n') : i
+        return this.#illustrationReply(
+          session.messageId,
+          'body' in data ? data.body : data
         )
-        lines.forEach((i) => builder.botSay(i))
-
-        return builder.all()
       })
+  }
+
+  #illustrationReply(messageId: string | undefined, data: PixivReplyData) {
+    let imageUrl: string
+    let lines: (string | undefined)[]
+
+    if ('info' in data) {
+      const { id, info, pages, page = 1, original } = data
+      const selectedPage = Math.min(pages.length, page)
+      const { urls } = pages[selectedPage - 1]
+      imageUrl = original ? urls.original : urls.regular
+
+      const description = info.description
+        .replace(/<br.*?>/g, '\n')
+        .replace(/<\/?.+?>/g, '')
+      lines = [
+        `第 ${selectedPage} 张，共 ${pages.length} 张`,
+        info.title,
+        description.length > 500
+          ? description.slice(0, 500) + '...'
+          : description,
+        `作者: ${info.userName} (ID: ${info.userId})`,
+        `👍${info.likeCount} ❤️${info.bookmarkCount} 👀${info.viewCount}`,
+        `发布时间: ${new Date(info.createDate).toLocaleString()}`,
+        info.tags.tags.map(({ tag }) => `#${tag}`).join(' '),
+        new URL(`/i/${id}`, this.config.webBaseURL).href,
+      ]
+    } else {
+      imageUrl = data.imageBig
+      lines = [`${data.name} (${data.userId})`, data.comment]
+    }
+
+    const text = lines
+      .map((line) => line?.trim().replace(/\n+/g, '\n'))
+      .filter(Boolean)
+      .join('\n')
+    // QQ flushes pending text before attaching an image. Put the caption last.
+    return [
+      ...(messageId ? [h.quote(messageId)] : []),
+      h.image(this.makePximgURL(imageUrl)),
+      h.text(text),
+    ]
   }
 
   #setupMiddlewares() {

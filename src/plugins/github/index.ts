@@ -1,21 +1,30 @@
 import { Context, Schema, Time } from 'koishi'
+
 import BasePlugin from '~/_boilerplate'
-import { SubscriptionStore } from './subscribe'
-import { applyWebhook } from './webhook'
+
+import { applyCommands, makeRepoStore } from './commands'
+import { HISTORY_TABLE, HistoryStore } from './history'
 import { GitHubHttp } from './http'
 import { applyOAuth } from './oauth'
-import { applyCommands, makeRepoStore } from './commands'
 import { migrateRepoRename } from './rename'
-import { HISTORY_TABLE, HistoryStore } from './history'
-import { ReplyHandler, parseReplyCommand, formatHelp } from './reply'
+import { ReplyHandler, formatHelp, parseReplyCommand } from './reply'
+import { SubscriptionStore } from './subscribe'
 import type { Config as GitHubConfig } from './types'
+import { applyWebhook } from './webhook'
 
 // Re-export the config type and the Schema value under the same public name
 // (koishi's interface+Schema idiom; aliased import avoids a merged-declaration clash).
 export type Config = GitHubConfig
 
+declare module 'koishi' {
+  interface Events {
+    /** Re-read subscriptions from the channel table into the in-memory index. */
+    'github/rebuild-index'(): void
+  }
+}
+
 export default class PluginGitHub extends BasePlugin<Config> {
-  static inject = ['database', 'server', 'http']
+  static inject = { required: ['database', 'server', 'http'], optional: ['channelMessageHistory'] }
 
   static Config: Schema<Config> = Schema.object({
     path: Schema.string().default('/github'),
@@ -63,9 +72,16 @@ export default class PluginGitHub extends BasePlugin<Config> {
       { primary: 'messageId' }
     )
 
-    // Rebuild the in-memory subscription index from the channel table on startup.
-    ctx.on('ready', async () => {
-      const channels = await ctx.database.get('channel', {}, ['id', 'platform', 'github'])
+    // The in-memory subscription index mirrors `channel.github.webhooks`. Rebuild
+    // it on startup, and on 'github/rebuild-index' after something rewrites
+    // those rows directly (e.g. v5 group migration).
+    const rebuildIndex = async () => {
+      const channels = await ctx.database.get('channel', {}, [
+        'id',
+        'platform',
+        'github',
+      ])
+      this.store.clear()
       for (const { id, platform, github } of channels) {
         const webhooks = github?.webhooks ?? {}
         for (const repo in webhooks) {
@@ -73,7 +89,9 @@ export default class PluginGitHub extends BasePlugin<Config> {
         }
       }
       this.logger.info('subscription index rebuilt')
-    })
+    }
+    ctx.on('ready', rebuildIndex)
+    ctx.on('github/rebuild-index', rebuildIndex)
 
     const http = new GitHubHttp(ctx, this.config)
     const repoStore = makeRepoStore(ctx)
@@ -99,7 +117,12 @@ export default class PluginGitHub extends BasePlugin<Config> {
           setHookName: async (id, name, sec) => {
             await ctx.database.set('github', id, { name, secret: sec })
           },
-          getChannels: () => ctx.database.get('channel', {}, ['id', 'platform', 'github']) as any,
+          getChannels: () =>
+            ctx.database.get('channel', {}, [
+              'id',
+              'platform',
+              'github',
+            ]) as any,
           upsertChannels: async (rows) => {
             await ctx.database.upsert('channel', rows)
           },
@@ -117,8 +140,14 @@ export default class PluginGitHub extends BasePlugin<Config> {
     })
 
     ctx.middleware(async (session, next) => {
-      if (!session.quote) return next()
-      const entry = await history.fetch(session.quote.id)
+      if (!session.quote?.id) return next()
+      // A QQ official quote names the pushed message by its reference index
+      // (`REFIDX_…`), while history is keyed by the id the push got when sent.
+      let quoteId = session.quote.id
+      if (quoteId.startsWith('REFIDX_'))
+        quoteId =
+          (await ctx.channelMessageHistory?.messageIdByRef(session, quoteId)) ?? quoteId
+      const entry = await history.fetch(quoteId)
       if (!entry) return next()
       const body = session.stripped.content.trim()
       if (!body) return next() // empty reply (bare @bot / whitespace) — don't post an empty comment
@@ -140,7 +169,10 @@ export default class PluginGitHub extends BasePlugin<Config> {
         // tell the user the available actions rather than silently dropping to the chat handler.
         if (body.startsWith('.')) {
           session._handled = true
-          return `此消息不支持「.${name}」。\n` + formatHelp(Object.keys(entry.actions))
+          return (
+            `此消息不支持「.${name}」。\n` +
+            formatHelp(Object.keys(entry.actions))
+          )
         }
         return next()
       }
@@ -154,7 +186,14 @@ export default class PluginGitHub extends BasePlugin<Config> {
       // `.close <意见>`, `.merge`, etc. are bare — their message addresses the whole issue/PR,
       // not the quoted comment. buildQuotedComment omits the quote block when quotedText is ''.
       const quotedText = quoted ? entry.body : ''
-      const handler = new ReplyHandler(ctx, http, user, message, quotedText, footer)
+      const handler = new ReplyHandler(
+        ctx,
+        http,
+        user,
+        message,
+        quotedText,
+        footer
+      )
       return (handler as any)[name](...params)
     })
   }

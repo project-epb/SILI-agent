@@ -3,7 +3,7 @@
  * @author dragon-fish
  * @license MIT
  */
-import { Context } from 'koishi'
+import { Context, Time } from 'koishi'
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -22,10 +22,14 @@ import { CopilotProvider } from './providers/copilot'
 import { OpenAIProvider } from './providers/openai'
 import { ActiveChatRegistry } from './services/active-chats'
 import { ChatHistoryService } from './services/chat-history'
+import { resolveConversationScope } from './services/conversation-scope'
+import { IdleCompactor } from './services/idle-compactor'
 import { CommandCatalogService } from './services/command-catalog'
 import { DeepSeekSearchClient } from './services/deepseek-search-client'
 import { ImageReferenceCache } from './services/image-cache'
 import { MemoryStore } from './services/memory'
+import type { MemorySnapshotSource } from './services/memory-snapshot'
+import { MemoryRecordStore } from './services/shared-memory'
 import { MemoryForkScheduler } from './services/memory-fork-scheduler'
 import { SessionManager } from './services/session-manager'
 import { SummaryCompactor } from './services/summary-compactor'
@@ -41,9 +45,14 @@ import {
   buildCodeSandboxHandler,
   buildReadChannelHistoryHandler,
   buildSaveUserMemoryTool,
+  buildStoredChannelHistoryHandler,
   executeKoishiCommandHandler,
+  type MemoryOwner,
+  type MemoryTier,
   getMemoryToolState,
   getWebToolsState,
+  readableTiers,
+  renderMemoryBlock,
   runReadUserMemory,
   runSaveUserMemory,
   runWebExtract,
@@ -56,6 +65,10 @@ declare module 'koishi' {
     openai_chat: OpenAIConversationLog
   }
   export interface User {
+    openai_last_conversation_id: string
+  }
+  export interface Channel {
+    /** Current conversation of a group-shared session (see conversation-scope). */
     openai_last_conversation_id: string
   }
   interface Context {
@@ -119,28 +132,21 @@ export interface Config {
   providers: ProviderConfig[]
   model?: string
   /**
-   * 单次拉多少 user turn 进 prompt。一个 turn = 1 user + 0..N
-   * assistant(tool_calls) + 0..N tool result + 1 final assistant，整 turn
-   * 完整入选，不会被截断到中间。落到实际 ChatMessage 行数会比这个数大
-   * （工具调用越密越大），但 IM 场景一般就 1.5-3 倍。
+   * Summary compaction. Every turn loads the conversation's full history
+   * since the last compaction; compaction keeps it in check. The context
+   * size is the prompt tokens of the conversation's latest model call.
    *
-   * 注意：滑窗一旦触发就会让 prompt 前缀变化、prefix cache 全部失效。
-   * 推荐设置 >= `summarizeAfterUserTurns`，让 summary 比滑窗先触发，
-   * 这样 cache 命中率才能真正受益于摘要压缩。
+   * - compactAtContextTokens: compact before the next turn once the
+   *   context reaches this. 0 disables it.
+   * - idleCompactAfterMs / idleCompactMinTokens: a background pass
+   *   compacts a current conversation idle that long whose context is at
+   *   least that big. A provider's prompt cache can outlive a short idle
+   *   spell (DeepSeek's lasts hours), so compacting early only throws a
+   *   warm cache away.
    */
-  historyTurnCount?: number
-  /**
-   * 同一 conversation 内累计多少条 user message 后触发一次 summary
-   * compaction：把当前 system + 历史 + "请总结" 发给主模型，把得到的
-   * 摘要作为新的会话基点持久化（is_summary 标记）。后续 turn 只加载
-   * 摘要之后的 row，从而把整个早期上下文压缩成一对稳定的 user+
-   * assistant 消息——cache 在长会话里仍能维持高命中率。
-   *
-   * 计数是「自上一次 summary 以来的 user turn 数」（无 summary 则从
-   * conversation 起点算），所以默认 50 意味着每 50 条用户消息触发一次
-   * 摘要。设为 0 关闭功能（保留旧的纯滑窗行为）。
-   */
-  summarizeAfterUserTurns?: number
+  compactAtContextTokens?: number
+  idleCompactAfterMs?: number
+  idleCompactMinTokens?: number
   /**
    * 是否把 user 消息以「chat_info 包裹后的完整 envelope」形式入库。
    * 默认 true。开启后，下一轮 chat 拼 prompt 时上一条 user 消息的
@@ -175,6 +181,10 @@ export interface Config {
    */
   dsmlLeakMaxRetries?: number
   memoryByteLimit?: number
+  /** Soft byte limit of a user's shared record (hard = ×1.1). Default 3000. */
+  sharedMemoryByteLimit?: number
+  /** Soft byte limit of a group's memory (hard = ×1.1). Default 3000. */
+  groupMemoryByteLimit?: number
   memoryUpdateInterval?: number
   memoryForkMaxRetries?: number
   /**
@@ -269,6 +279,7 @@ export default class PluginLLM extends BasePlugin<Config> {
   static inject: Inject = {
     database: { required: true },
     html: { required: false },
+    channelMessageHistory: { required: false },
   }
 
   readonly providers: Map<string, LLMProviderBase> = new Map()
@@ -286,7 +297,12 @@ export default class PluginLLM extends BasePlugin<Config> {
   }
 
   readonly MODEL_ALIASES: Record<string, string> = {}
+  /** Private records: read and written in DMs only. */
   readonly memory: MemoryStore = new MemoryStore(this.ctx)
+  /** Shared records: a user's public facts, read and written in any group. */
+  readonly sharedMemory = new MemoryRecordStore(this.ctx, 'openai_user_shared_memory')
+  /** Group memories: one per group, read and written in that group only. */
+  readonly groupMemory = new MemoryRecordStore(this.ctx, 'openai_group_memory')
   readonly sessions: SessionManager = new SessionManager(this.ctx)
   readonly tools: ToolRegistry = new ToolRegistry()
   readonly imageRefs: ImageReferenceCache = new ImageReferenceCache({
@@ -308,34 +324,24 @@ export default class PluginLLM extends BasePlugin<Config> {
   readonly memoryFork: MemoryForkScheduler = new MemoryForkScheduler(this)
   readonly turns: TurnAllocator = new TurnAllocator(this.ctx)
   // Summary compactor — instantiated post-construct so it can read the
-  // resolved config (threshold from `summarizeAfterUserTurns`).
+  // resolved config (`compactAtContextTokens`).
   summary!: SummaryCompactor
 
   constructor(ctx: Context, config: Config) {
-    // One-time compat: 旧字段名 historyMessageCount → historyTurnCount。
-    // 单位语义不变（一直是 user turn 数）；仅改名以避免误导成"消息行数"。
-    // 读完即丢，下游代码统一只看 historyTurnCount。
-    const legacy = (config as any).historyMessageCount
-    let migratedFromLegacyName = false
-    if (legacy !== undefined && config.historyTurnCount === undefined) {
-      config.historyTurnCount = legacy
-      migratedFromLegacyName = true
-    }
-    if ('historyMessageCount' in (config as any)) {
-      delete (config as any).historyMessageCount
-    }
-
     const defaultConfigs: Partial<Config> = {
       model: 'gpt-4o-mini',
       maxTokens: 8192,
-      historyTurnCount: 50,
-      summarizeAfterUserTurns: 50,
+      compactAtContextTokens: 256_000,
+      idleCompactAfterMs: 6 * 60 * 60 * 1000, // 6 hours
+      idleCompactMinTokens: 24_000,
       persistWrappedUserMessage: true,
       enableAgent: true,
       maxToolIterations: 5,
       showToolCallNotice: false,
       dsmlLeakMaxRetries: 2,
       memoryByteLimit: 3000,
+      sharedMemoryByteLimit: 3000,
+      groupMemoryByteLimit: 3000,
       memoryUpdateInterval: 10,
       memoryForkMaxRetries: 3,
       quotedMessageMaxLength: 1000,
@@ -343,8 +349,8 @@ export default class PluginLLM extends BasePlugin<Config> {
       systemPrompt: {
         default:
           process.env.KOISHI_ENV === 'dev'
-            ? PluginLLM.readPromptFile('Noir.prompt.md')
-            : PluginLLM.readPromptFile('SILI-v6.prompt.md'),
+            ? PluginLLM.readPersonaPrompt('Noir-v2.prompt.md')
+            : PluginLLM.readPersonaPrompt('SILI-v7.prompt.md'),
       },
     }
     config = {
@@ -357,21 +363,42 @@ export default class PluginLLM extends BasePlugin<Config> {
     }
     super(ctx, config, 'llm')
 
-    if (migratedFromLegacyName) {
-      this.logger.warn(
-        '[config] "historyMessageCount" is deprecated; rename to "historyTurnCount" (semantics unchanged — counts user turns, not raw message rows).'
-      )
-    }
-
     this.summary = new SummaryCompactor(
       this.ctx,
       this.logger,
       this.chatHistory,
       this.sessions,
       this.turns,
-      this.memory,
-      { threshold: config.summarizeAfterUserTurns ?? 50 }
+      { maxContextTokens: config.compactAtContextTokens ?? 256_000 }
     )
+    const idleCompactor = new IdleCompactor({
+      ctx: this.ctx,
+      logger: this.logger,
+      history: this.chatHistory,
+      summary: this.summary,
+      activeChats: this.activeChats,
+      idleMs: config.idleCompactAfterMs ?? 6 * 60 * 60 * 1000,
+      minTokens: config.idleCompactMinTokens ?? 24_000,
+      memorySources: (row, group) => {
+        // A session row does not record whether it is a DM; outside a
+        // group's shared conversation it almost always is (v5 serves QQ DMs
+        // and groups). Group rows key on the channel, user rows on the uid.
+        const owner = { name: row.user_id, uid: row.user_id }
+        return this.memorySources(
+          row.platform,
+          { private: owner, shared: owner, group: owner },
+          group ? ['group'] : ['private', 'shared']
+        )
+      },
+      turnSetup: () => ({
+        provider: this.defaultProvider,
+        model: config.providers[0]?.model || config.model || 'gpt-4o-mini',
+        systemPrompt: this.systemPrompt.get(this.catalog.getOrRefresh()),
+      }),
+    })
+    this.ctx.on('ready', () => {
+      this.ctx.setInterval(() => idleCompactor.run(), 10 * Time.minute)
+    })
 
     for (const providerConfig of config.providers) {
       switch (providerConfig.type) {
@@ -412,48 +439,79 @@ export default class PluginLLM extends BasePlugin<Config> {
 
     // 注册内建工具
     this.tools.register(executeKoishiCommandHandler)
+    const hardLimits = () => ({
+      private: this.getMemoryHardLimit('private'),
+      shared: this.getMemoryHardLimit('shared'),
+      group: this.getMemoryHardLimit('group'),
+    })
     this.tools.register({
       definition: READ_USER_MEMORY_TOOL,
       execute: async (_args, { session, turnState }) => {
-        const { platform, userId } = this.resolveMemoryKey(session)
-        const result = await runReadUserMemory(this.memory, platform, userId, {
-          hardLimit: this.getMemoryHardLimit(),
-        })
+        const { platform } = this.resolveMemoryKey(session)
+        const owners = this.memoryOwners(session)
         const state = getMemoryToolState(turnState)
-        state.hasReadInTurn = true
-        state.lastSeenUpdatedAt = result.lastUpdatedAt
-        return result.text
+        const blocks: string[] = []
+        for (const tier of readableTiers(session.isDirect)) {
+          const result = await runReadUserMemory(
+            this.memoryStore(tier),
+            platform,
+            owners[tier].uid,
+            { hardLimit: this.getMemoryHardLimit(tier) }
+          )
+          state[tier].hasRead = true
+          state[tier].lastSeenUpdatedAt = result.lastUpdatedAt
+          blocks.push(renderMemoryBlock(owners[tier], tier, result.text))
+        }
+        if (!session.isDirect)
+          blocks.push('（这里是群聊：私密记录只能在私聊里读写。）')
+        return blocks.join('\n\n')
       },
     })
     this.tools.register({
-      definition: buildSaveUserMemoryTool(this.getMemoryHardLimit()),
+      definition: buildSaveUserMemoryTool(hardLimits()),
       execute: async (args, { ctx, session, turnState }) => {
-        const { platform, userId } = this.resolveMemoryKey(session)
-        const conversationId =
-          (session.user as any)?.openai_last_conversation_id ?? ''
+        const { platform } = this.resolveMemoryKey(session)
+        const owners = this.memoryOwners(session)
+        const scope = resolveConversationScope(session)
+        const conversationId = scope.conversationId
         if (!conversationId) {
           return 'Error: no active conversation. Skip this turn and try again on the next user message.'
         }
-        const conversationOwner = (session.user as any)?.id ?? 0
-        const state = getMemoryToolState(turnState)
-        return runSaveUserMemory(args as any, state, {
-          memory: this.memory,
-          platform,
-          userId,
-          conversationId,
-          getCurrentUserMessageCount: async () => {
-            const rows = await ctx.database.get(
-              'openai_chat',
-              {
-                conversation_owner: conversationOwner,
-                conversation_id: conversationId,
-                role: 'user',
-              },
-              { fields: ['id'] }
+        // Same source of truth as the memory-fork scheduler: a private save
+        // pushes `message_count_at_update` forward, deferring the next fork.
+        const countUserMessages = async () => {
+          const rows = await ctx.database.get(
+            'openai_chat',
+            {
+              conversation_owner: scope.owner,
+              conversation_id: conversationId,
+              role: 'user',
+            },
+            { fields: ['id'] }
+          )
+          return rows?.length ?? 0
+        }
+        return runSaveUserMemory(args as any, getMemoryToolState(turnState), {
+          isDirect: session.isDirect,
+          owners,
+          getUpdatedAt: async (tier) =>
+            (await this.memoryStore(tier).getMeta(platform, owners[tier].uid))
+              ?.last_updated_at ?? 0,
+          write: async (tier, content) => {
+            const key = owners[tier].uid
+            if (tier !== 'private') {
+              const store = tier === 'shared' ? this.sharedMemory : this.groupMemory
+              return store.set(platform, key, content)
+            }
+            await this.memory.set(
+              platform,
+              key,
+              content,
+              await countUserMessages(),
+              conversationId
             )
-            return rows?.length ?? 0
           },
-          hardLimit: this.getMemoryHardLimit(),
+          hardLimits: hardLimits(),
         })
       },
     })
@@ -520,9 +578,12 @@ export default class PluginLLM extends BasePlugin<Config> {
       )
     }
 
-    // read_channel_history: 通过 OneBot get_group_msg_history 拉群历史。
-    // 仅在 onebot 平台 + 群聊上下文里可用，handler 自己做平台/场景检查。
-    this.tools.register(buildReadChannelHistoryHandler())
+    const channelHistory = this.ctx.channelMessageHistory
+    this.tools.register(
+      channelHistory
+        ? buildStoredChannelHistoryHandler(channelHistory)
+        : buildReadChannelHistoryHandler()
+    )
 
     // catalog 自己挂 ready hook，rebuild 时机一致；之后每次 chat turn
     // getOrRefresh 会按需懒重建（覆盖 ready 后才 register 的延迟插件）
@@ -591,6 +652,9 @@ export default class PluginLLM extends BasePlugin<Config> {
     this.ctx.model.extend('user', {
       openai_last_conversation_id: 'string',
     })
+    this.ctx.model.extend('channel', {
+      openai_last_conversation_id: 'string',
+    })
     this.ctx.model.extend(
       'openai_chat',
       {
@@ -623,6 +687,8 @@ export default class PluginLLM extends BasePlugin<Config> {
       }
     )
     MemoryStore.initSchema(this.ctx)
+    MemoryRecordStore.initSchema(this.ctx, 'openai_user_shared_memory')
+    MemoryRecordStore.initSchema(this.ctx, 'openai_group_memory')
     SessionManager.initSchema(this.ctx)
   }
 
@@ -636,6 +702,14 @@ export default class PluginLLM extends BasePlugin<Config> {
     } catch (e) {
       return ''
     }
+  }
+
+  /** A persona prompt followed by the chat voice every persona shares. */
+  static readPersonaPrompt(file: string) {
+    return [
+      PluginLLM.readPromptFile(file),
+      PluginLLM.readPromptFile('IM-voice.prompt.md'),
+    ].join('\n\n')
   }
 
   /**
@@ -656,11 +730,65 @@ export default class PluginLLM extends BasePlugin<Config> {
   }
 
   /**
-   * Hard byte limit for memory writes (both fork and the save_user_memory
-   * tool). Mirrors the soft-limit + 10% policy used in memory-fork.ts.
+   * Hard byte limit for writes to one tier (the fork and save_user_memory
+   * alike). Mirrors the soft-limit + 10% policy used in memory-fork.ts.
    */
-  private getMemoryHardLimit(): number {
-    const soft = this.config.memoryByteLimit ?? 3000
-    return Math.ceil(soft * 1.1)
+  getMemoryHardLimit(tier: MemoryTier): number {
+    const soft = {
+      private: this.config.memoryByteLimit,
+      shared: this.config.sharedMemoryByteLimit,
+      group: this.config.groupMemoryByteLimit,
+    }[tier]
+    return Math.ceil((soft ?? 3000) * 1.1)
+  }
+
+  memoryStore(tier: MemoryTier): MemoryStore | MemoryRecordStore {
+    return { private: this.memory, shared: this.sharedMemory, group: this.groupMemory }[
+      tier
+    ]
+  }
+
+  /**
+   * Who owns each tier's record in this session: the user who started the
+   * turn for `private` / `shared`, the channel for `group`. `uid` is the
+   * record's key.
+   */
+  memoryOwners(session: any): Record<MemoryTier, MemoryOwner> {
+    const { userId } = this.resolveMemoryKey(session)
+    // The name others see here (group card, then platform nickname), not the
+    // Koishi name, which can be a private nickname set with `callme`.
+    const user = {
+      name:
+        session.event?.member?.nick ||
+        session.event?.user?.name ||
+        session.username ||
+        userId,
+      uid: userId,
+    }
+    const channelId = String(session.channelId ?? '')
+    return {
+      private: user,
+      shared: user,
+      group: {
+        name:
+          session.event?._data?.group_name ||
+          session.event?.channel?.name ||
+          channelId,
+        uid: channelId,
+      },
+    }
+  }
+
+  /** The records a snapshot of these tiers carries, for these owners. */
+  memorySources(
+    platform: string,
+    owners: Record<MemoryTier, MemoryOwner>,
+    tiers: readonly MemoryTier[]
+  ): MemorySnapshotSource[] {
+    return tiers.map((tier) => ({
+      tier,
+      owner: owners[tier],
+      read: () => this.memoryStore(tier).getMeta(platform, owners[tier].uid),
+    }))
   }
 }

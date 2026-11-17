@@ -8,7 +8,7 @@ import type {
   ChatMessage,
   ToolCall,
 } from './providers/_base'
-import { PROTOCOL_MARKERS } from './utils/protocol'
+import { PROTOCOL_MARKERS, escapeProtocolTags } from './utils/protocol'
 import { containsDsmlLeak } from './utils/dsml-leak'
 import { ToolRegistry } from './tools'
 
@@ -92,6 +92,20 @@ export interface AgentLoopOptions {
    * text into one wall.
    */
   onTurnEnd?: (info: { hadToolCalls: boolean }) => Promise<void>
+  /**
+   * Steer: messages that arrived while this turn runs, already wrapped as
+   * envelopes, or '' when there are none. Drained once all tools of an
+   * iteration have finished and appended to that iteration's last tool
+   * result, so the next request sees them without breaking the
+   * assistant/tool message order. Whatever arrives after the last tool
+   * iteration stays with the caller, to run as a turn of its own.
+   */
+  drainSteer?: () => string
+  /**
+   * Per-turn state shared across tool executions (see ToolContext). The
+   * caller may pass its own to set state up front; a fresh one otherwise.
+   */
+  turnState?: Record<string, unknown>
 }
 
 export interface AssistantTurnRecord {
@@ -133,7 +147,7 @@ export async function runAgentLoop(
   // Fresh per-turn state shared across tool executions in this loop.
   // Lets read_user_memory hand off `last_updated_at` to save_user_memory
   // (read-before-write + optimistic-lock).
-  const turnState: Record<string, unknown> = {}
+  const turnState: Record<string, unknown> = opts.turnState ?? {}
 
   const allTools = opts.registry.listDefinitions()
   const isAborted = () => opts.signal?.aborted === true
@@ -403,6 +417,14 @@ export async function runAgentLoop(
       model: opts.options.model,
       time: assistantTurnTime,
     })
+    // Tool output comes from outside (web pages, chat history): a forged
+    // envelope tag in it must not read as a real message.
+    for (const m of completedToolMessages) {
+      m.resultText = escapeProtocolTags(m.resultText)
+    }
+    const steer = opts.drainSteer?.()
+    const lastTool = completedToolMessages.at(-1)
+    if (steer && lastTool) lastTool.resultText += `\n\n${steer}`
     for (const m of completedToolMessages) {
       messages.push({
         role: 'tool',

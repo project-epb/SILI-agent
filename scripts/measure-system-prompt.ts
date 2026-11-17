@@ -63,7 +63,7 @@ const scaffoldingDelta = bytes(fullWithCatalog) - bytes(fullEmpty) - bytes('<CAT
 const tools = [
   EXECUTE_KOISHI_COMMAND_TOOL,
   READ_USER_MEMORY_TOOL,
-  buildSaveUserMemoryTool(3300),
+  buildSaveUserMemoryTool({ private: 3300, shared: 3300, group: 3300 }),
   WEB_SEARCH_TOOL,
   EXTRACT_WEBPAGES_TOOL,
 ]

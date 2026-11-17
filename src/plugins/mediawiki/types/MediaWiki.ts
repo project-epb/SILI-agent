@@ -28,6 +28,12 @@ export interface MWRedirect {
   tofragment?: string
 }
 
+export type MWTitleMappings = MWTitleMapping[]
+export interface MWTitleMapping {
+  from: string
+  to: string
+}
+
 export type MWInterwikiLinks = MWInterwiki[]
 export interface MWInterwiki {
   title: string

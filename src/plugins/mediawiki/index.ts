@@ -5,13 +5,14 @@
  * @author Koishijs(机智的小鱼君) <dragon-fish@qq.com>
  * @license Apache-2.0
  */
-import { Context, Time, h } from 'koishi'
+import { Context, Session, Time, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
 import { BulkMessageBuilder } from '$utils/BulkMessageBuilder'
 
 import { INFOBOX_DEFINITION } from './infoboxes'
+import { markdownLink, markdownText, qqWikiReply } from './qq-reply'
 import type { Config } from './types/Config'
 import type { InfoboxDefinition } from './types/Infobox'
 import type {
@@ -21,15 +22,18 @@ import type {
   MWPages,
   MWRedirects,
   MWSpecialPageAliases,
+  MWTitleMappings,
 } from './types/MediaWiki'
+import { isUserRootPage, shotUserInfobox } from './user-infobox'
 import {
+  canConnectWiki,
   getUrl,
   getWikiDisplayTitle,
   isValidApi,
   parseTitlesFromText,
+  resolveQueriedTitle,
   useApi,
 } from './utils'
-import { isUserRootPage, shotUserInfobox } from './user-infobox'
 
 declare module 'koishi' {
   export interface Channel {
@@ -62,11 +66,33 @@ export default class PluginMediawiki extends BasePlugin<Config> {
     this.initCommands()
   }
 
+  /** Only those who may run wiki.connect get its usage; others are told to ask an admin. */
+  private unboundHint(session: Session) {
+    return this.canConnect(session)
+      ? session.execute('wiki.connect -h')
+      : '本群还没有绑定 wiki，请联系群管理员使用 wiki.connect 进行绑定。'
+  }
+
+  private canConnect(session: Session) {
+    return canConnectWiki(
+      {
+        authority: (session.user as { authority?: number })?.authority ?? 0,
+        isDirect: !!session.isDirect,
+        // Typed as string[], but the QQ adapter stores `[{ id: member_role }]`.
+        roles: ((session.event.member?.roles ?? []) as unknown[]).map((r) =>
+          String((r as { id?: string })?.id ?? r)
+        ),
+      },
+      this.config.cmdAuthConnect
+    )
+  }
+
   private initCommands(): void {
     // @command wiki
     this.ctx
       .command('wiki [titles:text]', 'MediaWiki 相关功能', {
         authority: this.config.cmdAuthWiki,
+        captureQuote: false,
       })
       .example('wiki 页面 - 获取页面链接')
       .channelFields(['mwApi'])
@@ -85,10 +111,11 @@ export default class PluginMediawiki extends BasePlugin<Config> {
       .action(async ({ session, options }, titlesInput = '') => {
         if (!session?.channel) throw new Error('Missing channel context')
         const { mwApi } = session.channel
+        const qq = session.platform === 'qq'
 
         // Missing connection init
         if (!mwApi) {
-          return options?.quiet ? '' : session.execute('wiki.connect -h')
+          return options?.quiet ? '' : this.unboundHint(session)
         }
         // Missing titles
         if (!titlesInput) {
@@ -115,6 +142,8 @@ export default class PluginMediawiki extends BasePlugin<Config> {
           .get<{
             query: {
               pages: MWPages
+              normalized?: MWTitleMappings
+              converted?: MWTitleMappings
               redirects?: MWRedirects
               interwiki?: MWInterwikiLinks
               specialpagealiases: MWSpecialPageAliases
@@ -154,14 +183,16 @@ export default class PluginMediawiki extends BasePlugin<Config> {
           .catch((e: any) => {
             console.error('action=query error', e, e?.cause)
             session.send(
-              [
-                `⚠️查询时遇到问题：${e || '-'}`,
-                ...titles.map(
-                  (i) =>
-                    // anchor already carries its own '#' (see the titles map above)
-                    `${i.name} - ${getUrl(mwApi, { title: i.name })}${i.anchor}`
-                ),
-              ].join('\n')
+              h.text(
+                [
+                  `⚠️查询时遇到问题：${e || '-'}`,
+                  ...titles.map(
+                    (i) =>
+                      // anchor already carries its own '#' (see the titles map above)
+                      `${i.name} - ${getUrl(mwApi, { title: i.name })}${i.anchor}`
+                  ),
+                ].join('\n')
+              )
             )
             throw e
           })
@@ -182,17 +213,23 @@ export default class PluginMediawiki extends BasePlugin<Config> {
           .flat(Infinity) as string[]
         // 获取本地特殊名字空间的标准名称
         const specialNsName = namespaces['-1'].name
+        // 按 API 解析后的最终标题找回用户输入的锚点
+        const findAnchor = (title: string) =>
+          titles.find(
+            (i) =>
+              resolveQueriedTitle(i.name, data.query).toLowerCase() ===
+              title.toLowerCase()
+          )?.anchor || ''
 
         const pageMsgs =
           pages?.map((page) => {
             // Cache variables
             const msg: string[] = []
+            const renderText = qq ? markdownText : (text: string) => text
+            const renderLink = (url: string) =>
+              qq ? markdownLink('打开页面', url) : url
             let pageRedirect = redirects?.find(({ to }) => to === page.title)
-            let pageAnchor =
-              titles.find(
-                (i) =>
-                  i.name.toLowerCase() === page.title.toLowerCase()
-              )?.anchor || ''
+            let pageAnchor = findAnchor(page.title)
 
             // 开始判断危险重定向
             if (
@@ -229,72 +266,84 @@ export default class PluginMediawiki extends BasePlugin<Config> {
             } = page
 
             // 打印开头
-            msg.push(`您要的“${pagetitle}”：`)
+            msg.push(renderText(`您要的“${pagetitle}”：`))
             /** 处理特殊情况 */
             // 重定向
             if (pageRedirect) {
               const { from, to, tofragment } = pageRedirect || {}
               msg.push(
-                `重定向：[${from}] → [${to}${
-                  tofragment ? '#' + tofragment : ''
-                }]`
+                renderText(
+                  `重定向：[${from}] → [${to}${
+                    tofragment ? '#' + tofragment : ''
+                  }]`
+                )
               )
               if (tofragment) pageAnchor = '#' + encodeURI(tofragment)
             }
             // 页面名不合法
             if (invalid !== undefined) {
               msg.push(
-                `😟页面名称不合法：${
-                  JSON.stringify(page.invalidreason) || '原因未知'
-                }`
+                renderText(
+                  `😟页面名称不合法：${
+                    JSON.stringify(page.invalidreason) || '原因未知'
+                  }`
+                )
               )
             }
             // 特殊页面
             else if (special) {
               msg.push(
-                `${getUrl(mwApi, {
-                  title: pagetitle,
-                })}${pageAnchor} (${missing ? '不存在的' : ''}特殊页面)`
+                `${renderLink(
+                  getUrl(mwApi, {
+                    title: pagetitle,
+                  }) + pageAnchor
+                )} (${missing ? '不存在的' : ''}特殊页面)`
               )
             }
             // 不存在页面
             else if (missing !== undefined) {
               if (!options?.search) {
-                msg.push(`${editurl} (💔页面不存在)`)
+                msg.push(`${renderLink(editurl)} (💔页面不存在)`)
               } else {
-                msg.push(`${editurl}\n💡页面不存在，即将搜索wiki……`)
+                msg.push(`${renderLink(editurl)}\n💡页面不存在，即将搜索wiki……`)
               }
             } else {
               const shortUrl = getUrl(mwApi, { curid: pageid })
               msg.push(
-                (shortUrl.length <= canonicalurl.length
-                  ? shortUrl
-                  : canonicalurl) + pageAnchor
+                renderLink(
+                  (shortUrl.length <= canonicalurl.length
+                    ? shortUrl
+                    : canonicalurl) + pageAnchor
+                )
               )
             }
 
             if (options?.details && page.extract) {
-              msg.push(page.extract)
+              msg.push(renderText(page.extract))
             }
 
-            return msg.join('\n')
+            return msg.join(qq ? '\n\n' : '\n')
           }) || []
 
         const interwikiMsgs =
           interwiki?.map((item) => {
-            const pageAnchor =
-              titles.find(
-                (i) =>
-                  i.name.toLowerCase() === item.title.toLowerCase()
-              )?.anchor || ''
+            const pageAnchor = findAnchor(item.title)
 
-            return [`跨wiki链接：`, item.url + pageAnchor].join('\n')
+            const url = item.url + pageAnchor
+            return qq
+              ? markdownLink(`跨 Wiki：${item.title}`, url)
+              : `跨wiki链接：\n${url}`
           }) || []
 
         const allMsgList = [...pageMsgs, ...interwikiMsgs]
-        let finalMsg: string | h = ''
-        if (allMsgList.length === 1) {
-          finalMsg = h.quote(session.messageId as string) + allMsgList[0]
+        let finalMsg: h | h[] = []
+        if (qq && allMsgList.length) {
+          finalMsg = qqWikiReply(session, allMsgList)
+        } else if (allMsgList.length === 1) {
+          finalMsg = [
+            ...(session.messageId ? [h.quote(session.messageId)] : []),
+            h.text(allMsgList[0]),
+          ]
         } else if (allMsgList.length > 1) {
           const msgBuilder = new BulkMessageBuilder(session)
           allMsgList.forEach((i) => {
@@ -349,8 +398,10 @@ export default class PluginMediawiki extends BasePlugin<Config> {
     // @command wiki.connect
     // @command wiki.link
     this.ctx
+      // Authority 1 so group owners/admins get in; binding itself is checked
+      // by canConnect in the action.
       .command('wiki.connect [api:string]', '将群聊与 MediaWiki 网站连接', {
-        authority: this.config.cmdAuthConnect,
+        authority: 1,
       })
       .alias('wiki.link')
       .channelFields(['mwApi'])
@@ -360,8 +411,14 @@ export default class PluginMediawiki extends BasePlugin<Config> {
 
         if (!api) {
           return channel.mwApi
-            ? `本群已与 ${channel.mwApi} 连接~`
-            : '本群未连接到 MediaWiki 网站，请使用“wiki.connect <api网址>”进行连接。'
+            ? h.text(`本群已与 ${channel.mwApi} 连接~`)
+            : h.text(
+                '本群未连接到 MediaWiki 网站，请使用“wiki.connect <api网址>”进行连接。'
+              )
+        }
+
+        if (!this.canConnect(session)) {
+          return '只有群主、群管理员或 SILI 管理员可以绑定 wiki。'
         }
 
         if (!isValidApi(api)) {
@@ -381,21 +438,23 @@ export default class PluginMediawiki extends BasePlugin<Config> {
       .channelFields(['mwApi'])
       .action(async ({ session }, keywords) => {
         if (!session?.channel?.mwApi) {
-          return session?.execute('wiki.connect -h')
+          return session && this.unboundHint(session)
         }
         if (!keywords) {
           session.sendQueued('要搜索什么呢？(输入空行或句号取消)')
           keywords = (await session.prompt(30 * 1000)).trim()
           if (!keywords || keywords === '.' || keywords === '。') return ''
         }
-        const api = await useApi(session.channel.mwApi)
+        const { mwApi } = session.channel
+        const qq = session.platform === 'qq'
+        const api = await useApi(mwApi)
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { data } = await api.post<{
           query: {
             searchinfo: {
               totalhits: number
             }
-            pages: {
+            pages?: {
               pageid: number
               ns: number
               title: string
@@ -410,42 +469,55 @@ export default class PluginMediawiki extends BasePlugin<Config> {
           }
         }>({
           action: 'query',
-          prop: 'extracts',
           list: 'search',
+          prop: 'extracts',
           generator: 'search',
           exchars: '120',
           exintro: 1,
           explaintext: 1,
           exsectionformat: 'plain',
+          gsrsearch: `"${keywords}"`,
+          gsrnamespace: '0',
+          gsrlimit: '5',
           srsearch: `"${keywords}"`,
           srnamespace: '0',
           srlimit: '5',
           srinfo: 'totalhits',
           srprop: '',
-          gsrsearch: `"${keywords}"`,
-          gsrnamespace: '0',
-          gsrlimit: '5',
         })
 
         this.logger.debug('Search DATA', data)
         const { searchinfo, search, pages } = data.query
 
-        const bulk = new BulkMessageBuilder(session)
-
         if (search.length < 1) {
-          return `💔找不到与“${keywords}”匹配的结果。`
-        } else if (search.length === 1) {
+          return h.text(`💔找不到与“${keywords}”匹配的结果。`)
+        }
+        if (search.length === 1) {
           return session.execute(`wiki -d ${search[0].title}`)
-        } else {
-          bulk.prependOriginal()
-          bulk.botSay(
-            `🔍关键词“${keywords}”共匹配到 ${
-              searchinfo?.totalhits ?? '∅'
-            } 个相关结果，我来简单整理一下前 ${search.length} 个结果：`
+        }
+        if (qq) {
+          const extracts = new Map(
+            pages?.map(({ pageid, extract }) => [pageid, extract])
+          )
+          return qqWikiReply(
+            session,
+            search.map(({ title, pageid }, index) => {
+              const link = markdownLink(title, getUrl(mwApi, { curid: pageid }))
+              const extract = extracts.get(pageid)?.trim()
+              return `${index + 1}. ${link}${extract ? `\n\n${markdownText(extract)}` : ''}`
+            }),
+            `🔍 共找到 ${searchinfo?.totalhits ?? search.length} 个结果`
           )
         }
+        const bulk = new BulkMessageBuilder(session)
+        bulk.prependOriginal()
+        bulk.botSay(
+          `🔍关键词“${keywords}”共匹配到 ${
+            searchinfo?.totalhits ?? '∅'
+          } 个相关结果，我来简单整理一下前 ${search.length} 个结果：`
+        )
         pages
-          .sort((a, b) => a.index - b.index)
+          ?.sort((a, b) => a.index - b.index)
           .forEach((item, index: number) => {
             bulk.botSay(
               `(${index + 1}) ${item.title}

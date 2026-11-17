@@ -24,6 +24,8 @@ services:
       - ./src/:/app/src
       - ./package.json:/app/package.json
       - ./bun.lock:/app/bun.lock
+      # bun patch files (package.json patchedDependencies); install fails without them
+      - ./patches/:/app/patches
       - ./tsconfig.json:/app/tsconfig.json
       - ./plugins/:/app/plugins
       - ./.npmrc:/app/.npmrc
@@ -42,7 +44,9 @@ services:
 
   mongo:
     container_name: sili-mongo
-    image: mongo:8
+    # Pinned to the exact mongod release; a floating `8` tag can jump minor
+    # versions on the next pull. Bump deliberately.
+    image: mongo:8.2.11
     mem_limit: 256m
     networks:
       sili-network:
@@ -62,7 +66,9 @@ services:
   # https://github.com/NapNeko/NapCat-Docker
   napcat:
     container_name: sili-napcat
-    image: mlikiowa/napcat-docker:latest
+    # Pinned: upstream repo went closed-source and Docker Hub no longer lists it
+    # anonymously; `latest` can drift or vanish. Bump deliberately.
+    image: mlikiowa/napcat-docker:v4.18.42
     networks:
       sili-network:
         aliases:

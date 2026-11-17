@@ -2,6 +2,12 @@ import { Context, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
+import {
+  canResetGroupConversation,
+  resolveConversationScope,
+} from '../services/conversation-scope'
+import { TIER_LABEL, readableTiers, snapshotTiers } from '../tools/read-user-memory'
+
 /**
  * Subplugin: admin/utility commands.
  *
@@ -172,28 +178,34 @@ export default class AdminCommands extends BasePlugin {
     ctx
       .command('llm.reset', '开始新的对话')
       .alias('llm.new', 'llm.clear')
-      .userFields(['id', 'openai_last_conversation_id'])
+      .userFields(['id', 'authority', 'openai_last_conversation_id'])
+      .channelFields(['openai_last_conversation_id'])
       .shortcut('聊点别的', { prefix: true, fuzzy: false })
       .action(async ({ session }) => {
+        // In a group this resets the conversation shared by the whole group,
+        // so only the group's owner/admins or SILI moderators may do it.
+        const scope = resolveConversationScope(session as any)
+        if (scope.shared && !canResetGroupConversation(session as any)) {
+          return '群里的话题只有群管理员能换哦'
+        }
         // 如果当前还在说话，先掐断；否则即便清了 conversation_id 也会被
         // 后续 sendQueued 继续发出来，UX 错乱。
-        ctx.llm.activeChats.abort(session.user.id, 'user-reset')
-        if (!session.user.openai_last_conversation_id) {
+        ctx.llm.activeChats.abort(scope.key, 'user-reset')
+        if (!scope.conversationId) {
           return (
             <random>
-              <>嗯……我们好像还没聊过什么呀……</>
+              <>嗯……SILI 跟你好像还没聊过什么呀</>
               <>咦？你还没有和SILI分享过你的故事呢！</>
               <>欸？SILI好像还没和你讨论过什么哦。</>
             </random>
           )
         } else {
-          session.user.openai_last_conversation_id = ''
-          await session.user.$update()
+          await scope.setConversationId('')
           return (
             <random>
-              <>让我们开始新话题吧！</>
-              <>嗯……那我们聊点别的吧！</>
-              <>好吧，那我就不提之前的事了。</>
+              <>好 换个话题！</>
+              <>嗯……那聊点别的吧</>
+              <>好吧 那 SILI 就不提之前的事了</>
               <>你有更好的点子和SILI分享吗？</>
               <>咦？是还有其他问题吗？</>
             </random>
@@ -207,7 +219,8 @@ export default class AdminCommands extends BasePlugin {
       .command('llm.stop', 'Stop SILI from talking right now', { hidden: true })
       .userFields(['id'])
       .action(async ({ session }) => {
-        const aborted = ctx.llm.activeChats.abort(session.user.id, 'user-stop')
+        const scope = resolveConversationScope(session as any)
+        const aborted = ctx.llm.activeChats.abort(scope.key, 'user-stop')
         if (aborted) {
           session?.setReaction?.('🤐').catch(() => {})
         }
@@ -251,19 +264,37 @@ export default class AdminCommands extends BasePlugin {
 
         const { platform, userId } = llm.resolveMemoryKey(session)
 
+        // Private records never show up outside a DM. --reset only clears
+        // the caller's own records, never the group's memory.
+        const tiers = readableTiers(session.isDirect)
+        const ownTiers = tiers.filter((tier) => tier !== 'group')
+        const owners = llm.memoryOwners(session)
+        const read = (tier: (typeof tiers)[number]) =>
+          llm.memoryStore(tier).getMeta(platform, owners[tier].uid)
+
         if (options.read) {
-          const meta = await llm.memory.getMeta(platform, userId)
-          if (!meta || !meta.content) return '(空)'
-          const updatedAt = meta.last_updated_at
-            ? new Date(meta.last_updated_at).toLocaleString('sv', {
-                timeZone: 'Asia/Shanghai',
-              })
-            : '从未更新'
-          return [
-            `更新时间: ${updatedAt} | 字节: ${meta.byte_size} | 累计更新: ${meta.update_count}`,
-            '',
-            meta.content,
-          ].join('\n')
+          const parts: string[] = []
+          for (const tier of tiers) {
+            const meta = await read(tier)
+            if (!meta?.content) {
+              parts.push(`【${TIER_LABEL[tier]}】(空)`)
+              continue
+            }
+            const updatedAt = meta.last_updated_at
+              ? new Date(meta.last_updated_at).toLocaleString('sv', {
+                  timeZone: 'Asia/Shanghai',
+                })
+              : '从未更新'
+            parts.push(
+              [
+                `【${TIER_LABEL[tier]}】更新时间: ${updatedAt} | 字节: ${meta.byte_size} | 累计更新: ${meta.update_count}`,
+                '',
+                meta.content,
+              ].join('\n')
+            )
+          }
+          if (!session.isDirect) parts.push('（私密记录只在私聊里显示）')
+          return parts.join('\n\n')
         }
 
         if (options.write) {
@@ -291,16 +322,25 @@ export default class AdminCommands extends BasePlugin {
         }
 
         if (options.reset) {
-          const meta = await llm.memory.getMeta(platform, userId)
-          if (!meta) return '当前用户没有记忆记录，无需清空。'
+          const found: string[] = []
+          for (const tier of ownTiers) {
+            const meta = await read(tier)
+            if (meta) found.push(`${TIER_LABEL[tier]}（${meta.byte_size} 字节）`)
+          }
+          if (!found.length) return '当前用户没有记忆记录，无需清空。'
           await session.send(
-            `即将清空当前记忆（${meta.byte_size} 字节）。如果确认，请回复 y。`
+            `即将清空${found.join('、')}。如果确认，请回复 y。`
           )
           const reply = await session.prompt(30 * 1000)
           if (reply?.trim().toLowerCase() !== 'y') {
             return '已取消。'
           }
-          const removed = await llm.memory.delete(platform, userId)
+          let removed = false
+          for (const tier of ownTiers) {
+            removed =
+              (await llm.memoryStore(tier).delete(platform, owners[tier].uid)) ||
+              removed
+          }
           return removed ? '记忆已清空。' : '记忆已不存在。'
         }
       })
@@ -314,9 +354,11 @@ export default class AdminCommands extends BasePlugin {
         { hidden: true, authority: 3 }
       )
       .userFields(['id', 'openai_last_conversation_id'])
+      .channelFields(['openai_last_conversation_id'])
       .action(async ({ session }) => {
         const llm = ctx.llm
-        const conversation_id = session.user.openai_last_conversation_id
+        const scope = resolveConversationScope(session as any)
+        const conversation_id = scope.conversationId
         if (!conversation_id) return 'No active conversation to compact.'
 
         const provider = llm.defaultProvider
@@ -329,12 +371,17 @@ export default class AdminCommands extends BasePlugin {
         const t0 = Date.now()
         const res = await llm.summary.compactNow({
           conversation_id,
-          conversation_owner: session.user.id,
+          conversation_owner: scope.owner,
+          memory: llm.memorySources(
+            platform,
+            llm.memoryOwners(session),
+            snapshotTiers(session.isDirect, scope.shared)
+          ),
           systemPrompt: systemPromptText,
           provider,
           model,
           platform,
-          userId,
+          userId: scope.shared ? scope.sessionUserId : userId,
         })
         const elapsed = Date.now() - t0
 
@@ -345,9 +392,8 @@ export default class AdminCommands extends BasePlugin {
         // Adopt the new id so the next chat turn from this user continues
         // on the compacted session — same handoff the chat command does
         // when threshold-triggered compaction fires.
-        session.user.openai_last_conversation_id = res.newConversationId!
-        await session.user.$update()
-        const active = llm.activeChats.get(session.user.id)
+        await scope.setConversationId(res.newConversationId!)
+        const active = llm.activeChats.get(scope.key)
         if (active) active.conversationId = res.newConversationId!
 
         return [

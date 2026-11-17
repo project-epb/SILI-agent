@@ -1,5 +1,7 @@
 import { MediaWikiApi } from 'wiki-saikou/node'
 
+import type { MWTitleMappings } from './types/MediaWiki'
+
 const MW_CLIENTS = new Map<string, MediaWikiApi>()
 const MOCK_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0'
@@ -100,6 +102,41 @@ export function parseTitlesFromText(str: string) {
         .map(getWikiTitleDBKey)
     )
   ).filter((i) => !!i)
+}
+
+/**
+ * Follow action=query's normalized → converted → redirects chain from an
+ * input title to the page title it finally resolved to. Matching input titles
+ * against `page.title` directly breaks on namespace aliases (T: → Template:),
+ * variant conversion and plain redirects.
+ */
+export function resolveQueriedTitle(
+  title: string,
+  query: {
+    normalized?: MWTitleMappings
+    converted?: MWTitleMappings
+    redirects?: MWTitleMappings
+  }
+): string {
+  for (const mappings of [query.normalized, query.converted, query.redirects]) {
+    title = mappings?.find((i) => i.from === title)?.to ?? title
+  }
+  return title
+}
+
+/** QQ group roles (`author.member_role`) allowed to bind a wiki to their group. */
+const WIKI_ADMIN_ROLES = ['owner', 'admin']
+
+/**
+ * Who may bind a wiki: SILI admins anywhere, plus the group's own owner and
+ * admins inside that group.
+ */
+export function canConnectWiki(
+  who: { authority: number; isDirect: boolean; roles: string[] },
+  minAuthority: number
+): boolean {
+  if (who.authority >= minAuthority) return true
+  return !who.isDirect && who.roles.some((r) => WIKI_ADMIN_ROLES.includes(r))
 }
 
 export function getUrl(base: string, params = {}, script = 'index'): string {

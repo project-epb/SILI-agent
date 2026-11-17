@@ -4,13 +4,26 @@
  * @desc 基本资料
  * @authority 1
  */
-import { Context, Session, User, h } from 'koishi'
+import { Context, Session, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
+import { markdownText } from '~/mediawiki/qq-reply'
 
-import { BulkMessageBuilder } from '$utils/BulkMessageBuilder'
+/** Display names of binding platforms; unknown platforms show their raw name. */
+const PLATFORM_NAMES: Record<string, string> = {
+  qq: 'QQ',
+  onebot: 'OneBot（旧 SILI 绑定）',
+  qqguild: 'QQ 频道',
+  discord: 'Discord',
+  kook: 'KOOK',
+  dingtalk: '钉钉',
+  lark: '飞书',
+  minecraft: 'Minecraft',
+}
 
 export default class PluginProfile extends BasePlugin {
+  static inject = ['database']
+
   constructor(ctx: Context) {
     super(ctx, null, 'profile')
 
@@ -20,64 +33,87 @@ export default class PluginProfile extends BasePlugin {
       .option('user', '-u <user:string> platform:uid', { authority: 2 })
       .action(async ({ session, options }) => {
         if (!session) return
-        let user: User
-        const authorUniqId = `${session.platform}:${session.userId}`
-        let platform: string, uid: string
-        if (options.user) {
-          ;[platform, uid] = options.user.split(':')
-          if (!uid) {
-            uid = platform
-            platform = session.platform
-          }
-        } else {
-          platform = session.platform
-          uid = session.userId
-        }
-        const isTargetEqualAuthor = `${platform}:${uid}` === authorUniqId
-        console.info(platform, uid, authorUniqId, isTargetEqualAuthor)
-        user = await session.app.database.getUser(platform, uid, [
+        let [platform, uid] = options?.user
+          ? options.user.split(':')
+          : [session.platform, session.userId!]
+        if (!uid) [platform, uid] = [session.platform, platform]
+        const isSelf = platform === session.platform && uid === session.userId
+
+        const user = await ctx.database.getUser(platform, uid, [
           'id',
           'authority',
           'name',
-          // @ts-ignore
-          'github.accessToken',
+          'github.accessToken' as any,
         ])
-        if (!user) return 'SILI没有找到这个用户'
-        const bindings = await session.app.database.get('binding', {
-          aid: user.id,
-        })
-        const curPlatformBinding = bindings.find(
-          (i) => i.platform === session.platform
-        )
-        const nickname = user?.name ? h.escape(user?.name) : ''
-        const isBoundText = (i: boolean) => (i ? '√ 已绑定' : '× 未绑定')
-        const isPlatformBoundText = (platform: string) => {
-          return isBoundText(!!bindings.find((i) => i.platform === platform))
-        }
-        const msgBuilder = new BulkMessageBuilder(session as Session)
-        msgBuilder
-          .prependOriginal()
-          .botSay(
-            `${isTargetEqualAuthor ? '个人' : '他人'}资料\n平台ID: ${
-              curPlatformBinding.pid
-            }\n平台昵称/群名片: ${(user as any)?.nickname || ''}`
-          )
-          .botSay(`UID: ${user.id}`)
-          .botSay(`SILI称${isTargetEqualAuthor ? '你' : 'TA'}为: ${nickname}`)
-          .botSay(`权限: ${user.authority || 0}`)
-          .botSay(
-            [
-              `账号绑定情况:`,
-              `${isPlatformBoundText('onebot')} QQ`,
-              `${isPlatformBoundText('qqguild')} QQ频道`,
-              `${isPlatformBoundText('discord')} Discord`,
-              `${isPlatformBoundText('kooka')} Kook`,
-              `${isPlatformBoundText('villa')} 大别野`,
-              `${isPlatformBoundText('dingtalk')} 钉钉`,
-              `${isBoundText(!!user?.github?.accessToken)} GitHub`,
-            ].join('\n')
-          )
-        return msgBuilder.all()
+        if (!user) return 'SILI 没有找到这个用户'
+        const bindings = await ctx.database.get('binding', { aid: user.id }, [
+          'platform',
+          'pid',
+        ])
+        const githubBound = !!(user as any).github?.accessToken
+
+        return this.render(session, isSelf, [
+          ['UID', String(user.id)],
+          [
+            `SILI 称${isSelf ? '你' : 'TA'}为`,
+            this.callName(session, isSelf, user.name),
+          ],
+          ['权限', String(user.authority ?? 0)],
+          null,
+          ...bindings.map(
+            ({ platform, pid }) =>
+              [PLATFORM_NAMES[platform] ?? platform, pid] as [string, string]
+          ),
+          ['GitHub', githubBound ? '已绑定' : '未绑定'],
+        ])
       })
+  }
+
+  /** Without callme, SILI uses the platform nickname, known only for oneself. */
+  private callName(session: Session, isSelf: boolean, name?: string) {
+    if (name) return name
+    const nick = isSelf
+      ? session.event.member?.nick || session.event.user?.name
+      : ''
+    return `${nick || ''}（未设置，使用平台昵称）`
+  }
+
+  /** `null` starts the bindings section. One Markdown message on QQ. */
+  private render(
+    session: Session,
+    isSelf: boolean,
+    rows: ([string, string] | null)[]
+  ) {
+    const title = isSelf ? '个人资料' : '他人资料'
+    const split = rows.indexOf(null)
+    const basic = rows.slice(0, split) as [string, string][]
+    const bound = rows.slice(split + 1) as [string, string][]
+
+    if (session.platform === 'qq') {
+      const item = ([k, v]: [string, string]) =>
+        `- ${markdownText(k)}：${markdownText(v)}`
+      return h(
+        'markdown',
+        h.text(
+          [
+            `## ${title}`,
+            ...basic.map(item),
+            '',
+            '### 账号绑定',
+            ...bound.map(item),
+          ].join('\n')
+        )
+      )
+    }
+    const item = ([k, v]: [string, string]) => `${k}：${v}`
+    return h.text(
+      [
+        `【${title}】`,
+        ...basic.map(item),
+        '',
+        '【账号绑定】',
+        ...bound.map(item),
+      ].join('\n')
+    )
   }
 }
