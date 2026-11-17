@@ -113,6 +113,22 @@ export default class ChatCommand extends BasePlugin {
       .catch((e) => this.ctx.llm.logger.warn('[chat] steer leftover run failed:', e))
   }
 
+  /** Null when the conversation has no reply yet or history is unavailable. */
+  async #countSinceLastReply(
+    session: Session,
+    conversationId: string | undefined
+  ): Promise<number | null> {
+    const history = this.ctx.channelMessageHistory
+    if (!history || !conversationId) return null
+    const [last] = await this.ctx.database.get(
+      'openai_chat',
+      { conversation_id: conversationId, role: 'assistant' },
+      { fields: ['time'], sort: { time: 'desc' }, limit: 1 }
+    )
+    if (!last?.time) return null
+    return history.countSince(session, new Date(last.time))
+  }
+
   #shouldEnableSearch(content: string): boolean {
     return this.ENABLE_SEARCH_KEYWORDS.some((k) => content.includes(k))
   }
@@ -248,12 +264,15 @@ export default class ChatCommand extends BasePlugin {
         //   - platform.user.name: platform-native username
         //   - platform.user.group_nickname: QQ group card (group only;
         //     undefined elsewhere → JSON.stringify drops the key)
-        // Group only: how much of the group chat went by since SILI last
-        // spoke. A bare number; nothing nudges her to go read it.
+        // Group only: how much of the group chat went by since SILI's last
+        // LLM reply. A bare number; nothing nudges her to go read it. The
+        // anchor is the conversation's last assistant row, not the bot's
+        // last message: command replies (dice, wiki links) are the bot
+        // speaking too, but the conversation never saw what came before them.
         const messagesSinceLastReply = scope.shared
-          ? await llm.ctx.channelMessageHistory
-              ?.countSinceSelf(session)
-              .catch(() => null)
+          ? await this.#countSinceLastReply(session, scope.conversationId).catch(
+              () => null
+            )
           : null
         const chatInfo = {
           koishi: {
