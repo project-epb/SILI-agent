@@ -1,5 +1,5 @@
 export function matchUser(
-  u: { id: number; name: string; account: string },
+  u: { id: number | string; name: string; account: string },
   query: string
 ): boolean {
   const q = (query ?? '').trim().toLowerCase()

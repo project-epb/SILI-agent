@@ -10,7 +10,8 @@ export interface UserUsageRow {
   usage: Usage | null
 }
 export interface UserIdentity {
-  id: number
+  /** A user id, or `group:<platform>:<channel>` for a group's shared conversation. */
+  id: number | string
   name: string
   account: string
 }

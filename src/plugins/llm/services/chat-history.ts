@@ -33,15 +33,37 @@ export class ChatHistoryService {
     return rows?.length ?? 0
   }
 
+  /**
+   * Prompt size of the conversation's latest model call, from its last
+   * assistant row's usage; 0 when none has one yet (a freshly compacted
+   * conversation only holds the summary pair, which records no usage).
+   */
+  async latestPromptTokens(conversation_id: string): Promise<number> {
+    const [row] = (await this.ctx.database.get(
+      'openai_chat',
+      { conversation_id, role: 'assistant' },
+      {
+        sort: { turn_number: 'desc', intra_turn_seq: 'desc', id: 'desc' },
+        limit: 1,
+        fields: ['usage'],
+      }
+    )) as Array<{ usage?: { promptTokens?: number } }>
+    return row?.usage?.promptTokens ?? 0
+  }
+
+  /** Rows of the conversation, oldest first; `limit` counts user turns. */
   async getById(
     conversation_id: string,
-    limit = 10
+    limit = Infinity
   ): Promise<ChatMessage[]> {
-    const userTurnLimit = Math.max(0, Math.floor(limit))
+    const unlimited = !Number.isFinite(limit)
+    const userTurnLimit = unlimited ? Infinity : Math.max(0, Math.floor(limit))
     if (!userTurnLimit) return []
 
     // 一个回合最多 1 user + N assistant(tool_calls) + N tool + 1 final assistant
-    const queryLimit = Math.min(200, userTurnLimit * 8 + 20)
+    const queryLimit = unlimited
+      ? undefined
+      : Math.min(200, userTurnLimit * 8 + 20)
 
     // 排序依据：复合 key (turn_number, intra_turn_seq)。
     // - turn_number：本 chat invocation 的编号，per-conversation 单调
@@ -56,7 +78,7 @@ export class ChatHistoryService {
       { conversation_id },
       {
         sort: { turn_number: 'desc', intra_turn_seq: 'desc', id: 'desc' },
-        limit: queryLimit,
+        ...(queryLimit && { limit: queryLimit }),
         fields: [
           'content',
           'role',

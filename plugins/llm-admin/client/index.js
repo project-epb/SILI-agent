@@ -21,7 +21,8 @@ function ident(u) {
   const parts = []
   if (u?.name) parts.push(h('span', { class: 'la-nick' }, u.name))
   if (u?.account) parts.push(h('span', { class: 'la-acct' }, u.account))
-  parts.push(h('span', { class: 'la-uid' }, `(#${u?.id ?? '?'})`))
+  // A group's id is `group:<platform>:<channel>`; its account already shows the channel.
+  parts.push(h('span', { class: 'la-uid' }, typeof u?.id === 'string' ? '(群会话)' : `(#${u?.id ?? '?'})`))
   return parts
 }
 function toolNames(json) {
@@ -246,7 +247,8 @@ function overviewView(o) {
           : h('p', { class: 'la-dim' }, '（无数据）'),
       ],
     }),
-    h(MemoryCard, { id: o.id, key: o.id }),
+    // Groups have no long-term memory of their own.
+    typeof o.id === 'number' ? h(MemoryCard, { id: o.id, key: o.id }) : null,
   ])
 }
 
@@ -280,8 +282,14 @@ function renderMsg(m) {
     kids.push(fold('la-envelope', '📄 原始 envelope', m.raw))
   if (m.role === 'assistant' && m.toolCalls)
     kids.push(fold('la-tool', `🔧 调用 ${toolNames(m.toolCalls)}`, prettyJson(m.toolCalls)))
-  const label = m.role === 'user' ? '用户' : m.role === 'assistant' ? 'SILI' : m.role
-  const roleKids = [h('span', { class: 'la-msg-name' }, label)]
+  const label = m.role === 'user' ? m.speaker || '用户' : m.role === 'assistant' ? 'SILI' : m.role
+  const roleKids = [
+    h('span', {
+      class: 'la-msg-name',
+      style: m.role === 'user' && m.speaker ? { color: speakerColor(m.speaker), fontWeight: 600 } : null,
+    }, label),
+  ]
+  if (m.steered) roleKids.push(h('span', { class: 'la-msg-steered', title: 'SILI 回复途中发来，她从工具结果里读到' }, '↪ 回复中插话'))
   if (m.role === 'assistant' && m.model)
     roleKids.push(h('span', { class: 'la-msg-model' }, m.model))
   const meta = [h('span', { class: 'la-msg-time' }, when(m.time))]
@@ -294,6 +302,14 @@ function renderMsg(m) {
     h('div', { class: 'la-bubble' }, kids),
     h('div', { class: 'la-msg-meta' }, meta),
   ])
+}
+
+// 群聊里给每个说话人一个固定颜色，便于分辨谁在说话
+const SPEAKER_COLORS = ['#e07a5f', '#3d9970', '#4a90d9', '#c06c84', '#d4a017', '#7b68ee', '#20a4a4']
+function speakerColor(name) {
+  let n = 0
+  for (const ch of name || '') n = (n * 31 + ch.charCodeAt(0)) >>> 0
+  return SPEAKER_COLORS[n % SPEAKER_COLORS.length]
 }
 
 function chatView(msgs, sentinelRef, loadingMore) {
@@ -339,8 +355,15 @@ const Admin = defineComponent({
     const ready = ref(false)
     const rotating = ref(false)
 
-    const uid = () => (route.query.user ? Number(route.query.user) : null)
+    // A user id, or `group:<platform>:<channel>` for a group's shared conversation.
+    const uid = () => {
+      const q = route.query.user
+      if (!q) return null
+      return String(q).startsWith('group:') ? String(q) : Number(q)
+    }
     const cid = () => route.query.session || null
+    const kindWord = () => (typeof uid() === 'string' ? '群' : '用户')
+    const kind = ref('all')
 
     async function doSearch() {
       searching.value = true
@@ -349,6 +372,7 @@ const Admin = defineComponent({
       try {
         const res = await send('llm-admin/search', {
           q: q.value,
+          kind: kind.value,
           limit: SEARCH_PAGE,
           offset: 0,
         })
@@ -367,6 +391,7 @@ const Admin = defineComponent({
         const offset = searchOffset.value + SEARCH_PAGE
         const res = await send('llm-admin/search', {
           q: q.value,
+          kind: kind.value,
           limit: SEARCH_PAGE,
           offset,
         })
@@ -427,7 +452,9 @@ const Admin = defineComponent({
       if (id == null || rotating.value) return
       if (
         !window.confirm(
-          '确认给该用户强制轮转 session？下条消息将从空白新会话开始。'
+          typeof id === 'string'
+            ? '确认给这个群强制轮转 session？群里所有人的上下文都会清空，下条消息将从空白新会话开始。'
+            : '确认给该用户强制轮转 session？下条消息将从空白新会话开始。'
         )
       )
         return
@@ -583,12 +610,34 @@ const Admin = defineComponent({
     })
 
     function searchView() {
+      // 打开页面就列出来，不用先点搜索
+      if (results.value === null && ready.value && !searching.value && !err.value) doSearch()
+      const tab = (value, label) =>
+        h('button', {
+          class: ['la-tab', kind.value === value ? 'is-active' : ''],
+          type: 'button',
+          onClick: () => { kind.value = value; doSearch() },
+        }, label)
+      const row = (u) =>
+        h('tr', { class: 'la-row', key: u.id, onClick: () => openUser(u.id) }, [
+          h('td', { class: 'la-cell-name' }, [
+            h('div', {}, u.name || h('span', { class: 'la-dim' }, '（无名）')),
+            h('div', { class: 'la-dim la-cell-id' }, u.kind === 'group' ? '群会话' : `#${u.id}`),
+          ]),
+          h('td', { class: 'la-dim la-cell-accts' }, u.accounts.map((a) => h('div', { key: a }, a))),
+          h('td', {}, when(u.lastActive)),
+          h('td', { class: 'la-num' }, fmt(u.sessions)),
+          h('td', { class: 'la-num' }, fmt(u.calls)),
+          h('td', { class: 'la-num' }, fmtShort(u.totalTokens)),
+          h('td', { class: 'la-num' }, u.memoryBytes == null ? '—' : `${fmt(u.memoryBytes)} B`),
+        ])
       return h('div', { class: 'la-search' }, [
         h('div', { class: 'la-notice' }, '⚠ 含用户隐私数据（长期记忆 / 会话正文）· 仅 sysop 可见'),
         h('form', { class: 'la-search-form', onSubmit: (e) => { e.preventDefault(); doSearch() } }, [
+          h('div', { class: 'la-tabs' }, [tab('all', '全部'), tab('user', '用户'), tab('group', '群')]),
           h('input', {
             class: 'la-input',
-            placeholder: '搜索用户： #id / platform:pid / 昵称（留空列全部）',
+            placeholder: '#id / 账号 / 名称',
             value: q.value,
             onInput: (e) => (q.value = e.target.value),
           }),
@@ -596,12 +645,14 @@ const Admin = defineComponent({
         ]),
         err.value ? h('div', { class: 'la-err' }, err.value) : null,
         results.value === null
-          ? h('p', { class: 'la-dim' }, '输入后搜索，或留空点搜索列出全部聊过的用户。')
+          ? h('p', { class: 'la-dim' }, '加载中…')
           : results.value.length
-            ? h('div', { class: 'la-result-list' }, [
-                ...results.value.map((u) =>
-                  h('div', { class: 'la-result', onClick: () => openUser(u.id) }, ident(u))
-                ),
+            ? h('div', {}, [
+                h('div', { class: 'la-dim la-count' }, `共 ${searchTotal.value} 个，按最近活跃排序`),
+                h('table', { class: 'la-table' }, [
+                  h('thead', {}, h('tr', {}, ['名称', '账号', '最近活跃', '会话', '调用', 'token', '记忆'].map((t) => h('th', { key: t }, t)))),
+                  h('tbody', {}, results.value.map(row)),
+                ]),
                 results.value.length < searchTotal.value
                   ? h(
                       'button',
@@ -616,7 +667,7 @@ const Admin = defineComponent({
                     )
                   : null,
               ])
-            : h('p', { class: 'la-dim' }, '（无匹配用户）'),
+            : h('p', { class: 'la-dim' }, '（无匹配）'),
       ])
     }
 
@@ -629,7 +680,7 @@ const Admin = defineComponent({
           'div',
           {
             class: ['la-user-head', inSession ? 'clickable' : 'la-head-tap'],
-            title: inSession ? '点此返回用户总览' : '点此查看用户总览',
+            title: inSession ? `点此返回${kindWord()}总览` : `点此查看${kindWord()}总览`,
             onClick: onHeadClick,
           },
           [
@@ -647,7 +698,7 @@ const Admin = defineComponent({
             ]),
             h('div', { class: 'la-user-ident' }, ident(headIdent)),
             h('div', { class: 'la-user-meta' }, o ? `${o.sessionCount} 个会话 · ${fmtShort(o.totalTokens)} tok` : '加载中…'),
-            inSession ? h('div', { class: 'la-user-hint' }, '← 点此看用户总览') : null,
+            inSession ? h('div', { class: 'la-user-hint' }, `← 点此看${kindWord()}总览`) : null,
           ]
         ),
         h('div', { class: 'la-session-list' },

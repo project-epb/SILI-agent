@@ -331,7 +331,7 @@ const Page = defineComponent({
     const notice = () =>
       h('ul', { class: 'qa-notice' }, (tab.value === 'groups'
         ? [
-            '激活群等同于在群里 assign。',
+            '激活群等同于在群里发「激活」（channel.activate）；未激活的群也能用基础功能。',
             '「出现过的人」只含发过言的成员，不是完整名单。',
           ]
         : [

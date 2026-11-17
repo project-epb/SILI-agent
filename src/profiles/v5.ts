@@ -58,6 +58,7 @@ import PluginProfile from '~/profile'
 import QQBotService, {
   ServedState,
   accessAppOptions,
+  isGuardedSession,
   servedFilter,
 } from '~/qqbot'
 import PluginQueue from '~/queue'
@@ -271,10 +272,15 @@ function install(app: App) {
 
   const served = app.intersect(servedFilter(state))
   const servedNotQQ = served.exclude(isQQ)
+  // Served sessions plus unactivated QQ groups and DMs, for the plugins behind
+  // the public commands. The qqbot gate decides what reaches them from an
+  // unactivated group or DM: only the public commands (and wiki links in groups).
+  const publicGroups = app.intersect(
+    (session) => servedFilter(state)(session) || isGuardedSession(session)
+  )
 
   // 核心与通用
   served.plugin(function PluginCollectionCore(ctx) {
-    ctx.plugin(PluginHelp)
     ctx.plugin(PluginCommands)
     ctx.plugin(PluginSwitch)
     ctx.plugin(PluginAssetsS3, assetsS3Config(env))
@@ -320,21 +326,28 @@ function install(app: App) {
 
   // 第三方
   served.plugin(function PluginCollectionThirdParty(ctx) {
-    ctx.plugin(PluginGithub, githubConfig(env))
     ctx.plugin(PluginImageSearch, {
       saucenaoApiKey: env.TOKEN_SAUCENAO_APIKEY,
     })
     ctx.plugin(PluginSchedule)
     ctx.plugin(PluginBasedata)
+  })
+
+  // 免激活也能用的功能（见 qqbot 的 PUBLIC_GROUP_COMMANDS）
+  publicGroups.plugin(function PluginCollectionPublic(ctx) {
+    ctx.plugin(PluginHelp)
+    ctx.plugin(PluginGithub, githubConfig(env))
     ctx.plugin(PluginManosabaMemes)
+    ctx.plugin(PluginAbout)
+    ctx.plugin(PluginDice)
+    ctx.plugin(PluginSticker)
+    ctx.plugin(PluginMediawiki, mediawikiConfig())
   })
 
   served.plugin(PluginCollectionDialogue)
 
   // SILI Core
   served.plugin(function PluginCollectionSILICore(ctx) {
-    ctx.plugin(PluginAbout)
-    ctx.plugin(PluginDice)
     ctx.plugin(PluginHljs)
     ctx.plugin(PluginMarkdown)
     ctx.plugin(PluginMinecraft)
@@ -364,10 +377,8 @@ function install(app: App) {
     ctx.plugin(PluginPowerUser)
     ctx.plugin(PluginProfile)
     ctx.plugin(PluginQueue)
-    ctx.plugin(PluginSticker)
     ctx.plugin(PluginToImage)
     ctx.plugin(PluginWebShot)
-    ctx.plugin(PluginMediawiki, mediawikiConfig())
     ctx.plugin(PluginPixiv, pixivConfig(env))
     // Group openids (per bot) whose join requests are verified against Fandom.
     ctx.plugin(PluginFandomJoinVerify, {

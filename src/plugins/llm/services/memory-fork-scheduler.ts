@@ -40,7 +40,6 @@ export interface MemoryForkSchedulerDeps {
     memoryUpdateInterval?: number
     memoryByteLimit?: number
     memoryForkMaxRetries?: number
-    historyTurnCount?: number
     providers: SchedulerProviderConfig[]
     model?: string
     maxTokens?: number
@@ -138,11 +137,6 @@ export class MemoryForkScheduler {
     const interval = config.memoryUpdateInterval ?? 10
     const byteLimit = config.memoryByteLimit ?? 3000
     const maxRetries = config.memoryForkMaxRetries ?? 3
-    // history 长度跟主对话保持一致，[system + history] 前缀才对得上：
-    // 主对话发请求时本轮 user 还没落库，fork 触发时本轮 user/assistant 已落库，
-    // 所以 fork 拿 N turn 包含本轮，主对话则是 N-1 turn + 当前 user。
-    // 二者前缀完全包含到 t0-user，命中自动前缀缓存。
-    const historyTurns = config.historyTurnCount ?? 10
 
     const meta = await memory.getMeta(args.platform, args.userId)
     // 只数当前 conversation 内的 user 消息：原设计是"当前 session 超过 N 轮
@@ -171,7 +165,9 @@ export class MemoryForkScheduler {
     }
 
     // 拉取对话上下文（reasoning_content 已在 ChatHistoryService 默认带上）
-    const history = await chatHistory.getById(args.conversation_id, historyTurns)
+    // Same full history as the main chat loads, so the [system + history]
+    // prefix matches it and hits the prompt cache.
+    const history = await chatHistory.getById(args.conversation_id)
 
     const { provider, model, maxTokens } = this.resolveProvider()
     // 用主对话同一份 system prompt（同 catalog → memoize 命中同一字符串）

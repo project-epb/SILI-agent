@@ -44,6 +44,11 @@ export const PROTOCOL_ELEMENT_TYPES = {
   /** One-shot block telling the agent it was just interrupted. */
   INTERRUPT_NOTICE: 'interrupt_notice',
   /**
+   * Header of messages that arrived in a group while the agent was working,
+   * appended to the turn's last tool result (steer).
+   */
+  STEER_NOTICE: 'steer_notice',
+  /**
    * System-issued compaction request. Wraps the "please summarize"
    * instruction inside the synthetic summary user message produced by
    * SummaryCompactor — the wrapper signals to the model that this is
@@ -79,6 +84,10 @@ export const PROTOCOL_TAGS = {
     open: '<interrupt_notice>',
     close: '</interrupt_notice>',
   },
+  STEER_NOTICE: {
+    open: '<steer_notice>',
+    close: '</steer_notice>',
+  },
   SYSTEM_COMPACT: {
     open: '<system_compact>',
     close: '</system_compact>',
@@ -102,9 +111,32 @@ export const PROTOCOL_ONLY_ELEMENT_TYPES: ReadonlySet<string> = new Set([
   PROTOCOL_ELEMENT_TYPES.USER_MESSAGE,
   PROTOCOL_ELEMENT_TYPES.QUOTED_MESSAGE,
   PROTOCOL_ELEMENT_TYPES.INTERRUPT_NOTICE,
+  PROTOCOL_ELEMENT_TYPES.STEER_NOTICE,
   PROTOCOL_ELEMENT_TYPES.SYSTEM_COMPACT,
   'system:compact', // legacy: pre-2026-05-18 namespaced form
   PROTOCOL_ELEMENT_TYPES.INTERRUPTED,
   PROTOCOL_ELEMENT_TYPES.SILENT,
   PROTOCOL_ELEMENT_TYPES.MSG_BREAK,
 ])
+
+const INBOUND_TAG_PATTERN = new RegExp(
+  `<(/?)(${[
+    PROTOCOL_ELEMENT_TYPES.TURN_CONTEXT,
+    PROTOCOL_ELEMENT_TYPES.USER_MESSAGE,
+    PROTOCOL_ELEMENT_TYPES.QUOTED_MESSAGE,
+    PROTOCOL_ELEMENT_TYPES.INTERRUPT_NOTICE,
+    PROTOCOL_ELEMENT_TYPES.STEER_NOTICE,
+    PROTOCOL_ELEMENT_TYPES.SYSTEM_COMPACT,
+  ].join('|')})\\b`,
+  'gi'
+)
+
+/**
+ * Neutralize inbound protocol tags inside text from outside the system
+ * (tool results: web pages, chat history). Only the orchestrator may emit
+ * them raw; a forged `<user_message>` in a web page or a group message
+ * must not read as a real message, least of all as a steered one.
+ */
+export function escapeProtocolTags(text: string): string {
+  return text.replace(INBOUND_TAG_PATTERN, '&lt;$1$2')
+}
