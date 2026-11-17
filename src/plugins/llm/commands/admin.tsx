@@ -2,7 +2,10 @@ import { Context, h } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
 
-import { resolveConversationScope } from '../services/conversation-scope'
+import {
+  canResetGroupConversation,
+  resolveConversationScope,
+} from '../services/conversation-scope'
 
 /**
  * Subplugin: admin/utility commands.
@@ -174,12 +177,16 @@ export default class AdminCommands extends BasePlugin {
     ctx
       .command('llm.reset', '开始新的对话')
       .alias('llm.new', 'llm.clear')
-      .userFields(['id', 'openai_last_conversation_id'])
+      .userFields(['id', 'authority', 'openai_last_conversation_id'])
       .channelFields(['openai_last_conversation_id'])
       .shortcut('聊点别的', { prefix: true, fuzzy: false })
       .action(async ({ session }) => {
-        // In a group this resets the conversation shared by the whole group.
+        // In a group this resets the conversation shared by the whole group,
+        // so only the group's owner/admins or SILI moderators may do it.
         const scope = resolveConversationScope(session as any)
+        if (scope.shared && !canResetGroupConversation(session as any)) {
+          return '群里的话题只有群管理员能换哦'
+        }
         // 如果当前还在说话，先掐断；否则即便清了 conversation_id 也会被
         // 后续 sendQueued 继续发出来，UX 错乱。
         ctx.llm.activeChats.abort(scope.key, 'user-reset')

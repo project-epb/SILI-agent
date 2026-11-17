@@ -1,5 +1,7 @@
 import type { Session } from 'koishi'
 
+import { getUserRoles } from '@/utils/formatSession'
+
 /**
  * Which conversation a message belongs to. A QQ group shares one
  * conversation among all members; everything else (DMs, other platforms)
@@ -59,4 +61,17 @@ export function resolveConversationScope(session: Session): ConversationScope {
       await user.$update()
     },
   }
+}
+
+/** QQ group roles allowed to reset the conversation their group shares. */
+const GROUP_RESET_ROLES = ['owner', 'admin']
+const GROUP_RESET_AUTHORITY = 2
+
+/**
+ * Resetting a group conversation wipes everyone's context, so it takes a
+ * group owner/admin or a SILI moderator.
+ */
+export function canResetGroupConversation(session: Session): boolean {
+  if (((session.user as any)?.authority ?? 0) >= GROUP_RESET_AUTHORITY) return true
+  return getUserRoles(session).some((r) => GROUP_RESET_ROLES.includes(r.id))
 }
