@@ -12,7 +12,7 @@ import type { ChatMessage } from '../providers/_base'
 import type { ActiveChatEntry, SteerItem } from '../services/active-chats'
 import { resolveConversationScope } from '../services/conversation-scope'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
-import { ToolRegistry } from '../tools'
+import { ToolRegistry, getMemoryToolState, snapshotTiers } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
 import { PROTOCOL_MARKERS, PROTOCOL_TAGS } from '../utils/protocol'
 import {
@@ -111,6 +111,22 @@ export default class ChatCommand extends BasePlugin {
     trigger.session
       .execute({ name: 'chat', args: [trigger.prompt] })
       .catch((e) => this.ctx.llm.logger.warn('[chat] steer leftover run failed:', e))
+  }
+
+  /** Null when the conversation has no reply yet or history is unavailable. */
+  async #countSinceLastReply(
+    session: Session,
+    conversationId: string | undefined
+  ): Promise<number | null> {
+    const history = this.ctx.channelMessageHistory
+    if (!history || !conversationId) return null
+    const [last] = await this.ctx.database.get(
+      'openai_chat',
+      { conversation_id: conversationId, role: 'assistant' },
+      { fields: ['time'], sort: { time: 'desc' }, limit: 1 }
+    )
+    if (!last?.time) return null
+    return history.countSince(session, new Date(last.time))
   }
 
   #shouldEnableSearch(content: string): boolean {
@@ -248,12 +264,15 @@ export default class ChatCommand extends BasePlugin {
         //   - platform.user.name: platform-native username
         //   - platform.user.group_nickname: QQ group card (group only;
         //     undefined elsewhere → JSON.stringify drops the key)
-        // Group only: how much of the group chat went by since SILI last
-        // spoke. A bare number; nothing nudges her to go read it.
+        // Group only: how much of the group chat went by since SILI's last
+        // LLM reply. A bare number; nothing nudges her to go read it. The
+        // anchor is the conversation's last assistant row, not the bot's
+        // last message: command replies (dice, wiki links) are the bot
+        // speaking too, but the conversation never saw what came before them.
         const messagesSinceLastReply = scope.shared
-          ? await llm.ctx.channelMessageHistory
-              ?.countSinceSelf(session)
-              .catch(() => null)
+          ? await this.#countSinceLastReply(session, scope.conversationId).catch(
+              () => null
+            )
           : null
         const chatInfo = {
           koishi: {
@@ -373,6 +392,11 @@ export default class ChatCommand extends BasePlugin {
               .join('\n')
           : persistableEnvelopeBase
 
+        // Per-turn tool state, handed to the agent loop. Memory writes are
+        // refused once the turn carries someone else's message.
+        const turnState: Record<string, unknown> = {}
+        const fromOthers = (items: SteerItem[]) =>
+          items.some((item) => item.session.userId !== session.userId)
         if (scope.shared) {
           const running = llm.activeChats.get(scope.key)
           if (running) {
@@ -387,6 +411,7 @@ export default class ChatCommand extends BasePlugin {
           // Messages steered into the previous turn too late for it to see.
           const backlog = llm.activeChats.takeBacklog(scope.key)
           if (backlog.length) {
+            if (fromOthers(backlog)) getMemoryToolState(turnState).othersSpoke = true
             const earlier = backlog.map((item) => item.envelope).join('\n\n')
             persistableEnvelopeBase = `${earlier}\n\n${persistableEnvelopeBase}`
             userMessageEnvelopeBase = `${earlier}\n\n${userMessageEnvelopeBase}`
@@ -527,7 +552,11 @@ export default class ChatCommand extends BasePlugin {
           const compactRes = await llm.summary.compactIfNeeded({
             conversation_id,
             conversation_owner,
-            includeMemory: !scope.shared,
+            memory: llm.memorySources(
+              platform,
+              llm.memoryOwners(session),
+              snapshotTiers(session.isDirect, scope.shared)
+            ),
             systemPrompt: systemPromptText,
             provider,
             model,
@@ -569,14 +598,17 @@ export default class ChatCommand extends BasePlugin {
         // inside their summary user row, so `histories.length === 0`
         // cleanly discriminates "fresh / reset / idle-rotated" from
         // "post-compaction" — only the former needs seeding here.
-        // A group conversation never carries anyone's memory: the agent
-        // reads the speaker's on demand, so it cannot leak to others.
+        // A group's shared conversation carries only the group's memory;
+        // members' own records are read on demand. Private records never
+        // appear outside a DM.
         const memoryPrefix =
-          histories.length === 0 && !scope.shared
+          histories.length === 0
             ? await buildMemorySnapshot(
-                llm.memory,
-                platform,
-                userId,
+                llm.memorySources(
+                  platform,
+                  llm.memoryOwners(session),
+                  snapshotTiers(session.isDirect, scope.shared)
+                ),
                 llm.logger
               )
             : ''
@@ -696,7 +728,12 @@ export default class ChatCommand extends BasePlugin {
                 intra_turn_seq: nextSeq(),
               } as any)
             },
-            drainSteer: () => wrapSteer(activeEntry.inbox.splice(0)),
+            turnState,
+            drainSteer: () => {
+              const items = activeEntry.inbox.splice(0)
+              if (fromOthers(items)) getMemoryToolState(turnState).othersSpoke = true
+              return wrapSteer(items)
+            },
             onTurnEnd: async () => {
               // 强制把这一轮累积的可见文本发出，作为一条独立消息——
               // 否则多轮工具调用之间的 prelude 都被攒到最后一股脑发出

@@ -70,11 +70,16 @@ function utf8Len(s) {
   return new TextEncoder().encode(s ?? '').length
 }
 
-// 长期记忆编辑卡片：进入总览时 memory-get 载入，实时字节计数对上限，
+// 长期记忆编辑卡片，私密 / 共享各一张：进入总览时 memory-get 载入，实时字节计数对上限，
 // 超限标红并禁用保存；清空走 window.confirm 二次确认。隐私敏感。
+const TIER_TITLE = {
+  private: '私密记录 · 仅私聊可见',
+  shared: '共享记录 · 所有群可见',
+  group: '群记忆 · 仅本群可见',
+}
 const MemoryCard = defineComponent({
   name: 'LaMemoryCard',
-  props: { id: { type: Number, required: true } },
+  props: { id: { type: [Number, String], required: true }, tier: { type: String, required: true } },
   setup(props) {
     const content = ref('')
     const loaded = ref(false)
@@ -88,7 +93,7 @@ const MemoryCard = defineComponent({
       loaded.value = false
       msg.value = ''
       try {
-        const r = await send('llm-admin/memory-get', { id: props.id })
+        const r = await send('llm-admin/memory-get', { id: props.id, tier: props.tier })
         content.value = r.content ?? ''
         hardLimit.value = r.hardLimit ?? 3300
         meta.value = r
@@ -104,6 +109,7 @@ const MemoryCard = defineComponent({
       try {
         const r = await send('llm-admin/memory-save', {
           id: props.id,
+          tier: props.tier,
           content: content.value,
         })
         if (r.ok) msg.value = `已保存（${r.byteSize} 字节）`
@@ -116,11 +122,11 @@ const MemoryCard = defineComponent({
       }
     }
     async function clear() {
-      if (!window.confirm('确认清空该用户长期记忆？此操作不可撤销。')) return
+      if (!window.confirm(`确认清空该用户的${TIER_TITLE[props.tier].split(' ')[0]}？此操作不可撤销。`)) return
       clearing.value = true
       msg.value = ''
       try {
-        const r = await send('llm-admin/memory-clear', { id: props.id })
+        const r = await send('llm-admin/memory-clear', { id: props.id, tier: props.tier })
         if (r.ok) {
           content.value = ''
           meta.value = null
@@ -144,7 +150,7 @@ const MemoryCard = defineComponent({
       const over = size > hardLimit.value
       return h(KCard, { class: 'la-panel la-mem' }, {
         default: () => [
-          h('div', { class: 'la-panel-title' }, '长期记忆 · 隐私敏感'),
+          h('div', { class: 'la-panel-title' }, TIER_TITLE[props.tier]),
           !loaded.value
             ? h('p', { class: 'la-dim' }, '加载中…')
             : h('div', { class: 'la-mem-body' }, [
@@ -152,7 +158,7 @@ const MemoryCard = defineComponent({
                   class: ['la-mem-textarea', over ? 'over' : ''],
                   value: content.value,
                   spellcheck: 'false',
-                  placeholder: '（该用户暂无长期记忆，可在此写入）',
+                  placeholder: '（暂无记录，可在此写入）',
                   onInput: (e) => (content.value = e.target.value),
                 }),
                 h('div', { class: 'la-mem-bar' }, [
@@ -247,8 +253,10 @@ function overviewView(o) {
           : h('p', { class: 'la-dim' }, '（无数据）'),
       ],
     }),
-    // Groups have no long-term memory of their own.
-    typeof o.id === 'number' ? h(MemoryCard, { id: o.id, key: o.id }) : null,
+    // A user has a private and a shared record, a group its own memory.
+    ...(typeof o.id === 'number' ? ['private', 'shared'] : ['group']).map((tier) =>
+      h(MemoryCard, { id: o.id, tier, key: `${o.id}:${tier}` })
+    ),
   ])
 }
 

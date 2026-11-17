@@ -3,6 +3,7 @@ import type { Context, Logger } from 'koishi'
 import type { LLMProviderBase } from '../providers/_base'
 import type { ActiveChatRegistry } from './active-chats'
 import type { ChatHistoryService } from './chat-history'
+import type { MemorySnapshotSource } from './memory-snapshot'
 import { GROUP_CONVERSATION_OWNER } from './conversation-scope'
 import type { OpenAISession } from './session-manager'
 import type { SummaryCompactor } from './summary-compactor'
@@ -20,6 +21,12 @@ export interface IdleCompactorDeps {
   activeChats: ActiveChatRegistry
   idleMs: number
   minTokens: number
+  /**
+   * Records the compacted conversation is seeded with: the group's memory
+   * for a group's shared conversation, the user's private and shared
+   * records otherwise.
+   */
+  memorySources(row: OpenAISession, group: boolean): MemorySnapshotSource[]
   /** Resolved at run time: the provider, model and prompt of a normal turn. */
   turnSetup(): { provider: LLMProviderBase; model: string; systemPrompt: string }
 }
@@ -66,7 +73,7 @@ export class IdleCompactor {
     const res = await summary.compactNow({
       conversation_id: row.conversation_id,
       conversation_owner: row.conversation_owner,
-      includeMemory: !group,
+      memory: this.deps.memorySources(row, group),
       systemPrompt,
       provider,
       model,

@@ -1,46 +1,51 @@
 import type { Logger } from 'koishi'
 
-import type { MemoryStore } from './memory'
+import {
+  type MemoryOwner,
+  type MemoryTier,
+  renderMemoryBlock,
+} from '../tools/read-user-memory'
+
+/** One record a snapshot may carry, already resolved to its owner. */
+export interface MemorySnapshotSource {
+  tier: MemoryTier
+  owner: MemoryOwner
+  read: () => Promise<{ content: string } | null>
+}
 
 /**
- * Render the user's long-term memory as a `<long_term_memory>` XML
- * block to embed at the start of a synthetic / first user message in a
- * fresh conversation. Two callers use this:
+ * Render records as a `<long_term_memory>` block to embed at the start of
+ * the first user message of a fresh conversation. Two callers:
  *
- *   - SummaryCompactor — prepends the snapshot to the synthetic
- *     "please summarize" user message that seeds a compacted session
- *   - chat.tsx — prepends the snapshot to the FIRST user envelope of
- *     any brand-new conversation (initial chat, post-`llm.reset`, idle
- *     rotation), so non-compaction-spawned sessions also get the
- *     memory bootstrap and don't waste a round-trip on read_user_memory
+ *   - chat.tsx — the FIRST user envelope of any brand-new conversation
+ *     (initial chat, post-`llm.reset`, idle rotation)
+ *   - SummaryCompactor — the synthetic "please summarize" user message
+ *     that seeds a compacted session
  *
- * Effect: memory becomes part of the cached prefix for the entire new
- * conversation, the model has it in context from turn 1 without a
- * tool call, and routine "what do you remember about me" questions
- * are answerable instantly. The note inside the block tells the model
- * the snapshot is frozen and to call `read_user_memory` for fresh
- * data if the conversation has run long enough that updates may have
- * landed.
+ * The records become part of the cached prefix of the new conversation.
+ * Each one is wrapped in `<user_memory>` with its owner and tier. The caller
+ * decides which records a conversation may carry (`LLMPlugin.memorySources`):
+ * a DM gets the user's private and shared ones, a group's shared
+ * conversation only that group's memory.
  *
- * Returns '' when the user has no memory yet (or fetch fails), so
- * users without memory rows aren't burdened with empty placeholder
- * text in their fresh conversations.
+ * Returns '' when no record has content (or a fetch fails).
  */
 export async function buildMemorySnapshot(
-  memory: Pick<MemoryStore, 'getMeta'>,
-  platform: string,
-  userId: string,
+  sources: readonly MemorySnapshotSource[],
   logger?: Logger
 ): Promise<string> {
   try {
-    const meta = await memory.getMeta(platform, userId)
-    const raw = meta?.content?.trim()
-    if (!raw) return ''
+    const blocks: string[] = []
+    for (const { tier, owner, read } of sources) {
+      const raw = (await read())?.content?.trim()
+      if (raw) blocks.push(renderMemoryBlock(owner, tier, raw))
+    }
+    if (!blocks.length) return ''
     return [
       '<long_term_memory>',
-      '（系统在创建本会话时为你 freeze 的长期记忆快照；如果对话期间已经过去很久、用户提到新偏好，可调用 read_user_memory 拉最新版本。）',
+      '（系统在创建本会话时为你 freeze 的长期记忆快照；如果对话期间已经过去很久、有人提到新情况，可调用 read_user_memory 拉最新版本。）',
       '',
-      raw,
+      blocks.join('\n\n'),
       '</long_term_memory>',
     ].join('\n')
   } catch (e: any) {

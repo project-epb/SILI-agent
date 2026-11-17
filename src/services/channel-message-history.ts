@@ -244,22 +244,15 @@ export default class ChannelMessageHistory extends Service {
   }
 
   /**
-   * How many messages arrived in this channel since the bot last spoke
-   * there, the current message excluded. Null when it has not spoken
-   * within the retention window.
+   * How many messages others sent in this channel after `since`, the current
+   * message excluded. The bot's own messages never count.
    */
-  async countSinceSelf(session: Session): Promise<number | null> {
-    const [last] = await this.ctx.database.get(
-      'channel_message',
-      { ...scopeOf(session), isSelf: true },
-      { fields: ['time'], limit: 1, sort: newestFirst }
-    )
-    if (!last) return null
+  async countSince(session: Session, since: Date): Promise<number> {
     return this.ctx.database
       .select('channel_message', {
         ...scopeOf(session),
         isSelf: false,
-        time: { $gt: last.time },
+        time: { $gt: since },
         messageId: { $ne: session.messageId },
       })
       // $.sum(1) groups to a plain counter; $.count / $.length build arrays.

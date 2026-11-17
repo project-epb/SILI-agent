@@ -1,79 +1,72 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { buildMemorySnapshot } from '../services/memory-snapshot'
+import { type MemoryTier, readableTiers, snapshotTiers } from '../tools/read-user-memory'
+import { type MemorySnapshotSource, buildMemorySnapshot } from '../services/memory-snapshot'
 
-function mkMemory(over: {
-  meta?: { content?: string; last_updated_at?: number } | null
-  throws?: Error
-}) {
+function src(
+  tier: MemoryTier,
+  content: string | null,
+  owner = { name: '小鱼', uid: '123' }
+): MemorySnapshotSource & { read: ReturnType<typeof vi.fn> } {
   return {
-    getMeta: vi.fn(async () => {
-      if (over.throws) throw over.throws
-      return over.meta ?? null
-    }),
+    tier,
+    owner,
+    read: vi.fn(async () => (content == null ? null : { content })),
   }
 }
 
 describe('buildMemorySnapshot', () => {
-  it('wraps memory content in <long_term_memory> tags', async () => {
-    const mem = mkMemory({
-      meta: { content: '- 喜欢热干面\n- 在杭州' },
-    })
-    const out = await buildMemorySnapshot(mem, 'qq', '123')
+  it('wraps each record in <user_memory> with owner and tier, inside <long_term_memory>', async () => {
+    const out = await buildMemorySnapshot([
+      src('private', '- 喜欢热干面'),
+      src('shared', '- 在玩原神'),
+    ])
     expect(out).toMatch(/^<long_term_memory>/)
     expect(out).toMatch(/<\/long_term_memory>$/)
+    expect(out).toContain('<user_memory owner="小鱼" uid="123" tier="private">')
+    expect(out).toContain('<user_memory owner="小鱼" uid="123" tier="shared">')
     expect(out).toContain('喜欢热干面')
-    expect(out).toContain('在杭州')
+    expect(out).toContain('在玩原神')
   })
 
-  it('includes a stewardship note explaining the freeze + refresh option', async () => {
-    const mem = mkMemory({ meta: { content: 'something' } })
-    const out = await buildMemorySnapshot(mem, 'qq', '123')
-    expect(out).toContain('freeze')
-    expect(out).toContain('read_user_memory')
+  it('labels a group memory with the group as its owner', async () => {
+    const out = await buildMemorySnapshot([
+      src('group', '- 群梗：允许叔叔的🐴复活', { name: '测试群', uid: 'G1' }),
+    ])
+    expect(out).toContain('<user_memory owner="测试群" uid="G1" tier="group">')
   })
 
-  it('returns empty string when meta is null', async () => {
-    const mem = mkMemory({ meta: null })
-    const out = await buildMemorySnapshot(mem, 'qq', '123')
-    expect(out).toBe('')
+  it('returns empty for no sources', async () => {
+    expect(await buildMemorySnapshot([])).toBe('')
   })
 
-  it('returns empty string when content is empty / whitespace', async () => {
-    const mem1 = mkMemory({ meta: { content: '' } })
-    expect(await buildMemorySnapshot(mem1, 'qq', '1')).toBe('')
+  it('skips empty records and returns empty when all are empty', async () => {
+    expect(
+      await buildMemorySnapshot([src('private', '   \n '), src('shared', null)])
+    ).toBe('')
 
-    const mem2 = mkMemory({ meta: { content: '   \n  ' } })
-    expect(await buildMemorySnapshot(mem2, 'qq', '1')).toBe('')
+    const out = await buildMemorySnapshot([src('private', ''), src('shared', '- x')])
+    expect(out).not.toContain('tier="private"')
+    expect(out).toContain('tier="shared"')
   })
 
-  it('returns empty and warns when fetch throws', async () => {
-    const mem = mkMemory({ throws: new Error('db down') })
+  it('returns empty and warns when a read throws', async () => {
+    const failing = src('private', 'x')
+    failing.read.mockRejectedValue(new Error('db down'))
     const logger = { warn: vi.fn() } as any
-    const out = await buildMemorySnapshot(mem, 'qq', '1', logger)
-    expect(out).toBe('')
+    expect(await buildMemorySnapshot([failing], logger)).toBe('')
     expect(logger.warn).toHaveBeenCalled()
   })
+})
 
-  it('does not throw when fetch fails and no logger is passed', async () => {
-    const mem = mkMemory({ throws: new Error('db down') })
-    const out = await buildMemorySnapshot(mem, 'qq', '1')
-    expect(out).toBe('')
+describe('memory tier gating', () => {
+  it('reads the private record only in a DM, the group memory only in a group', () => {
+    expect(readableTiers(true)).toEqual(['private', 'shared'])
+    expect(readableTiers(false)).toEqual(['shared', 'group'])
   })
 
-  it('trims surrounding whitespace from content before rendering', async () => {
-    const mem = mkMemory({
-      meta: { content: '\n\n  - 内容  \n\n' },
-    })
-    const out = await buildMemorySnapshot(mem, 'qq', '123')
-    expect(out).toContain('- 内容')
-    // shouldn't have leading/trailing whitespace inside the block body
-    expect(out).not.toMatch(/<long_term_memory>\n\s+\n/)
-  })
-
-  it('calls getMeta with the provided platform + userId', async () => {
-    const mem = mkMemory({ meta: { content: 'x' } })
-    await buildMemorySnapshot(mem, 'qq', '999')
-    expect(mem.getMeta).toHaveBeenCalledWith('qq', '999')
+  it("seeds a group's shared conversation with the group memory only", () => {
+    expect(snapshotTiers(false, true)).toEqual(['group'])
+    expect(snapshotTiers(true, false)).toEqual(['private', 'shared'])
   })
 })

@@ -7,8 +7,7 @@ import type {
 import { PROTOCOL_TAGS } from '../utils/protocol'
 
 import type { ChatHistoryService } from './chat-history'
-import type { MemoryStore } from './memory'
-import { buildMemorySnapshot } from './memory-snapshot'
+import { type MemorySnapshotSource, buildMemorySnapshot } from './memory-snapshot'
 import type { SessionManager } from './session-manager'
 import type { TurnAllocator } from './turn-allocator'
 
@@ -55,10 +54,10 @@ export interface CompactIfNeededInput {
   conversation_id: string
   conversation_owner: number
   /**
-   * Seed the new session with the user's memory snapshot. False for a group
-   * conversation, which must never carry one member's memory.
+   * Records the new session is seeded with, from `LLMPlugin.memorySources`:
+   * a DM's private and shared ones, a group's own memory.
    */
-  includeMemory?: boolean
+  memory: readonly MemorySnapshotSource[]
   /** Cached system prompt — same string a regular chat turn would use. */
   systemPrompt: string
   provider: LLMProviderBase
@@ -113,7 +112,6 @@ export class SummaryCompactor {
     private readonly history: ChatHistoryService,
     private readonly sessions: SessionManager,
     private readonly turns: TurnAllocator,
-    private readonly memory: Pick<MemoryStore, 'getMeta'>,
     private readonly options: SummaryCompactorOptions
   ) {}
 
@@ -152,15 +150,7 @@ export class SummaryCompactor {
       return { ran: false, reason: 'no history to summarize' }
     }
 
-    const memorySnapshot =
-      input.includeMemory === false
-        ? ''
-        : await buildMemorySnapshot(
-            this.memory,
-            input.platform,
-            input.userId,
-            this.logger
-          )
+    const memorySnapshot = await buildMemorySnapshot(input.memory, this.logger)
     const compactInstruction = [
       PROTOCOL_TAGS.SYSTEM_COMPACT.open,
       this.options.prompt ?? DEFAULT_SUMMARY_PROMPT,
