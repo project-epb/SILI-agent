@@ -2,22 +2,24 @@ import { byteLength } from '../services/memory'
 import type { ToolDefinition } from '../providers/_base'
 
 /**
- * A user has two records. `private` (openai_user_memory) is read and written
- * in DMs only; `shared` (openai_user_shared_memory) holds what may be seen in
- * any group.
+ * Three records. A user's `private` one (openai_user_memory) is read and
+ * written in DMs only; their `shared` one (openai_user_shared_memory) holds
+ * what may be seen in any group; a group's `group` one (openai_group_memory)
+ * belongs to that group and is only read there.
  */
-export type MemoryTier = 'private' | 'shared'
+export type MemoryTier = 'private' | 'shared' | 'group'
 
-export const MEMORY_TIERS: readonly MemoryTier[] = ['private', 'shared']
+export const MEMORY_TIERS: readonly MemoryTier[] = ['private', 'shared', 'group']
 
 export const READ_USER_MEMORY_TOOL: ToolDefinition = {
   name: 'read_user_memory',
   description: [
-    '读取触发这一轮的用户的长期记忆。每位用户有两份记录：',
-    '- **私密记录**（private）：只在私聊里读写，内容不转述给第三方。',
-    '- **共享记录**（shared）：可公开的信息，所有群都可能看到。',
+    '读取长期记忆。共三份记录：',
+    '- **私密记录**（private）：触发这一轮的用户的，只在私聊里读写，内容不转述给第三方。',
+    '- **共享记录**（shared）：触发这一轮的用户的，可公开的信息，所有群都可能看到。',
+    '- **群记忆**（group）：当前这个群的，群梗、群规、成员关系等，只在本群用。',
     '',
-    '私聊里返回两份，群里只返回共享记录。每份用 `<user_memory>` 包着，标明主人和档位。',
+    '私聊里返回私密 + 共享，群里返回共享 + 群记忆。每份用 `<user_memory>` 包着，标明主人和档位。',
     '',
     '**何时调**：话题涉及该用户的偏好、过往互动、个人化判断时。',
     '**何时不调**：闲聊、常识问答、无需个人化的请求——浪费 turn。',
@@ -53,10 +55,11 @@ export interface MemoryTierState {
 export interface MemoryToolState {
   private: MemoryTierState
   shared: MemoryTierState
+  group: MemoryTierState
   /**
    * This turn carries messages from someone other than the user it belongs
-   * to. Writes are refused: whoever steered in could otherwise put words
-   * into this user's records.
+   * to. Writes to that user's records are refused: whoever steered in could
+   * otherwise put words into them. The group's own memory is unaffected.
    */
   othersSpoke: boolean
 }
@@ -74,15 +77,18 @@ export function getMemoryToolState(
       lastSeenUpdatedAt: 0,
       saved: false,
     })
-    s = { private: tier(), shared: tier(), othersSpoke: false }
+    s = { private: tier(), shared: tier(), group: tier(), othersSpoke: false }
     turnState[MEMORY_TOOL_STATE_KEY] = s
   }
   return s
 }
 
-/** Tiers this session may read and write: private ones only in a DM. */
+/**
+ * Tiers this session may read and write: the private record only in a DM,
+ * the group's memory only in a group.
+ */
 export function readableTiers(isDirect: boolean): MemoryTier[] {
-  return isDirect ? ['private', 'shared'] : ['shared']
+  return isDirect ? ['private', 'shared'] : ['shared', 'group']
 }
 
 /** Who a record belongs to, as shown to the model. */
@@ -91,14 +97,28 @@ export interface MemoryOwner {
   uid: string
 }
 
+/**
+ * Records a fresh conversation is seeded with. A group's shared conversation
+ * carries only that group's memory: several people talk in it, so nobody's
+ * own record goes in up front.
+ */
+export function snapshotTiers(
+  isDirect: boolean,
+  sharedConversation: boolean
+): MemoryTier[] {
+  return sharedConversation ? ['group'] : readableTiers(isDirect)
+}
+
 const TIER_NOTE: Record<MemoryTier, string> = {
   private: '私密记录：只在私聊里用，不要转述给第三方。',
   shared: '共享记录：所有群都可能看到。',
+  group: '群记忆：本群共有，只在本群用。',
 }
 
 export const TIER_LABEL: Record<MemoryTier, string> = {
   private: '私密记录',
   shared: '共享记录',
+  group: '群记忆',
 }
 
 /**
@@ -113,7 +133,7 @@ export function renderMemoryBlock(
   const name = owner.name.replace(/"/g, "'")
   return [
     `<user_memory owner="${name}" uid="${owner.uid}" tier="${tier}">`,
-    `（${owner.name} 的${TIER_NOTE[tier]}）`,
+    `（${owner.name}的${TIER_NOTE[tier]}）`,
     body,
     '</user_memory>',
   ].join('\n')

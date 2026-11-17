@@ -267,7 +267,11 @@ describe('runSaveUserMemory', () => {
       writes,
       deps: {
         isDirect: over.isDirect ?? true,
-        owner: { name: '小鱼', uid: '1' },
+        owners: {
+          private: { name: '小鱼', uid: '1' },
+          shared: { name: '小鱼', uid: '1' },
+          group: { name: '测试群', uid: 'G1' },
+        },
         getUpdatedAt: async (tier: MemoryTier) => over.updatedAt?.[tier] ?? 0,
         write: async (tier: MemoryTier, content: string) => {
           writes.push({ tier, content })
@@ -275,6 +279,7 @@ describe('runSaveUserMemory', () => {
         hardLimits: {
           private: over.hardLimit ?? 3300,
           shared: over.hardLimit ?? 3300,
+          group: over.hardLimit ?? 3300,
         },
       },
     }
@@ -320,6 +325,28 @@ describe('runSaveUserMemory', () => {
     )
     expect(out).toMatch(/有别人的消息/)
     expect(writes).toEqual([])
+  })
+
+  it('refuses the group memory in a DM', async () => {
+    const { writes, deps } = makeDeps({ isDirect: true })
+    const out = await runSaveUserMemory(
+      { tier: 'group', content: 'x' },
+      fresh(['group']),
+      deps
+    )
+    expect(out).toMatch(/^Error: 群记忆只能在群里改/)
+    expect(writes).toEqual([])
+  })
+
+  it('writes the group memory even when others spoke in the turn', async () => {
+    const { writes, deps } = makeDeps({ isDirect: false })
+    const out = await runSaveUserMemory(
+      { tier: 'group', content: 'x' },
+      fresh(['group'], { othersSpoke: true }),
+      deps
+    )
+    expect(out).toBe('OK: 已更新 测试群（群 G1）的群记忆（1 字节）。')
+    expect(writes).toEqual([{ tier: 'group', content: 'x' }])
   })
 
   it('rejects an unknown tier', async () => {
@@ -411,6 +438,7 @@ describe('getMemoryToolState', () => {
     const a = getMemoryToolState(ts)
     expect(a.private).toEqual({ hasRead: false, lastSeenUpdatedAt: 0, saved: false })
     expect(a.shared).toEqual({ hasRead: false, lastSeenUpdatedAt: 0, saved: false })
+    expect(a.group).toEqual({ hasRead: false, lastSeenUpdatedAt: 0, saved: false })
     expect(a.othersSpoke).toBe(false)
     a.shared.hasRead = true
     expect(getMemoryToolState(ts)).toBe(a)
@@ -813,24 +841,24 @@ describe('getWebToolsState', () => {
 
 describe('buildSaveUserMemoryTool', () => {
   it('bakes hardLimit into description', () => {
-    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100 })
+    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100, group: 2200 })
     expect(def.name).toBe('save_user_memory')
-    expect(def.description).toContain("private 3300 字节，shared 1100 字节")
+    expect(def.description).toContain("private 3300 字节，shared 1100 字节，group 2200 字节")
     expect(def.description).toContain('read_user_memory')
   })
 
   it('teaches declarative-not-imperative phrasing', () => {
-    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100 })
+    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100, group: 2200 })
     expect(def.description).toMatch(/声明[性式]|不要[写用]命令/)
   })
 
   it('forbids recording user requests to alter SILI persona', () => {
-    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100 })
+    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100, group: 2200 })
     expect(def.description).toMatch(/SILI.*人设|SILI 自[己身]|个人设定/)
   })
 
   it('mentions date-stamping for time-sensitive entries', () => {
-    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100 })
+    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100, group: 2200 })
     expect(def.description).toMatch(/YYYY-MM-DD|turn_context|chat_info/)
   })
 })

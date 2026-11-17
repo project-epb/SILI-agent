@@ -4,35 +4,42 @@ import { byteLength } from './memory'
 
 declare module 'koishi' {
   interface Tables {
-    openai_user_shared_memory: OpenAIUserSharedMemory
+    openai_user_shared_memory: MemoryRecordRow
+    openai_group_memory: MemoryRecordRow
   }
 }
 
 /**
- * A user's shared record: public facts about them that may be read and
- * written in any group. Their private record (`openai_user_memory`) never
- * leaves DMs.
+ * One record of a shared or group memory. `owner_id` is a Koishi uid for a
+ * user's shared record (public facts readable in any group) and a channel id
+ * for a group's memory (only read in that group). A user's private record
+ * (`openai_user_memory`) has its own table and never leaves DMs.
  */
-export interface OpenAIUserSharedMemory {
+export interface MemoryRecordRow {
   id: number
   platform: string
-  user_id: string
+  owner_id: string
   content: string
   byte_size: number
   last_updated_at: number
   update_count: number
 }
 
-export class SharedMemoryStore {
-  constructor(private ctx: Context) {}
+export type MemoryRecordTable = 'openai_user_shared_memory' | 'openai_group_memory'
 
-  static initSchema(ctx: Context): void {
+export class MemoryRecordStore {
+  constructor(
+    private ctx: Context,
+    readonly table: MemoryRecordTable
+  ) {}
+
+  static initSchema(ctx: Context, table: MemoryRecordTable): void {
     ctx.model.extend(
-      'openai_user_shared_memory',
+      table,
       {
         id: 'unsigned',
         platform: 'string(64)',
-        user_id: 'string(128)',
+        owner_id: 'string(128)',
         content: 'text',
         byte_size: 'unsigned',
         last_updated_at: 'unsigned(20)',
@@ -41,28 +48,25 @@ export class SharedMemoryStore {
       {
         primary: 'id',
         autoInc: true,
-        unique: [['platform', 'user_id']],
+        unique: [['platform', 'owner_id']],
       }
     )
   }
 
-  async getMeta(
-    platform: string,
-    userId: string
-  ): Promise<OpenAIUserSharedMemory | null> {
-    const rows = await this.ctx.database.get('openai_user_shared_memory', {
+  async getMeta(platform: string, ownerId: string): Promise<MemoryRecordRow | null> {
+    const rows = await this.ctx.database.get(this.table, {
       platform,
-      user_id: userId,
+      owner_id: ownerId,
     })
     return rows[0] ?? null
   }
 
-  async set(platform: string, userId: string, content: string): Promise<void> {
+  async set(platform: string, ownerId: string, content: string): Promise<void> {
     const now = Date.now()
-    const existing = await this.getMeta(platform, userId)
+    const existing = await this.getMeta(platform, ownerId)
     if (existing) {
       await this.ctx.database.set(
-        'openai_user_shared_memory',
+        this.table,
         { id: existing.id },
         {
           content,
@@ -72,9 +76,9 @@ export class SharedMemoryStore {
         }
       )
     } else {
-      await this.ctx.database.create('openai_user_shared_memory', {
+      await this.ctx.database.create(this.table, {
         platform,
-        user_id: userId,
+        owner_id: ownerId,
         content,
         byte_size: byteLength(content),
         last_updated_at: now,
@@ -83,10 +87,10 @@ export class SharedMemoryStore {
     }
   }
 
-  async delete(platform: string, userId: string): Promise<boolean> {
-    const existing = await this.getMeta(platform, userId)
+  async delete(platform: string, ownerId: string): Promise<boolean> {
+    const existing = await this.getMeta(platform, ownerId)
     if (!existing) return false
-    await this.ctx.database.remove('openai_user_shared_memory', { id: existing.id })
+    await this.ctx.database.remove(this.table, { id: existing.id })
     return true
   }
 }

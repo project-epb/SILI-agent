@@ -12,7 +12,7 @@ import type { ChatMessage } from '../providers/_base'
 import type { ActiveChatEntry, SteerItem } from '../services/active-chats'
 import { resolveConversationScope } from '../services/conversation-scope'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
-import { ToolRegistry, getMemoryToolState, readableTiers } from '../tools'
+import { ToolRegistry, getMemoryToolState, snapshotTiers } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
 import { PROTOCOL_MARKERS, PROTOCOL_TAGS } from '../utils/protocol'
 import {
@@ -533,7 +533,11 @@ export default class ChatCommand extends BasePlugin {
           const compactRes = await llm.summary.compactIfNeeded({
             conversation_id,
             conversation_owner,
-            memoryTiers: scope.shared ? [] : readableTiers(session.isDirect),
+            memory: llm.memorySources(
+              platform,
+              llm.memoryOwners(session),
+              snapshotTiers(session.isDirect, scope.shared)
+            ),
             systemPrompt: systemPromptText,
             provider,
             model,
@@ -575,18 +579,18 @@ export default class ChatCommand extends BasePlugin {
         // inside their summary user row, so `histories.length === 0`
         // cleanly discriminates "fresh / reset / idle-rotated" from
         // "post-compaction" — only the former needs seeding here.
-        // A group conversation never carries anyone's records: the agent
-        // reads the speaker's shared record on demand. Private records
-        // never appear outside a DM.
+        // A group's shared conversation carries only the group's memory;
+        // members' own records are read on demand. Private records never
+        // appear outside a DM.
         const memoryPrefix =
-          histories.length === 0 && !scope.shared
+          histories.length === 0
             ? await buildMemorySnapshot(
-                { private: llm.memory, shared: llm.sharedMemory },
-                platform,
-                userId,
-                readableTiers(session.isDirect),
-                llm.logger,
-                session.username || userId
+                llm.memorySources(
+                  platform,
+                  llm.memoryOwners(session),
+                  snapshotTiers(session.isDirect, scope.shared)
+                ),
+                llm.logger
               )
             : ''
         const persistableEnvelope = memoryPrefix

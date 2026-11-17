@@ -72,10 +72,14 @@ function utf8Len(s) {
 
 // 长期记忆编辑卡片，私密 / 共享各一张：进入总览时 memory-get 载入，实时字节计数对上限，
 // 超限标红并禁用保存；清空走 window.confirm 二次确认。隐私敏感。
-const TIER_TITLE = { private: '私密记录 · 仅私聊可见', shared: '共享记录 · 所有群可见' }
+const TIER_TITLE = {
+  private: '私密记录 · 仅私聊可见',
+  shared: '共享记录 · 所有群可见',
+  group: '群记忆 · 仅本群可见',
+}
 const MemoryCard = defineComponent({
   name: 'LaMemoryCard',
-  props: { id: { type: Number, required: true }, tier: { type: String, required: true } },
+  props: { id: { type: [Number, String], required: true }, tier: { type: String, required: true } },
   setup(props) {
     const content = ref('')
     const loaded = ref(false)
@@ -154,7 +158,7 @@ const MemoryCard = defineComponent({
                   class: ['la-mem-textarea', over ? 'over' : ''],
                   value: content.value,
                   spellcheck: 'false',
-                  placeholder: '（该用户暂无长期记忆，可在此写入）',
+                  placeholder: '（暂无记录，可在此写入）',
                   onInput: (e) => (content.value = e.target.value),
                 }),
                 h('div', { class: 'la-mem-bar' }, [
@@ -249,10 +253,10 @@ function overviewView(o) {
           : h('p', { class: 'la-dim' }, '（无数据）'),
       ],
     }),
-    // Groups have no long-term memory of their own.
-    ...(typeof o.id === 'number'
-      ? ['private', 'shared'].map((tier) => h(MemoryCard, { id: o.id, tier, key: `${o.id}:${tier}` }))
-      : []),
+    // A user has a private and a shared record, a group its own memory.
+    ...(typeof o.id === 'number' ? ['private', 'shared'] : ['group']).map((tier) =>
+      h(MemoryCard, { id: o.id, tier, key: `${o.id}:${tier}` })
+    ),
   ])
 }
 

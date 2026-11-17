@@ -77,7 +77,16 @@ const INPUT = {
   model: 'gpt-test',
   platform: 'qq',
   userId: '999',
-  memoryTiers: ['private', 'shared'] as const,
+}
+
+/** The user's private and shared records, as the chat command passes them. */
+function sources(d: ReturnType<typeof mkDeps>) {
+  const owner = { name: '小鱼', uid: '999' }
+  return (['private', 'shared'] as const).map((tier) => ({
+    tier,
+    owner,
+    read: () => d.memory[tier].getMeta('qq', '999'),
+  }))
 }
 
 describe('SummaryCompactor', () => {
@@ -89,10 +98,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 0 }
     )
-    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
     expect(r.ran).toBe(false)
     expect(r.reason).toBe('disabled')
     expect(d.history.latestPromptTokens).not.toHaveBeenCalled()
@@ -106,10 +114,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
-    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
     expect(r.ran).toBe(false)
     expect(r.reason).toContain('under threshold')
     expect(d.history.getById).not.toHaveBeenCalled()
@@ -123,10 +130,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
-    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
     expect(r.ran).toBe(false)
     expect(r.reason).toContain('no history')
   })
@@ -143,10 +149,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
-    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
     expect(r.ran).toBe(false)
     expect(r.reason).toBe('empty summary')
     expect(d.createCalls).toHaveLength(0)
@@ -164,10 +169,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
-    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
     expect(r.ran).toBe(false)
     expect(r.reason).toContain('boom')
     expect(d.logger.warn).toHaveBeenCalled()
@@ -188,10 +192,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
-    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
 
     expect(r.ran).toBe(true)
     expect(r.newConversationId).toBeTypeOf('string')
@@ -249,10 +252,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10, maxTokens: 999 }
     )
-    await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
 
     expect(receivedOptions.tools).toEqual([])
     expect(receivedOptions.maxTokens).toBe(999)
@@ -282,10 +284,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
-    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
 
     expect(r.ran).toBe(true)
     expect(d.memory.private.getMeta).toHaveBeenCalledWith('qq', '999')
@@ -322,13 +323,12 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
     const r = await c.compactIfNeeded({
       ...INPUT,
       provider: d.provider,
-      memoryTiers: [],
+      memory: [],
     })
 
     expect(r.ran).toBe(true)
@@ -360,10 +360,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
-    await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
 
     const lastUserMessage = receivedMessages[receivedMessages.length - 1]
     expect((lastUserMessage as { content: string }).content).not.toContain(
@@ -385,10 +384,9 @@ describe('SummaryCompactor', () => {
       d.history,
       d.sessions,
       d.turns,
-      d.memory,
       { maxContextTokens: 10 }
     )
-    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
+    const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider, memory: sources(d) })
 
     expect(r.ran).toBe(true)
     expect(d.logger.warn).toHaveBeenCalled()

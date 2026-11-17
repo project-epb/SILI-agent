@@ -1,29 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { buildMemorySnapshot } from '../services/memory-snapshot'
+import { type MemoryTier, readableTiers, snapshotTiers } from '../tools/read-user-memory'
+import { type MemorySnapshotSource, buildMemorySnapshot } from '../services/memory-snapshot'
 
-function mkStore(over: { content?: string | null; throws?: Error }) {
+function src(
+  tier: MemoryTier,
+  content: string | null,
+  owner = { name: '小鱼', uid: '123' }
+): MemorySnapshotSource & { read: ReturnType<typeof vi.fn> } {
   return {
-    getMeta: vi.fn(async () => {
-      if (over.throws) throw over.throws
-      return over.content == null ? null : { content: over.content }
-    }),
+    tier,
+    owner,
+    read: vi.fn(async () => (content == null ? null : { content })),
   }
 }
 
-function mkStores(
-  priv: { content?: string | null; throws?: Error },
-  shared: { content?: string | null; throws?: Error } = {}
-) {
-  return { private: mkStore(priv), shared: mkStore(shared) }
-}
-
-const BOTH = ['private', 'shared'] as const
-
 describe('buildMemorySnapshot', () => {
   it('wraps each record in <user_memory> with owner and tier, inside <long_term_memory>', async () => {
-    const stores = mkStores({ content: '- 喜欢热干面' }, { content: '- 在玩原神' })
-    const out = await buildMemorySnapshot(stores, 'qq', '123', BOTH, undefined, '小鱼')
+    const out = await buildMemorySnapshot([
+      src('private', '- 喜欢热干面'),
+      src('shared', '- 在玩原神'),
+    ])
     expect(out).toMatch(/^<long_term_memory>/)
     expect(out).toMatch(/<\/long_term_memory>$/)
     expect(out).toContain('<user_memory owner="小鱼" uid="123" tier="private">')
@@ -32,40 +29,44 @@ describe('buildMemorySnapshot', () => {
     expect(out).toContain('在玩原神')
   })
 
-  it('leaves out the private record when only shared is allowed', async () => {
-    const stores = mkStores({ content: '- 私密的事' }, { content: '- 公开的事' })
-    const out = await buildMemorySnapshot(stores, 'qq', '123', ['shared'])
-    expect(out).not.toContain('私密的事')
-    expect(out).toContain('公开的事')
-    expect(stores.private.getMeta).not.toHaveBeenCalled()
+  it('labels a group memory with the group as its owner', async () => {
+    const out = await buildMemorySnapshot([
+      src('group', '- 群梗：允许叔叔的🐴复活', { name: '测试群', uid: 'G1' }),
+    ])
+    expect(out).toContain('<user_memory owner="测试群" uid="G1" tier="group">')
   })
 
-  it('returns empty when no tier is allowed', async () => {
-    const stores = mkStores({ content: 'x' }, { content: 'y' })
-    expect(await buildMemorySnapshot(stores, 'qq', '1', [])).toBe('')
+  it('returns empty for no sources', async () => {
+    expect(await buildMemorySnapshot([])).toBe('')
   })
 
   it('skips empty records and returns empty when all are empty', async () => {
-    const stores = mkStores({ content: '   \n ' }, { content: null })
-    expect(await buildMemorySnapshot(stores, 'qq', '1', BOTH)).toBe('')
+    expect(
+      await buildMemorySnapshot([src('private', '   \n '), src('shared', null)])
+    ).toBe('')
 
-    const onlyShared = mkStores({ content: '' }, { content: '- x' })
-    const out = await buildMemorySnapshot(onlyShared, 'qq', '1', BOTH)
+    const out = await buildMemorySnapshot([src('private', ''), src('shared', '- x')])
     expect(out).not.toContain('tier="private"')
     expect(out).toContain('tier="shared"')
   })
 
-  it('returns empty and warns when fetch throws', async () => {
-    const stores = mkStores({ throws: new Error('db down') })
+  it('returns empty and warns when a read throws', async () => {
+    const failing = src('private', 'x')
+    failing.read.mockRejectedValue(new Error('db down'))
     const logger = { warn: vi.fn() } as any
-    expect(await buildMemorySnapshot(stores, 'qq', '1', BOTH, logger)).toBe('')
+    expect(await buildMemorySnapshot([failing], logger)).toBe('')
     expect(logger.warn).toHaveBeenCalled()
   })
+})
 
-  it('reads each record with the provided platform + userId', async () => {
-    const stores = mkStores({ content: 'x' }, { content: 'y' })
-    await buildMemorySnapshot(stores, 'qq', '999', BOTH)
-    expect(stores.private.getMeta).toHaveBeenCalledWith('qq', '999')
-    expect(stores.shared.getMeta).toHaveBeenCalledWith('qq', '999')
+describe('memory tier gating', () => {
+  it('reads the private record only in a DM, the group memory only in a group', () => {
+    expect(readableTiers(true)).toEqual(['private', 'shared'])
+    expect(readableTiers(false)).toEqual(['shared', 'group'])
+  })
+
+  it("seeds a group's shared conversation with the group memory only", () => {
+    expect(snapshotTiers(false, true)).toEqual(['group'])
+    expect(snapshotTiers(true, false)).toEqual(['private', 'shared'])
   })
 })

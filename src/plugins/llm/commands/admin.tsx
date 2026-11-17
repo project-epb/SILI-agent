@@ -6,7 +6,7 @@ import {
   canResetGroupConversation,
   resolveConversationScope,
 } from '../services/conversation-scope'
-import { TIER_LABEL, readableTiers } from '../tools/read-user-memory'
+import { TIER_LABEL, readableTiers, snapshotTiers } from '../tools/read-user-memory'
 
 /**
  * Subplugin: admin/utility commands.
@@ -264,14 +264,18 @@ export default class AdminCommands extends BasePlugin {
 
         const { platform, userId } = llm.resolveMemoryKey(session)
 
-        // Private records never show up outside a DM.
+        // Private records never show up outside a DM. --reset only clears
+        // the caller's own records, never the group's memory.
         const tiers = readableTiers(session.isDirect)
-        const stores = { private: llm.memory, shared: llm.sharedMemory }
+        const ownTiers = tiers.filter((tier) => tier !== 'group')
+        const owners = llm.memoryOwners(session)
+        const read = (tier: (typeof tiers)[number]) =>
+          llm.memoryStore(tier).getMeta(platform, owners[tier].uid)
 
         if (options.read) {
           const parts: string[] = []
           for (const tier of tiers) {
-            const meta = await stores[tier].getMeta(platform, userId)
+            const meta = await read(tier)
             if (!meta?.content) {
               parts.push(`【${TIER_LABEL[tier]}】(空)`)
               continue
@@ -319,8 +323,8 @@ export default class AdminCommands extends BasePlugin {
 
         if (options.reset) {
           const found: string[] = []
-          for (const tier of tiers) {
-            const meta = await stores[tier].getMeta(platform, userId)
+          for (const tier of ownTiers) {
+            const meta = await read(tier)
             if (meta) found.push(`${TIER_LABEL[tier]}（${meta.byte_size} 字节）`)
           }
           if (!found.length) return '当前用户没有记忆记录，无需清空。'
@@ -332,8 +336,10 @@ export default class AdminCommands extends BasePlugin {
             return '已取消。'
           }
           let removed = false
-          for (const tier of tiers) {
-            removed = (await stores[tier].delete(platform, userId)) || removed
+          for (const tier of ownTiers) {
+            removed =
+              (await llm.memoryStore(tier).delete(platform, owners[tier].uid)) ||
+              removed
           }
           return removed ? '记忆已清空。' : '记忆已不存在。'
         }
@@ -366,7 +372,11 @@ export default class AdminCommands extends BasePlugin {
         const res = await llm.summary.compactNow({
           conversation_id,
           conversation_owner: scope.owner,
-          memoryTiers: scope.shared ? [] : readableTiers(session.isDirect),
+          memory: llm.memorySources(
+            platform,
+            llm.memoryOwners(session),
+            snapshotTiers(session.isDirect, scope.shared)
+          ),
           systemPrompt: systemPromptText,
           provider,
           model,

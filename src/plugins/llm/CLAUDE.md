@@ -43,13 +43,14 @@ dropset `PROTOCOL_ONLY_ELEMENT_TYPES` 保留了 legacy 字符串（如 `'chat_in
 
 ## 长期记忆子系统
 
-每位用户两份记录，都按 (platform, userId) key：
+三份记录，都按 (platform, 主人 id) key：
 - **私密记录** `services/memory.ts`（`openai_user_memory`）：只在私聊读写，上限 `memoryByteLimit`（默认 3000 byte）。`memory-fork-scheduler` 在用户消息累计到 `memoryUpdateInterval` 后触发后台 fork 整理它；fork 失败有 `memoryForkMaxRetries` 容错。
-- **共享记录** `services/shared-memory.ts`（`openai_user_shared_memory`）：所有群可见，上限 `sharedMemoryByteLimit`（默认 3000 byte），只由 AI 主动写入。
+- **共享记录** `services/shared-memory.ts`（`openai_user_shared_memory`，主人是 uid）：所有群可见，上限 `sharedMemoryByteLimit`，只由 AI 主动写入。
+- **群记忆**（同一个 `MemoryRecordStore`，`openai_group_memory`，主人是 channelId）：只在本群读写，上限 `groupMemoryByteLimit`，只由 AI 主动写入。
 
-`read_user_memory` / `save_user_memory(tier, content)` 的主人永远是触发这一轮的人；群里（`!session.isDirect`）读不到、写不了私密记录；这一轮带了别人的消息（steer / backlog）时拒绝写入。读写结果用 `<user_memory owner uid tier>` 标明归属。
+`read_user_memory` / `save_user_memory(tier, content)`：个人记录的主人永远是触发这一轮的人，群记忆的主人是当前群（`LLMPlugin.memoryOwners`）。私密记录只在私聊（`session.isDirect`）、群记忆只在群里；这一轮带了别人的消息（steer / backlog）时拒绝写个人记录。读写结果用 `<user_memory owner uid tier>` 标明归属。
 
-`services/memory-snapshot.ts` 的 `buildMemorySnapshot()` 按传入的 `tiers` 渲染成 `<long_term_memory>` 块（群共享会话传 `[]`）—— 在两处被调用：
+`services/memory-snapshot.ts` 的 `buildMemorySnapshot()` 把 `LLMPlugin.memorySources()` 给的记录渲染成 `<long_term_memory>` 块（`snapshotTiers`：私聊带私密 + 共享，群共享会话只带群记忆）—— 在两处被调用：
 1. 新 conversation 第一条 user 消息（fresh / reset / idle-rotated）：让模型一开始就有记忆 in-context
 2. SummaryCompactor 的 summary user 消息：让压缩后的新 session 也带记忆
 

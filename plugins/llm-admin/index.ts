@@ -95,7 +95,7 @@ declare module '@koishijs/console' {
       beforeTurn?: number | null
     }): { messages: ChatMsg[]; earliestTurn: number | null; hasMore: boolean }
     // 隐私敏感：读也需 authority 4。content 绝不落服务端日志。
-    'llm-admin/memory-get'(payload: { id: number; tier?: MemoryTier }): {
+    'llm-admin/memory-get'(payload: { id: number | string; tier?: MemoryTier }): {
       content: string
       byteSize: number
       updateCount: number
@@ -104,7 +104,7 @@ declare module '@koishijs/console' {
       hardLimit: number
     }
     'llm-admin/memory-save'(payload: {
-      id: number
+      id: number | string
       tier?: MemoryTier
       content: string
     }): {
@@ -112,7 +112,7 @@ declare module '@koishijs/console' {
       byteSize: number
       error?: string
     }
-    'llm-admin/memory-clear'(payload: { id: number; tier?: MemoryTier }): {
+    'llm-admin/memory-clear'(payload: { id: number | string; tier?: MemoryTier }): {
       ok: boolean
     }
     // 写操作：强制轮转 session（纯新开，不压缩、不带 prev_session_id）。
@@ -262,9 +262,9 @@ export function apply(ctx: Context) {
       const [users, bindings, sharedMemories, memories, groups] = await Promise.all([
         db.get('user', { id: userIds }, { fields: ['id', 'name'] }),
         db.get('binding', { aid: userIds }, { fields: ['aid', 'platform', 'pid', 'bid'] }),
-        db.get('openai_user_shared_memory' as any, { user_id: userIds.map(String) }, {
-          fields: ['user_id', 'byte_size'],
-        } as any),
+        db.get('openai_user_shared_memory', { owner_id: userIds.map(String) }, {
+          fields: ['owner_id', 'byte_size'],
+        }),
         db.get('openai_user_memory', { user_id: userIds.map(String) }, {
           fields: ['user_id', 'byte_size'],
         } as any),
@@ -290,9 +290,12 @@ export function apply(ctx: Context) {
       }
       // Both records together: private + shared.
       const memoryBytes = new Map<number, number>()
-      for (const m of [...(memories as any[]), ...(sharedMemories as any[])]) {
-        const id = Number(m.user_id)
-        memoryBytes.set(id, (memoryBytes.get(id) ?? 0) + (m.byte_size as number))
+      for (const m of [
+        ...(memories as any[]).map((r) => ({ id: r.user_id, bytes: r.byte_size })),
+        ...sharedMemories.map((r) => ({ id: r.owner_id, bytes: r.byte_size })),
+      ]) {
+        const id = Number(m.id)
+        memoryBytes.set(id, (memoryBytes.get(id) ?? 0) + (m.bytes as number))
       }
 
       const rows: SubjectRow[] = []
@@ -541,31 +544,41 @@ export function apply(ctx: Context) {
   )
 
   // ---- 长期记忆读/改/清（隐私敏感，仅 sysop；日志不落 content）----
-  // 每位用户两份：private（openai_user_memory）与 shared（openai_user_shared_memory）。
-  // 记忆键：(platform, user_id)。前端只传 aid，故先按 user_id 查现有行拿 platform；
-  // 无现有行时从 binding 推断（onebot→qq 归一化）。
-  const MEMORY_TABLE = {
-    private: 'openai_user_memory',
-    shared: 'openai_user_shared_memory',
-  } as const
-  async function memoryRow(id: number, tier: MemoryTier = 'private') {
-    const rows = await db.get(MEMORY_TABLE[tier] as any, { user_id: String(id) })
+  // 用户两份：private（openai_user_memory，键 user_id）与 shared
+  // （openai_user_shared_memory，键 owner_id = uid）；群一份 group
+  // （openai_group_memory，键 owner_id = channelId）。前端传 aid 或
+  // `group:<platform>:<channel>`。用户行先按键查现有行拿 platform，无现有行时
+  // 从 binding 推断（onebot→qq 归一化）；群的 platform 就在 id 里。
+  async function memoryRow(id: number | string, tier: MemoryTier) {
+    const group = groupOf(id)
+    if (tier === 'group') {
+      if (!group) return null
+      return ctx.llm.groupMemory.getMeta(group.platform, group.channelId)
+    }
+    const rows =
+      tier === 'private'
+        ? await db.get('openai_user_memory', { user_id: String(id) })
+        : await db.get('openai_user_shared_memory', { owner_id: String(id) })
     return (rows[0] as any) ?? null
   }
-  async function memoryPlatform(id: number): Promise<string> {
+  async function memoryPlatform(id: number | string): Promise<string> {
+    const group = groupOf(id)
+    if (group) return group.platform
     for (const tier of ['private', 'shared'] as const) {
       const existing = await memoryRow(id, tier)
       if (existing?.platform) return existing.platform
     }
     const bindings = await db.get(
       'binding',
-      { aid: id },
+      { aid: Number(id) },
       { fields: ['platform', 'bid'] }
     )
     const first = [...bindings].sort((x, y) => x.bid - y.bid)[0]
     const p = first?.platform
     return p === 'onebot' ? 'qq' : p || 'unknown'
   }
+  /** The record's key: a group's channel, a user's uid. */
+  const memoryKey = (id: number | string) => groupOf(id)?.channelId ?? String(id)
 
   ctx.console.addListener(
     'llm-admin/memory-get',
@@ -590,6 +603,7 @@ export function apply(ctx: Context) {
       if (!check.ok) return check
       const existing = await memoryRow(id, tier)
       const platform = existing?.platform ?? (await memoryPlatform(id))
+      const key = memoryKey(id)
       // Orphan guard: with no binding and no existing memory row, platform
       // falls back to 'unknown'. The llm runtime resolves a real platform (e.g.
       // 'qq') for live sessions, so an 'unknown' row would never be read back —
@@ -601,8 +615,9 @@ export function apply(ctx: Context) {
           error:
             '无法解析该用户的平台（无 binding 且无现有记忆行），写入将成为不会被读取的孤儿记忆行，已拒绝保存',
         }
-      if (tier === 'shared') {
-        await ctx.llm.sharedMemory.set(platform, String(id), content)
+      if (tier !== 'private') {
+        const store = tier === 'shared' ? ctx.llm.sharedMemory : ctx.llm.groupMemory
+        await store.set(platform, key, content)
         return { ok: true, byteSize: utf8ByteLength(content) }
       }
       // 保留 fork 节流元数据，避免打乱后台记忆调度
@@ -624,7 +639,7 @@ export function apply(ctx: Context) {
       // Same platform resolution as memory-save.
       const existing = await memoryRow(id, tier)
       const platform = existing?.platform ?? (await memoryPlatform(id))
-      const ok = await ctx.llm.memoryStore(tier).delete(platform, String(id))
+      const ok = await ctx.llm.memoryStore(tier).delete(platform, memoryKey(id))
       return { ok }
     },
     { authority: AUTH }
