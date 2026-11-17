@@ -109,7 +109,10 @@ export class MetadataRecorder {
       user.lastSeen = now
       user.count++
       if (session.isDirect) user.dmCount++
-      if (session.username) user.name = session.username
+      // The account's own nickname, not a group card (session.username
+      // prefers member.nick).
+      const name = session.event.user?.name
+      if (name) user.name = name
       this.users.set(key, user)
     }
     if (session.isDirect || !channelId) return

@@ -151,6 +151,14 @@ export default class QQBotService extends Service {
     new MigrationFeatures(ctx, this)
     setupGroupPanel(ctx)
     this.setupActivateCommands()
+    // The adapter (qq-crack 1.0.33) drops the group card QQ added to group
+    // events: copy it to member.nick before anything reads the session.
+    ctx.on('internal/session', (session) => {
+      if (session.platform !== 'qq' || session.isDirect) return
+      const nick = (session.event as any)._data?.d?.author?.member_nickname
+      if (typeof nick === 'string' && nick)
+        session.event.member = { ...session.event.member, nick }
+    })
 
     ctx.on('ready', () => this.reload())
     ctx.setInterval(() => this.reload(), 30 * Time.second)
