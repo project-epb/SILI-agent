@@ -13,7 +13,10 @@ import {
 
 const rules: GateRules = {
   groupCommands: new Set(['assign', 'group-migrate']),
+  publicGroupCommands: new Set(['help', '帮助', 'wiki']),
+  publicGroupContent: /\[\[.+?\]\]/,
   dmCommands: new Set(['bind', '多账号绑定']),
+  publicDmCommands: new Set(['help', 'dice']),
   bindTokenPrefix: 'koishi/',
 }
 
@@ -85,6 +88,15 @@ describe('decideGate', () => {
       'drop'
     )
   })
+  it('lets anyone use public commands and wiki links in unactivated groups', () => {
+    expect(decideGate(group(), 'help', 'help', lookup(), rules)).toBe('pass')
+    expect(decideGate(group(), '帮助', '帮助', lookup(), rules)).toBe('pass')
+    expect(decideGate(group(), '看看 [[萌娘百科]]', '看看', lookup(), rules)).toBe('pass')
+  })
+  it('keeps other commands behind activation in unactivated groups', () => {
+    expect(decideGate(group(), 'chat 你好', 'chat', lookup(), rules)).toBe('drop')
+    expect(decideGate(group(), 'search 猫', 'search', lookup(), rules)).toBe('drop')
+  })
   it('does not accept DM-only commands in groups', () => {
     expect(
       decideGate(group(), 'bind', 'bind', lookup({ ops: ['U1'] }), rules)
@@ -94,6 +106,12 @@ describe('decideGate', () => {
     expect(
       decideGate(group(), 'hello', 'hello', lookup({ groups: ['G1'] }), rules)
     ).toBe('pass')
+  })
+  it('lets strangers use public DM commands but not group-only ones', () => {
+    expect(decideGate(dm(), 'help', 'help', lookup(), rules)).toBe('pass')
+    expect(decideGate(dm(), 'wiki x', 'wiki', lookup(), rules)).toBe('drop')
+    expect(decideGate(dm(), '[[萌娘百科]]', '[[萌娘百科]]', lookup(), rules)).toBe('drop')
+    expect(autoAuthorizeFor(dm('qq'), 'help', lookup(), rules)).toBe(1)
   })
   it('drops stranger DMs except bind and its alias', () => {
     expect(decideGate(dm(), 'hi', 'hi', lookup(), rules)).toBe('drop')
@@ -149,6 +167,11 @@ describe('autoAuthorizeFor / autoAssignFor', () => {
     expect(autoAuthorizeFor(group('qq'), 'hello', lookup(), rules)).toBe(0)
     expect(autoAuthorizeFor(dm('qq'), 'hi', lookup(), rules)).toBe(0)
   })
+  it('creates the user for a public command in an unactivated group', () => {
+    // Without a user row its authority is 0 and Koishi answers "权限不足".
+    expect(autoAuthorizeFor(group('qq'), 'help', lookup(), rules)).toBe(1)
+    expect(autoAuthorizeFor(group('qq'), 'chat', lookup(), rules)).toBe(0)
+  })
   it('creates the user for a stranger DM running bind (plugin-bind needs the row)', () => {
     expect(autoAuthorizeFor(dm('qq'), 'bind', lookup(), rules)).toBe(1)
   })
@@ -158,9 +181,9 @@ describe('autoAuthorizeFor / autoAssignFor', () => {
     ).toBe(1)
     expect(autoAuthorizeFor(group('discord'), null, lookup(), rules)).toBe(1)
   })
-  it('auto-assigns only on unguarded platforms', () => {
-    expect(autoAssignFor('qq')).toBe(false)
-    expect(autoAssignFor('qqguild')).toBe(false)
+  it('auto-assigns everywhere except OneBot (assignee is routing only)', () => {
+    expect(autoAssignFor('qq')).toBe(true)
+    expect(autoAssignFor('qqguild')).toBe(true)
     expect(autoAssignFor('onebot')).toBe(false)
     expect(autoAssignFor('discord')).toBe(true)
   })

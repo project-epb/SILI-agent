@@ -15,7 +15,7 @@ export interface SessionFacts {
 }
 
 export interface ServedLookup {
-  /** Group (or guild channel) whose `channel.assignee` is this bot. */
+  /** Group (or guild channel) activated for this bot (`qqbot_channel.activated`). */
   isGroupActive(platform: string, selfId: string, channelId: string): boolean
   /** DM sender is an op (`authority >= 4`) or their DM was activated. */
   isDmAllowed(platform: string, selfId: string, userId: string): boolean
@@ -45,8 +45,17 @@ export interface GateRules {
    * the bot is supposed to ignore.
    */
   groupCommands: ReadonlySet<string>
+  /**
+   * Command names and aliases anyone may use in an unactivated group: the
+   * cheap everyday features, so a group works before anyone activates it.
+   */
+  publicGroupCommands: ReadonlySet<string>
+  /** Message content anyone may send in an unactivated group (wiki links). */
+  publicGroupContent: RegExp
   /** Command names and aliases allowed in unserved DMs. */
   dmCommands: ReadonlySet<string>
+  /** Command names and aliases anyone may use in an unactivated DM. */
+  publicDmCommands: ReadonlySet<string>
   /** OneBot messages starting with this pass through (plugin-bind codes). */
   bindTokenPrefix: string
 }
@@ -69,8 +78,14 @@ export function decideGate(
     return content.trim().startsWith(rules.bindTokenPrefix) ? 'pass' : 'drop'
   }
   if (isServed(facts, served)) return 'pass'
+  if (!facts.isDirect && rules.publicGroupContent.test(content)) return 'pass'
   if (!commandName) return 'drop'
-  if (facts.isDirect) return rules.dmCommands.has(commandName) ? 'pass' : 'drop'
+  if (facts.isDirect)
+    return rules.dmCommands.has(commandName) ||
+      rules.publicDmCommands.has(commandName)
+      ? 'pass'
+      : 'drop'
+  if (rules.publicGroupCommands.has(commandName)) return 'pass'
   return rules.groupCommands.has(commandName) &&
     served.isOp(facts.platform, facts.userId)
     ? 'pass'
@@ -113,12 +128,24 @@ export function autoAuthorizeFor(
   if (facts.platform === 'onebot') return 0
   if (!GUARDED_PLATFORMS.has(facts.platform)) return 1
   if (isServed(facts, served)) return 1
-  if (facts.isDirect && commandName && rules.dmCommands.has(commandName))
+  if (
+    facts.isDirect &&
+    commandName &&
+    (rules.dmCommands.has(commandName) || rules.publicDmCommands.has(commandName))
+  )
+    return 1
+  // A public command needs the caller's user row: without one its authority
+  // is 0 and Koishi answers "权限不足".
+  if (!facts.isDirect && commandName && rules.publicGroupCommands.has(commandName))
     return 1
   return 0
 }
 
-/** Koishi `autoAssign`: never auto-claim channels on guarded platforms or OneBot. */
+/**
+ * Koishi `autoAssign`. `assignee` is routing only: a guarded group has one
+ * official bot, so it is assigned to it; whether it is activated lives in
+ * `qqbot_channel.activated`. Never for OneBot, which v5 does not serve.
+ */
 export function autoAssignFor(platform: string): boolean {
-  return platform !== 'onebot' && !GUARDED_PLATFORMS.has(platform)
+  return platform !== 'onebot'
 }

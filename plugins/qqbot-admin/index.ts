@@ -166,21 +166,9 @@ export function apply(ctx: Context) {
       page: p,
       pageSize,
     }: { status?: Status; q?: string } & PageArgs = {}) => {
-      // Activated groups are the channel rows assigned to the bot itself.
-      const assigned = await ctx.database.get(
-        'channel',
-        { platform: PLATFORM, assignee: { $ne: '' } },
-        ['id', 'assignee']
-      )
-      const activeKeys = assigned.map((c) => ({ selfId: c.assignee, id: c.id }))
-      const isActive = activeKeys.length ? { $or: activeKeys } : null
       const filters: Query.Expr<QQBotChannel>[] = [{ platform: PLATFORM }]
-      if (status === 'active') {
-        if (!isActive) return { rows: [], total: 0 }
-        filters.push(isActive)
-      } else if (status === 'inactive' && isActive) {
-        filters.push({ $not: isActive })
-      }
+      if (status === 'active') filters.push({ activated: true })
+      else if (status === 'inactive') filters.push({ activated: { $ne: true } })
       const search = searchQuery(q, 'name')
       if (search) filters.push(search)
 
@@ -189,7 +177,6 @@ export function apply(ctx: Context) {
         { $and: filters },
         { page: p, pageSize }
       )
-      const active = new Set(activeKeys.map((k) => `${k.selfId}:${k.id}`))
       return {
         total,
         rows: rows.map<GroupRow>((r) => ({
@@ -208,7 +195,7 @@ export function apply(ctx: Context) {
           removedAt: ts(r.removedAt),
           noticeSentAt: ts(r.noticeSentAt),
           noticePending: !!r.noticePending,
-          active: active.has(`${r.selfId}:${r.id}`),
+          active: !!r.activated,
         })),
       }
     },
