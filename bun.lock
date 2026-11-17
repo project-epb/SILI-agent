@@ -110,6 +110,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@koishijs/plugin-auth@4.1.7": "patches/@koishijs%2Fplugin-auth@4.1.7.patch",
+  },
   "packages": {
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.86.1", "https://registry.npmmirror.com/@anthropic-ai/sdk/-/sdk-0.86.1.tgz", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-Q32GUFCVMmTJrVQC4bQOG2mA8rGNuYWJP8ODufxl3g5Awy1VjY5wy0Xm+mC++i5rBkZMvxhzOR9MNTW7IvIAmw=="],
 
