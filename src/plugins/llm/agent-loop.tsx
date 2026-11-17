@@ -8,7 +8,7 @@ import type {
   ChatMessage,
   ToolCall,
 } from './providers/_base'
-import { PROTOCOL_MARKERS } from './utils/protocol'
+import { PROTOCOL_MARKERS, escapeProtocolTags } from './utils/protocol'
 import { containsDsmlLeak } from './utils/dsml-leak'
 import { ToolRegistry } from './tools'
 
@@ -92,6 +92,15 @@ export interface AgentLoopOptions {
    * text into one wall.
    */
   onTurnEnd?: (info: { hadToolCalls: boolean }) => Promise<void>
+  /**
+   * Steer: messages that arrived while this turn runs, already wrapped as
+   * envelopes, or '' when there are none. Drained once all tools of an
+   * iteration have finished and appended to that iteration's last tool
+   * result, so the next request sees them without breaking the
+   * assistant/tool message order. Whatever arrives after the last tool
+   * iteration stays with the caller, to run as a turn of its own.
+   */
+  drainSteer?: () => string
 }
 
 export interface AssistantTurnRecord {
@@ -403,6 +412,14 @@ export async function runAgentLoop(
       model: opts.options.model,
       time: assistantTurnTime,
     })
+    // Tool output comes from outside (web pages, chat history): a forged
+    // envelope tag in it must not read as a real message.
+    for (const m of completedToolMessages) {
+      m.resultText = escapeProtocolTags(m.resultText)
+    }
+    const steer = opts.drainSteer?.()
+    const lastTool = completedToolMessages.at(-1)
+    if (steer && lastTool) lastTool.resultText += `\n\n${steer}`
     for (const m of completedToolMessages) {
       messages.push({
         role: 'tool',

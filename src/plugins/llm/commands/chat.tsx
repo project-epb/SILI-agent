@@ -9,6 +9,7 @@ import BasePlugin from '~/_boilerplate'
 
 import { runAgentLoop } from '../agent-loop'
 import type { ChatMessage } from '../providers/_base'
+import type { ActiveChatEntry, SteerItem } from '../services/active-chats'
 import { resolveConversationScope } from '../services/conversation-scope'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry } from '../tools'
@@ -20,6 +21,22 @@ import {
 } from '../utils/quoted-message'
 import { splitContent } from '../utils/stream-splitter'
 import { clampThinkingBudget, resolveThinkingLevel } from '../utils/thinking'
+
+/**
+ * Steered group messages as appended to a tool result: a notice that they
+ * arrived mid-turn, then each message's own envelope. '' when none.
+ */
+function wrapSteer(items: SteerItem[]): string {
+  if (!items.length) return ''
+  return [
+    [
+      PROTOCOL_TAGS.STEER_NOTICE.open,
+      '以下消息是你忙着的时候群里新发来的。先把手头的事做完，再回应它们，不要忽略。',
+      PROTOCOL_TAGS.STEER_NOTICE.close,
+    ].join('\n'),
+    ...items.map((item) => item.envelope),
+  ].join('\n\n')
+}
 
 /**
  * Subplugin: the `;chat` command and its supporting flow.
@@ -79,6 +96,21 @@ export default class ChatCommand extends BasePlugin {
   constructor(ctx: Context) {
     super(ctx, {}, 'llm-chat')
     this.#registerChat(ctx)
+  }
+
+  /**
+   * Messages steered into a group turn after its last tool iteration never
+   * reached the model. Run them as the next turn: the newest one as the
+   * trigger (it gets the passive replies), the rest as its backlog.
+   */
+  #runSteerLeftovers(key: string | number, entry: ActiveChatEntry) {
+    const leftovers = entry.inbox.splice(0)
+    const trigger = leftovers.pop()
+    if (!trigger) return
+    if (leftovers.length) this.ctx.llm.activeChats.putBacklog(key, leftovers)
+    trigger.session
+      .execute({ name: 'chat', args: [trigger.prompt] })
+      .catch((e) => this.ctx.llm.logger.warn('[chat] steer leftover run failed:', e))
   }
 
   #shouldEnableSearch(content: string): boolean {
@@ -154,7 +186,11 @@ export default class ChatCommand extends BasePlugin {
         let interruptScenario: 'fresh' | 'pre-stream' | 'mid-stream' = 'fresh'
         let interruptedOldPrompt = ''
         let inheritedConversationId: string | null = null
-        const existingActive = llm.activeChats.get(scope.key)
+        // A running group turn is never interrupted: new group messages are
+        // steered into it further down. Only a DM interrupts itself.
+        const existingActive = scope.shared
+          ? undefined
+          : llm.activeChats.get(scope.key)
         if (existingActive) {
           interruptScenario =
             existingActive.sendFromIndex.value === 0
@@ -171,38 +207,6 @@ export default class ChatCommand extends BasePlugin {
           // 等老 session 真的 unwind（finally 解锁），避免和它的入库竞态
           await existingActive.completion.catch(() => {})
         }
-
-        // 解析 conversation_id：
-        // - 打断场景：直接用老 session 挂的 id（不读 user 字段，避免 race
-        //   condition——老 action 还没 persist 时新 action 拉到的是旧值）
-        // - 普通场景：读 user.openai_last_conversation_id；为空则生成新 UUID
-        let conversation_id: string
-        if (inheritedConversationId) {
-          conversation_id = inheritedConversationId
-          if (scope.conversationId !== conversation_id) {
-            await scope.setConversationId(conversation_id)
-          }
-        } else {
-          conversation_id = scope.conversationId
-          if (!conversation_id) {
-            conversation_id = crypto.randomUUID()
-            await scope.setConversationId(conversation_id)
-          }
-        }
-
-        const abortController = new AbortController()
-        const sendFromIndexRef = { value: 0 }
-        let resolveCompletion: () => void = () => {}
-        const completion = new Promise<void>((res) => {
-          resolveCompletion = res
-        })
-        llm.activeChats.register(scope.key, {
-          abort: abortController,
-          sendFromIndex: sendFromIndexRef,
-          pendingUserPrompt: userPrompt ?? '',
-          completion,
-          conversationId: conversation_id,
-        })
 
         if (options['no-prompt']) options.prompt = ''
 
@@ -349,7 +353,7 @@ export default class ChatCommand extends BasePlugin {
         // computed AFTER history load (we only seed memory on the first
         // turn of a fresh conversation, and post-compaction sessions
         // already carry the snapshot inside their summary user row).
-        const persistableEnvelopeBase = [
+        let persistableEnvelopeBase = [
           chatInfoBlock,
           quotedMessageBlock,
           userMessageBlock,
@@ -358,7 +362,7 @@ export default class ChatCommand extends BasePlugin {
           .join('\n')
         // The quote block belongs in the interrupt path too — being interrupted
         // doesn't make the user's quote any less relevant.
-        const userMessageEnvelopeBase = interruptNoticeBlock
+        let userMessageEnvelopeBase = interruptNoticeBlock
           ? [
               chatInfoBlock,
               interruptNoticeBlock,
@@ -368,6 +372,55 @@ export default class ChatCommand extends BasePlugin {
               .filter(Boolean)
               .join('\n')
           : persistableEnvelopeBase
+
+        if (scope.shared) {
+          const running = llm.activeChats.get(scope.key)
+          if (running) {
+            running.inbox.push({
+              session,
+              prompt: userPrompt ?? '',
+              envelope: persistableEnvelopeBase,
+            })
+            llm.logger.info('[chat] steered into the running turn of %s', scope.key)
+            return
+          }
+          // Messages steered into the previous turn too late for it to see.
+          const backlog = llm.activeChats.takeBacklog(scope.key)
+          if (backlog.length) {
+            const earlier = backlog.map((item) => item.envelope).join('\n\n')
+            persistableEnvelopeBase = `${earlier}\n\n${persistableEnvelopeBase}`
+            userMessageEnvelopeBase = `${earlier}\n\n${userMessageEnvelopeBase}`
+          }
+        }
+
+        // 解析 conversation_id：
+        // - 打断场景：直接用老 session 挂的 id（不读 user 字段，避免 race
+        //   condition——老 action 还没 persist 时新 action 拉到的是旧值）
+        // - 普通场景：读 user.openai_last_conversation_id；为空则生成新 UUID
+        //
+        // No await between the steer check above and register() below:
+        // two group messages racing in must not both start a turn.
+        let conversation_id =
+          inheritedConversationId || scope.conversationId || crypto.randomUUID()
+
+        const abortController = new AbortController()
+        const sendFromIndexRef = { value: 0 }
+        let resolveCompletion: () => void = () => {}
+        const completion = new Promise<void>((res) => {
+          resolveCompletion = res
+        })
+        const activeEntry: ActiveChatEntry = {
+          abort: abortController,
+          sendFromIndex: sendFromIndexRef,
+          pendingUserPrompt: userPrompt ?? '',
+          completion,
+          conversationId: conversation_id,
+          inbox: [],
+        }
+        llm.activeChats.register(scope.key, activeEntry)
+        if (scope.conversationId !== conversation_id) {
+          await scope.setConversationId(conversation_id)
+        }
 
         // chatMessages is populated after systemPromptText is resolved
         // (post-rotation) and after the summary compactor runs — see the
@@ -644,6 +697,7 @@ export default class ChatCommand extends BasePlugin {
                 intra_turn_seq: nextSeq(),
               } as any)
             },
+            drainSteer: () => wrapSteer(activeEntry.inbox.splice(0)),
             onTurnEnd: async () => {
               // 强制把这一轮累积的可见文本发出，作为一条独立消息——
               // 否则多轮工具调用之间的 prelude 都被攒到最后一股脑发出
@@ -653,6 +707,7 @@ export default class ChatCommand extends BasePlugin {
         } catch (e) {
           llm.logger.error('[chat] agent loop error:', e)
           llm.activeChats.unregister(scope.key)
+          this.#runSteerLeftovers(scope.key, activeEntry)
           resolveCompletion()
           stopEmojiReaction()
           return (
@@ -669,6 +724,7 @@ export default class ChatCommand extends BasePlugin {
         if (agentResult.silentChosen) {
           llm.logger.info('[chat] silent chosen by agent')
           llm.activeChats.unregister(scope.key)
+          this.#runSteerLeftovers(scope.key, activeEntry)
           resolveCompletion()
           stopEmojiReaction()
           session?.setReaction?.('🤐').catch(() => {})
@@ -734,6 +790,7 @@ export default class ChatCommand extends BasePlugin {
         // 被打断时对方的 abort 已经触发（abort 早于这里）；正常完成时
         // 释放 activeChats 让下次 chat 能继续。
         llm.activeChats.unregister(scope.key)
+        this.#runSteerLeftovers(scope.key, activeEntry)
         resolveCompletion()
 
         // 异步触发 memory fork（不阻塞主对话）。群会话不触发：fork 会拿

@@ -1,4 +1,12 @@
-import type { Logger } from 'koishi'
+import type { Logger, Session } from 'koishi'
+
+/** A group message that arrived while a turn of that group was running. */
+export interface SteerItem {
+  session: Session
+  prompt: string
+  /** The message's own turn_context + user_message envelope. */
+  envelope: string
+}
 
 /**
  * Live state for one in-flight chat turn. The `sendFromIndex` ref is
@@ -20,6 +28,12 @@ export interface ActiveChatEntry {
    * persisted its user-field write.
    */
   conversationId: string
+  /**
+   * Group conversations only: messages waiting to be steered into this
+   * turn. The agent loop drains it after each tool iteration; what is left
+   * when the turn ends runs as the next turn.
+   */
+  inbox: SteerItem[]
 }
 
 export type AbortReason = 'user-stop' | 'user-reset' | 'user-interrupt'
@@ -36,6 +50,8 @@ export type AbortReason = 'user-stop' | 'user-reset' | 'user-interrupt'
  */
 export class ActiveChatRegistry {
   private readonly entries = new Map<string | number, ActiveChatEntry>()
+  /** Steered messages handed to the next turn of a group (see SteerItem). */
+  private readonly backlogs = new Map<string | number, SteerItem[]>()
 
   constructor(private readonly logger: Logger) {}
 
@@ -49,6 +65,16 @@ export class ActiveChatRegistry {
 
   unregister(userId: string | number): void {
     this.entries.delete(userId)
+  }
+
+  putBacklog(key: string | number, items: SteerItem[]): void {
+    this.backlogs.set(key, [...(this.backlogs.get(key) ?? []), ...items])
+  }
+
+  takeBacklog(key: string | number): SteerItem[] {
+    const items = this.backlogs.get(key) ?? []
+    this.backlogs.delete(key)
+    return items
   }
 
   /**
