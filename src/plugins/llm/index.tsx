@@ -27,6 +27,7 @@ import { IdleCompactor } from './services/idle-compactor'
 import { CommandCatalogService } from './services/command-catalog'
 import { ImageReferenceCache } from './services/image-cache'
 import { MemoryStore } from './services/memory'
+import { SharedMemoryStore } from './services/shared-memory'
 import { MemoryForkScheduler } from './services/memory-fork-scheduler'
 import { SessionManager } from './services/session-manager'
 import { SummaryCompactor } from './services/summary-compactor'
@@ -44,8 +45,11 @@ import {
   buildSaveUserMemoryTool,
   buildStoredChannelHistoryHandler,
   executeKoishiCommandHandler,
+  type MemoryTier,
   getMemoryToolState,
   getWebToolsState,
+  readableTiers,
+  renderMemoryBlock,
   runReadUserMemory,
   runSaveUserMemory,
   runWebExtract,
@@ -174,6 +178,8 @@ export interface Config {
    */
   dsmlLeakMaxRetries?: number
   memoryByteLimit?: number
+  /** Soft byte limit of a user's shared record (hard = ×1.1). Default 3000. */
+  sharedMemoryByteLimit?: number
   memoryUpdateInterval?: number
   memoryForkMaxRetries?: number
   /**
@@ -281,7 +287,10 @@ export default class PluginLLM extends BasePlugin<Config> {
   }
 
   readonly MODEL_ALIASES: Record<string, string> = {}
+  /** Private records: read and written in DMs only. */
   readonly memory: MemoryStore = new MemoryStore(this.ctx)
+  /** Shared records: may be read and written in any group. */
+  readonly sharedMemory: SharedMemoryStore = new SharedMemoryStore(this.ctx)
   readonly sessions: SessionManager = new SessionManager(this.ctx)
   readonly tools: ToolRegistry = new ToolRegistry()
   readonly imageRefs: ImageReferenceCache = new ImageReferenceCache({
@@ -319,6 +328,7 @@ export default class PluginLLM extends BasePlugin<Config> {
       showToolCallNotice: false,
       dsmlLeakMaxRetries: 2,
       memoryByteLimit: 3000,
+      sharedMemoryByteLimit: 3000,
       memoryUpdateInterval: 10,
       memoryForkMaxRetries: 3,
       quotedMessageMaxLength: 1000,
@@ -346,7 +356,7 @@ export default class PluginLLM extends BasePlugin<Config> {
       this.chatHistory,
       this.sessions,
       this.turns,
-      this.memory,
+      { private: this.memory, shared: this.sharedMemory },
       { maxContextTokens: config.compactAtContextTokens ?? 256_000 }
     )
     const idleCompactor = new IdleCompactor({
@@ -410,17 +420,30 @@ export default class PluginLLM extends BasePlugin<Config> {
       definition: READ_USER_MEMORY_TOOL,
       execute: async (_args, { session, turnState }) => {
         const { platform, userId } = this.resolveMemoryKey(session)
-        const result = await runReadUserMemory(this.memory, platform, userId, {
-          hardLimit: this.getMemoryHardLimit(),
-        })
+        const owner = { name: session.username || userId, uid: userId }
         const state = getMemoryToolState(turnState)
-        state.hasReadInTurn = true
-        state.lastSeenUpdatedAt = result.lastUpdatedAt
-        return result.text
+        const blocks: string[] = []
+        for (const tier of readableTiers(session.isDirect)) {
+          const result = await runReadUserMemory(
+            this.memoryStore(tier),
+            platform,
+            userId,
+            { hardLimit: this.getMemoryHardLimit(tier) }
+          )
+          state[tier].hasRead = true
+          state[tier].lastSeenUpdatedAt = result.lastUpdatedAt
+          blocks.push(renderMemoryBlock(owner, tier, result.text))
+        }
+        if (!session.isDirect)
+          blocks.push('（这里是群聊：私密记录只能在私聊里读写。）')
+        return blocks.join('\n\n')
       },
     })
     this.tools.register({
-      definition: buildSaveUserMemoryTool(this.getMemoryHardLimit()),
+      definition: buildSaveUserMemoryTool({
+        private: this.getMemoryHardLimit('private'),
+        shared: this.getMemoryHardLimit('shared'),
+      }),
       execute: async (args, { ctx, session, turnState }) => {
         const { platform, userId } = this.resolveMemoryKey(session)
         const scope = resolveConversationScope(session)
@@ -428,26 +451,41 @@ export default class PluginLLM extends BasePlugin<Config> {
         if (!conversationId) {
           return 'Error: no active conversation. Skip this turn and try again on the next user message.'
         }
-        const conversationOwner = scope.owner
-        const state = getMemoryToolState(turnState)
-        return runSaveUserMemory(args as any, state, {
-          memory: this.memory,
-          platform,
-          userId,
-          conversationId,
-          getCurrentUserMessageCount: async () => {
-            const rows = await ctx.database.get(
-              'openai_chat',
-              {
-                conversation_owner: conversationOwner,
-                conversation_id: conversationId,
-                role: 'user',
-              },
-              { fields: ['id'] }
+        // Same source of truth as the memory-fork scheduler: a private save
+        // pushes `message_count_at_update` forward, deferring the next fork.
+        const countUserMessages = async () => {
+          const rows = await ctx.database.get(
+            'openai_chat',
+            {
+              conversation_owner: scope.owner,
+              conversation_id: conversationId,
+              role: 'user',
+            },
+            { fields: ['id'] }
+          )
+          return rows?.length ?? 0
+        }
+        return runSaveUserMemory(args as any, getMemoryToolState(turnState), {
+          isDirect: session.isDirect,
+          owner: { name: session.username || userId, uid: userId },
+          getUpdatedAt: async (tier) =>
+            (await this.memoryStore(tier).getMeta(platform, userId))
+              ?.last_updated_at ?? 0,
+          write: async (tier, content) => {
+            if (tier === 'shared')
+              return this.sharedMemory.set(platform, userId, content)
+            await this.memory.set(
+              platform,
+              userId,
+              content,
+              await countUserMessages(),
+              conversationId
             )
-            return rows?.length ?? 0
           },
-          hardLimit: this.getMemoryHardLimit(),
+          hardLimits: {
+            private: this.getMemoryHardLimit('private'),
+            shared: this.getMemoryHardLimit('shared'),
+          },
         })
       },
     })
@@ -611,6 +649,7 @@ export default class PluginLLM extends BasePlugin<Config> {
       }
     )
     MemoryStore.initSchema(this.ctx)
+    SharedMemoryStore.initSchema(this.ctx)
     SessionManager.initSchema(this.ctx)
   }
 
@@ -652,11 +691,18 @@ export default class PluginLLM extends BasePlugin<Config> {
   }
 
   /**
-   * Hard byte limit for memory writes (both fork and the save_user_memory
-   * tool). Mirrors the soft-limit + 10% policy used in memory-fork.ts.
+   * Hard byte limit for writes to one tier (the fork and save_user_memory
+   * alike). Mirrors the soft-limit + 10% policy used in memory-fork.ts.
    */
-  private getMemoryHardLimit(): number {
-    const soft = this.config.memoryByteLimit ?? 3000
+  getMemoryHardLimit(tier: MemoryTier): number {
+    const soft =
+      tier === 'shared'
+        ? (this.config.sharedMemoryByteLimit ?? 3000)
+        : (this.config.memoryByteLimit ?? 3000)
     return Math.ceil(soft * 1.1)
+  }
+
+  memoryStore(tier: MemoryTier): MemoryStore | SharedMemoryStore {
+    return tier === 'shared' ? this.sharedMemory : this.memory
   }
 }

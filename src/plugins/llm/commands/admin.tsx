@@ -6,6 +6,7 @@ import {
   canResetGroupConversation,
   resolveConversationScope,
 } from '../services/conversation-scope'
+import { TIER_LABEL, readableTiers } from '../tools/read-user-memory'
 
 /**
  * Subplugin: admin/utility commands.
@@ -263,19 +264,33 @@ export default class AdminCommands extends BasePlugin {
 
         const { platform, userId } = llm.resolveMemoryKey(session)
 
+        // Private records never show up outside a DM.
+        const tiers = readableTiers(session.isDirect)
+        const stores = { private: llm.memory, shared: llm.sharedMemory }
+
         if (options.read) {
-          const meta = await llm.memory.getMeta(platform, userId)
-          if (!meta || !meta.content) return '(空)'
-          const updatedAt = meta.last_updated_at
-            ? new Date(meta.last_updated_at).toLocaleString('sv', {
-                timeZone: 'Asia/Shanghai',
-              })
-            : '从未更新'
-          return [
-            `更新时间: ${updatedAt} | 字节: ${meta.byte_size} | 累计更新: ${meta.update_count}`,
-            '',
-            meta.content,
-          ].join('\n')
+          const parts: string[] = []
+          for (const tier of tiers) {
+            const meta = await stores[tier].getMeta(platform, userId)
+            if (!meta?.content) {
+              parts.push(`【${TIER_LABEL[tier]}】(空)`)
+              continue
+            }
+            const updatedAt = meta.last_updated_at
+              ? new Date(meta.last_updated_at).toLocaleString('sv', {
+                  timeZone: 'Asia/Shanghai',
+                })
+              : '从未更新'
+            parts.push(
+              [
+                `【${TIER_LABEL[tier]}】更新时间: ${updatedAt} | 字节: ${meta.byte_size} | 累计更新: ${meta.update_count}`,
+                '',
+                meta.content,
+              ].join('\n')
+            )
+          }
+          if (!session.isDirect) parts.push('（私密记录只在私聊里显示）')
+          return parts.join('\n\n')
         }
 
         if (options.write) {
@@ -303,16 +318,23 @@ export default class AdminCommands extends BasePlugin {
         }
 
         if (options.reset) {
-          const meta = await llm.memory.getMeta(platform, userId)
-          if (!meta) return '当前用户没有记忆记录，无需清空。'
+          const found: string[] = []
+          for (const tier of tiers) {
+            const meta = await stores[tier].getMeta(platform, userId)
+            if (meta) found.push(`${TIER_LABEL[tier]}（${meta.byte_size} 字节）`)
+          }
+          if (!found.length) return '当前用户没有记忆记录，无需清空。'
           await session.send(
-            `即将清空当前记忆（${meta.byte_size} 字节）。如果确认，请回复 y。`
+            `即将清空${found.join('、')}。如果确认，请回复 y。`
           )
           const reply = await session.prompt(30 * 1000)
           if (reply?.trim().toLowerCase() !== 'y') {
             return '已取消。'
           }
-          const removed = await llm.memory.delete(platform, userId)
+          let removed = false
+          for (const tier of tiers) {
+            removed = (await stores[tier].delete(platform, userId)) || removed
+          }
           return removed ? '记忆已清空。' : '记忆已不存在。'
         }
       })
@@ -344,7 +366,7 @@ export default class AdminCommands extends BasePlugin {
         const res = await llm.summary.compactNow({
           conversation_id,
           conversation_owner: scope.owner,
-          includeMemory: !scope.shared,
+          memoryTiers: scope.shared ? [] : readableTiers(session.isDirect),
           systemPrompt: systemPromptText,
           provider,
           model,

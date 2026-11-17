@@ -42,12 +42,16 @@ function mkDeps(over: {
   const turns = {
     allocate: vi.fn(async () => 1),
   } as any
+  // The private record is the one under test; the shared one is empty.
   const memory = {
-    getMeta: vi.fn(async () => {
-      if (over.memory instanceof Error) throw over.memory
-      if (over.memory === null) return null
-      return over.memory ?? null
-    }),
+    private: {
+      getMeta: vi.fn(async () => {
+        if (over.memory instanceof Error) throw over.memory
+        if (over.memory === null) return null
+        return over.memory ?? null
+      }),
+    },
+    shared: { getMeta: vi.fn(async () => null) },
   } as any
 
   const provider: LLMProviderBase = {
@@ -73,6 +77,7 @@ const INPUT = {
   model: 'gpt-test',
   platform: 'qq',
   userId: '999',
+  memoryTiers: ['private', 'shared'] as const,
 }
 
 describe('SummaryCompactor', () => {
@@ -283,7 +288,7 @@ describe('SummaryCompactor', () => {
     const r = await c.compactIfNeeded({ ...INPUT, provider: d.provider })
 
     expect(r.ran).toBe(true)
-    expect(d.memory.getMeta).toHaveBeenCalledWith('qq', '999')
+    expect(d.memory.private.getMeta).toHaveBeenCalledWith('qq', '999')
     const lastUserMessage = receivedMessages[receivedMessages.length - 1]
     expect(lastUserMessage.role).toBe('user')
     expect((lastUserMessage as { content: string }).content).toMatch(
@@ -323,7 +328,7 @@ describe('SummaryCompactor', () => {
     const r = await c.compactIfNeeded({
       ...INPUT,
       provider: d.provider,
-      includeMemory: false,
+      memoryTiers: [],
     })
 
     expect(r.ran).toBe(true)

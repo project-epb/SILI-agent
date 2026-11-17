@@ -43,11 +43,13 @@ dropset `PROTOCOL_ONLY_ELEMENT_TYPES` 保留了 legacy 字符串（如 `'chat_in
 
 ## 长期记忆子系统
 
-`services/memory.ts` + `services/memory-fork*.ts` —— 用户长期记忆，按 (platform, userId) key，硬上限 `memoryByteLimit`（默认 3000 byte UTF-8）。
+每位用户两份记录，都按 (platform, userId) key：
+- **私密记录** `services/memory.ts`（`openai_user_memory`）：只在私聊读写，上限 `memoryByteLimit`（默认 3000 byte）。`memory-fork-scheduler` 在用户消息累计到 `memoryUpdateInterval` 后触发后台 fork 整理它；fork 失败有 `memoryForkMaxRetries` 容错。
+- **共享记录** `services/shared-memory.ts`（`openai_user_shared_memory`）：所有群可见，上限 `sharedMemoryByteLimit`（默认 3000 byte），只由 AI 主动写入。
 
-`memory-fork-scheduler` 在用户消息累计到 `memoryUpdateInterval` 后触发后台 fork（独立 LLM 调用 + 工具调度）整理记忆；fork 失败有 `memoryForkMaxRetries` 容错。
+`read_user_memory` / `save_user_memory(tier, content)` 的主人永远是触发这一轮的人；群里（`!session.isDirect`）读不到、写不了私密记录；这一轮带了别人的消息（steer / backlog）时拒绝写入。读写结果用 `<user_memory owner uid tier>` 标明归属。
 
-`services/memory-snapshot.ts` 的 `buildMemorySnapshot()` 渲染成 `<long_term_memory>` 块 —— 在两处被调用：
+`services/memory-snapshot.ts` 的 `buildMemorySnapshot()` 按传入的 `tiers` 渲染成 `<long_term_memory>` 块（群共享会话传 `[]`）—— 在两处被调用：
 1. 新 conversation 第一条 user 消息（fresh / reset / idle-rotated）：让模型一开始就有记忆 in-context
 2. SummaryCompactor 的 summary user 消息：让压缩后的新 session 也带记忆
 

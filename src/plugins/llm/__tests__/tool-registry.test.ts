@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   EXTRACT_WEBPAGES_TOOL,
+  type MemoryTier,
   type MemoryToolState,
   ToolRegistry,
   WEB_SEARCH_TOOL,
@@ -193,7 +194,7 @@ describe('runReadUserMemory', () => {
       'qq/u1': { content: '', last_updated_at: 0 },
     })
     const out = await runReadUserMemory(memory, 'qq', 'u1')
-    expect(out.text).toBe('(暂无长期记忆)')
+    expect(out.text).toBe('(暂无记录)')
     expect(out.lastUpdatedAt).toBe(0)
   })
 
@@ -202,7 +203,7 @@ describe('runReadUserMemory', () => {
       'qq/u1': { content: '   \n  \t ', last_updated_at: 50 },
     })
     const out = await runReadUserMemory(memory, 'qq', 'u1')
-    expect(out.text).toBe('(暂无长期记忆)')
+    expect(out.text).toBe('(暂无记录)')
     // lastUpdatedAt 仍要返回，让乐观锁能识别"曾经有过 record"
     expect(out.lastUpdatedAt).toBe(50)
   })
@@ -215,7 +216,7 @@ describe('runReadUserMemory', () => {
     expect((await runReadUserMemory(memory, 'qq', 'u1')).text).toBe('mine')
     expect((await runReadUserMemory(memory, 'qq', 'u2')).text).toBe('theirs')
     expect((await runReadUserMemory(memory, 'discord', 'u1')).text).toBe(
-      '(暂无长期记忆)'
+      '(暂无记录)'
     )
   })
 
@@ -238,7 +239,7 @@ describe('runReadUserMemory', () => {
     const out = await runReadUserMemory(memory, 'qq', 'u1', {
       hardLimit: 3300,
     })
-    expect(out.text).toBe('(暂无长期记忆)')
+    expect(out.text).toBe('(暂无记录)')
   })
 
   it('strips trailing whitespace from content before appending stats', async () => {
@@ -253,203 +254,166 @@ describe('runReadUserMemory', () => {
 })
 
 describe('runSaveUserMemory', () => {
-  // Minimal in-memory store for getMeta + set
-  const makeMemory = (initial?: { content: string; last_updated_at: number }) => {
-    let row = initial
-      ? {
-          id: 1,
-          platform: 'qq',
-          user_id: 'u1',
-          content: initial.content,
-          byte_size: byteLength(initial.content),
-          last_updated_at: initial.last_updated_at,
-          last_check_at: initial.last_updated_at,
-          update_count: 1,
-          message_count_at_update: 0,
-          last_forked_conversation_id: '',
-        }
-      : null
-    const calls: Array<{
-      content: string
-      messageCount: number
-      conversationId: string
-    }> = []
+  // One fake record per tier, keyed by tier.
+  const makeDeps = (
+    over: {
+      isDirect?: boolean
+      updatedAt?: Partial<Record<MemoryTier, number>>
+      hardLimit?: number
+    } = {}
+  ) => {
+    const writes: Array<{ tier: MemoryTier; content: string }> = []
     return {
-      get current() {
-        return row
-      },
-      calls,
-      async getMeta() {
-        return row
-      },
-      async set(
-        _p: string,
-        _u: string,
-        content: string,
-        messageCount: number,
-        conversationId: string
-      ) {
-        calls.push({ content, messageCount, conversationId })
-        row = {
-          ...(row ?? {
-            id: 1,
-            platform: 'qq',
-            user_id: 'u1',
-            byte_size: 0,
-            last_check_at: 0,
-            update_count: 0,
-            message_count_at_update: 0,
-            last_forked_conversation_id: '',
-          }),
-          content,
-          byte_size: byteLength(content),
-          last_updated_at: row?.last_updated_at
-            ? row.last_updated_at + 1
-            : 1000,
-          message_count_at_update: messageCount,
-          last_forked_conversation_id: conversationId,
-        } as any
+      writes,
+      deps: {
+        isDirect: over.isDirect ?? true,
+        owner: { name: '小鱼', uid: '1' },
+        getUpdatedAt: async (tier: MemoryTier) => over.updatedAt?.[tier] ?? 0,
+        write: async (tier: MemoryTier, content: string) => {
+          writes.push({ tier, content })
+        },
+        hardLimits: {
+          private: over.hardLimit ?? 3300,
+          shared: over.hardLimit ?? 3300,
+        },
       },
     }
   }
 
-  const makeDeps = (memory: ReturnType<typeof makeMemory>, hardLimit = 3300) => ({
-    memory,
-    platform: 'qq',
-    userId: 'u1',
-    conversationId: 'conv1',
-    getCurrentUserMessageCount: async () => 5,
-    hardLimit,
-  })
-
   const fresh = (
-    overrides: Partial<MemoryToolState> = {}
-  ): MemoryToolState => ({
-    hasReadInTurn: false,
-    lastSeenUpdatedAt: 0,
-    savedThisTurn: false,
-    ...overrides,
+    read: MemoryTier[] = [],
+    over: Partial<MemoryToolState> = {}
+  ): MemoryToolState => {
+    const s = getMemoryToolState({})
+    for (const tier of read) s[tier].hasRead = true
+    return Object.assign(s, over)
+  }
+
+  it('refuses the private record outside a DM', async () => {
+    const { writes, deps } = makeDeps({ isDirect: false })
+    const out = await runSaveUserMemory(
+      { tier: 'private', content: 'x' },
+      fresh(['private', 'shared']),
+      deps
+    )
+    expect(out).toMatch(/^Error: 私密记录只能在私聊里改/)
+    expect(writes).toEqual([])
   })
 
-  it('rejects when read_user_memory was not called first', async () => {
-    const memory = makeMemory()
+  it('writes the shared record in a group', async () => {
+    const { writes, deps } = makeDeps({ isDirect: false })
     const out = await runSaveUserMemory(
-      { content: 'new' },
-      fresh(),
-      makeDeps(memory)
+      { tier: 'shared', content: 'x' },
+      fresh(['shared']),
+      deps
+    )
+    expect(out).toBe('OK: 已更新 小鱼（uid 1）的共享记录（1 字节）。')
+    expect(writes).toEqual([{ tier: 'shared', content: 'x' }])
+  })
+
+  it('refuses any write once someone else spoke in the turn', async () => {
+    const { writes, deps } = makeDeps({ isDirect: false })
+    const out = await runSaveUserMemory(
+      { tier: 'shared', content: 'x' },
+      fresh(['shared'], { othersSpoke: true }),
+      deps
+    )
+    expect(out).toMatch(/有别人的消息/)
+    expect(writes).toEqual([])
+  })
+
+  it('rejects an unknown tier', async () => {
+    const { writes, deps } = makeDeps()
+    const out = await runSaveUserMemory(
+      { tier: 'public' as any, content: 'x' },
+      fresh(['private', 'shared']),
+      deps
+    )
+    expect(out).toMatch(/"tier" must be/)
+    expect(writes).toEqual([])
+  })
+
+  it('requires reading the same tier first', async () => {
+    const { writes, deps } = makeDeps()
+    const out = await runSaveUserMemory(
+      { tier: 'private', content: 'x' },
+      fresh(['shared']),
+      deps
     )
     expect(out).toMatch(/^Error: please call read_user_memory first/)
-    expect(memory.calls).toEqual([])
+    expect(writes).toEqual([])
   })
 
-  it('rejects when save was already called this turn', async () => {
-    const memory = makeMemory()
-    const out = await runSaveUserMemory(
-      { content: 'new' },
-      fresh({ hasReadInTurn: true, savedThisTurn: true }),
-      makeDeps(memory)
-    )
-    expect(out).toMatch(/already been used/)
-    expect(memory.calls).toEqual([])
+  it('allows one save per tier per turn', async () => {
+    const { writes, deps } = makeDeps()
+    const state = fresh(['private', 'shared'])
+    await runSaveUserMemory({ tier: 'private', content: 'a' }, state, deps)
+    await runSaveUserMemory({ tier: 'shared', content: 'b' }, state, deps)
+    const again = await runSaveUserMemory({ tier: 'private', content: 'c' }, state, deps)
+    expect(again).toMatch(/already saved in this turn/)
+    expect(writes).toEqual([
+      { tier: 'private', content: 'a' },
+      { tier: 'shared', content: 'b' },
+    ])
   })
 
   it('rejects empty / whitespace content', async () => {
-    const memory = makeMemory()
-    const a = await runSaveUserMemory(
-      { content: '' },
-      fresh({ hasReadInTurn: true }),
-      makeDeps(memory)
+    const { writes, deps } = makeDeps()
+    const out = await runSaveUserMemory(
+      { tier: 'private', content: '   \n\t  ' },
+      fresh(['private']),
+      deps
     )
-    expect(a).toMatch(/empty or whitespace/)
-
-    const b = await runSaveUserMemory(
-      { content: '   \n\t  ' },
-      fresh({ hasReadInTurn: true }),
-      makeDeps(memory)
-    )
-    expect(b).toMatch(/empty or whitespace/)
-    expect(memory.calls).toEqual([])
+    expect(out).toMatch(/empty or whitespace/)
+    expect(writes).toEqual([])
   })
 
-  it('rejects content exceeding hard limit', async () => {
-    const memory = makeMemory()
-    const long = 'x'.repeat(4000)
+  it('rejects content exceeding the hard limit', async () => {
+    const { writes, deps } = makeDeps({ hardLimit: 3300 })
     const out = await runSaveUserMemory(
-      { content: long },
-      fresh({ hasReadInTurn: true }),
-      makeDeps(memory, 3300)
+      { tier: 'shared', content: 'x'.repeat(4000) },
+      fresh(['shared']),
+      deps
     )
-    expect(out).toMatch(/exceeds hard limit 3300/)
-    expect(memory.calls).toEqual([])
+    expect(out).toMatch(/exceeds the shared hard limit 3300/)
+    expect(writes).toEqual([])
   })
 
-  it('rejects when memory was modified after read (optimistic lock)', async () => {
-    const memory = makeMemory({ content: 'old', last_updated_at: 200 })
-    const state = fresh({ hasReadInTurn: true, lastSeenUpdatedAt: 100 })
+  it('rejects and forces a re-read when the record changed after the read', async () => {
+    const { writes, deps } = makeDeps({ updatedAt: { private: 200 } })
+    const state = fresh(['private'])
+    state.private.lastSeenUpdatedAt = 100
     const out = await runSaveUserMemory(
-      { content: 'new' },
+      { tier: 'private', content: 'new' },
       state,
-      makeDeps(memory)
+      deps
     )
     expect(out).toMatch(/modified after your last read/)
-    expect(memory.calls).toEqual([])
-    // lock failure should also force re-read
-    expect(state.hasReadInTurn).toBe(false)
-    expect(state.lastSeenUpdatedAt).toBe(0)
-  })
-
-  it('commits and marks state.savedThisTurn=true on success', async () => {
-    const memory = makeMemory({ content: 'old', last_updated_at: 100 })
-    const state = fresh({ hasReadInTurn: true, lastSeenUpdatedAt: 100 })
-    const out = await runSaveUserMemory(
-      { content: 'fresh content' },
-      state,
-      makeDeps(memory)
-    )
-    expect(out).toMatch(/^OK: memory updated \(\d+ bytes\)\.$/)
-    expect(memory.calls).toEqual([
-      { content: 'fresh content', messageCount: 5, conversationId: 'conv1' },
-    ])
-    expect(state.savedThisTurn).toBe(true)
-  })
-
-  it('first-time save (no prior memory) works when state.lastSeenUpdatedAt=0', async () => {
-    const memory = makeMemory() // no row yet
-    const state = fresh({ hasReadInTurn: true, lastSeenUpdatedAt: 0 })
-    const out = await runSaveUserMemory(
-      { content: 'first entry' },
-      state,
-      makeDeps(memory)
-    )
-    expect(out).toMatch(/^OK: memory updated/)
-    expect(memory.calls).toHaveLength(1)
-    expect(state.savedThisTurn).toBe(true)
+    expect(writes).toEqual([])
+    expect(state.private.hasRead).toBe(false)
+    expect(state.private.lastSeenUpdatedAt).toBe(0)
   })
 
   it('rejects malformed input', async () => {
-    const memory = makeMemory()
+    const { deps } = makeDeps()
     const out = await runSaveUserMemory(
-      undefined,
-      fresh({ hasReadInTurn: true }),
-      makeDeps(memory)
+      { tier: 'private' },
+      fresh(['private']),
+      deps
     )
     expect(out).toMatch(/missing required field/)
   })
 })
 
 describe('getMemoryToolState', () => {
-  it('initializes default state on first access and shares across calls', () => {
+  it('initializes per-tier state on first access and shares it across calls', () => {
     const ts: Record<string, unknown> = {}
     const a = getMemoryToolState(ts)
-    expect(a).toEqual({
-      hasReadInTurn: false,
-      lastSeenUpdatedAt: 0,
-      savedThisTurn: false,
-    })
-    a.hasReadInTurn = true
-    const b = getMemoryToolState(ts)
-    expect(b).toBe(a)
-    expect(b.hasReadInTurn).toBe(true)
+    expect(a.private).toEqual({ hasRead: false, lastSeenUpdatedAt: 0, saved: false })
+    expect(a.shared).toEqual({ hasRead: false, lastSeenUpdatedAt: 0, saved: false })
+    expect(a.othersSpoke).toBe(false)
+    a.shared.hasRead = true
+    expect(getMemoryToolState(ts)).toBe(a)
   })
 })
 
@@ -849,24 +813,24 @@ describe('getWebToolsState', () => {
 
 describe('buildSaveUserMemoryTool', () => {
   it('bakes hardLimit into description', () => {
-    const def = buildSaveUserMemoryTool(3300)
+    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100 })
     expect(def.name).toBe('save_user_memory')
-    expect(def.description).toContain('3300 字节')
+    expect(def.description).toContain("private 3300 字节，shared 1100 字节")
     expect(def.description).toContain('read_user_memory')
   })
 
   it('teaches declarative-not-imperative phrasing', () => {
-    const def = buildSaveUserMemoryTool(3300)
+    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100 })
     expect(def.description).toMatch(/声明[性式]|不要[写用]命令/)
   })
 
   it('forbids recording user requests to alter SILI persona', () => {
-    const def = buildSaveUserMemoryTool(3300)
+    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100 })
     expect(def.description).toMatch(/SILI.*人设|SILI 自[己身]|个人设定/)
   })
 
   it('mentions date-stamping for time-sensitive entries', () => {
-    const def = buildSaveUserMemoryTool(3300)
+    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100 })
     expect(def.description).toMatch(/YYYY-MM-DD|turn_context|chat_info/)
   })
 })

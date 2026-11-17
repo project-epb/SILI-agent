@@ -1,46 +1,56 @@
 import type { Logger } from 'koishi'
 
-import type { MemoryStore } from './memory'
+import {
+  type MemoryTier,
+  renderMemoryBlock,
+} from '../tools/read-user-memory'
+
+/** Anything that can look up one tier's record. */
+export interface MemoryRecordSource {
+  getMeta(
+    platform: string,
+    userId: string
+  ): Promise<{ content: string } | null>
+}
+
+export type MemorySnapshotStores = Record<MemoryTier, MemoryRecordSource>
 
 /**
- * Render the user's long-term memory as a `<long_term_memory>` XML
- * block to embed at the start of a synthetic / first user message in a
- * fresh conversation. Two callers use this:
+ * Render a user's records as a `<long_term_memory>` block to embed at the
+ * start of the first user message of a fresh conversation. Two callers:
  *
- *   - SummaryCompactor — prepends the snapshot to the synthetic
- *     "please summarize" user message that seeds a compacted session
- *   - chat.tsx — prepends the snapshot to the FIRST user envelope of
- *     any brand-new conversation (initial chat, post-`llm.reset`, idle
- *     rotation), so non-compaction-spawned sessions also get the
- *     memory bootstrap and don't waste a round-trip on read_user_memory
+ *   - chat.tsx — the FIRST user envelope of any brand-new conversation
+ *     (initial chat, post-`llm.reset`, idle rotation)
+ *   - SummaryCompactor — the synthetic "please summarize" user message
+ *     that seeds a compacted session
  *
- * Effect: memory becomes part of the cached prefix for the entire new
- * conversation, the model has it in context from turn 1 without a
- * tool call, and routine "what do you remember about me" questions
- * are answerable instantly. The note inside the block tells the model
- * the snapshot is frozen and to call `read_user_memory` for fresh
- * data if the conversation has run long enough that updates may have
- * landed.
+ * The records become part of the cached prefix of the new conversation.
+ * Each one is wrapped in `<user_memory>` with its owner and tier. `tiers`
+ * says which records the conversation may carry: never `private` outside
+ * a DM, nothing at all in a group's shared conversation.
  *
- * Returns '' when the user has no memory yet (or fetch fails), so
- * users without memory rows aren't burdened with empty placeholder
- * text in their fresh conversations.
+ * Returns '' when no listed record has content (or fetch fails).
  */
 export async function buildMemorySnapshot(
-  memory: Pick<MemoryStore, 'getMeta'>,
+  stores: MemorySnapshotStores,
   platform: string,
   userId: string,
-  logger?: Logger
+  tiers: readonly MemoryTier[],
+  logger?: Logger,
+  ownerName = '这位用户'
 ): Promise<string> {
   try {
-    const meta = await memory.getMeta(platform, userId)
-    const raw = meta?.content?.trim()
-    if (!raw) return ''
+    const blocks: string[] = []
+    for (const tier of tiers) {
+      const raw = (await stores[tier].getMeta(platform, userId))?.content?.trim()
+      if (raw) blocks.push(renderMemoryBlock({ name: ownerName, uid: userId }, tier, raw))
+    }
+    if (!blocks.length) return ''
     return [
       '<long_term_memory>',
       '（系统在创建本会话时为你 freeze 的长期记忆快照；如果对话期间已经过去很久、用户提到新偏好，可调用 read_user_memory 拉最新版本。）',
       '',
-      raw,
+      blocks.join('\n\n'),
       '</long_term_memory>',
     ].join('\n')
   } catch (e: any) {

@@ -12,7 +12,7 @@ import type { ChatMessage } from '../providers/_base'
 import type { ActiveChatEntry, SteerItem } from '../services/active-chats'
 import { resolveConversationScope } from '../services/conversation-scope'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
-import { ToolRegistry } from '../tools'
+import { ToolRegistry, getMemoryToolState, readableTiers } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
 import { PROTOCOL_MARKERS, PROTOCOL_TAGS } from '../utils/protocol'
 import {
@@ -373,6 +373,11 @@ export default class ChatCommand extends BasePlugin {
               .join('\n')
           : persistableEnvelopeBase
 
+        // Per-turn tool state, handed to the agent loop. Memory writes are
+        // refused once the turn carries someone else's message.
+        const turnState: Record<string, unknown> = {}
+        const fromOthers = (items: SteerItem[]) =>
+          items.some((item) => item.session.userId !== session.userId)
         if (scope.shared) {
           const running = llm.activeChats.get(scope.key)
           if (running) {
@@ -387,6 +392,7 @@ export default class ChatCommand extends BasePlugin {
           // Messages steered into the previous turn too late for it to see.
           const backlog = llm.activeChats.takeBacklog(scope.key)
           if (backlog.length) {
+            if (fromOthers(backlog)) getMemoryToolState(turnState).othersSpoke = true
             const earlier = backlog.map((item) => item.envelope).join('\n\n')
             persistableEnvelopeBase = `${earlier}\n\n${persistableEnvelopeBase}`
             userMessageEnvelopeBase = `${earlier}\n\n${userMessageEnvelopeBase}`
@@ -527,7 +533,7 @@ export default class ChatCommand extends BasePlugin {
           const compactRes = await llm.summary.compactIfNeeded({
             conversation_id,
             conversation_owner,
-            includeMemory: !scope.shared,
+            memoryTiers: scope.shared ? [] : readableTiers(session.isDirect),
             systemPrompt: systemPromptText,
             provider,
             model,
@@ -569,15 +575,18 @@ export default class ChatCommand extends BasePlugin {
         // inside their summary user row, so `histories.length === 0`
         // cleanly discriminates "fresh / reset / idle-rotated" from
         // "post-compaction" — only the former needs seeding here.
-        // A group conversation never carries anyone's memory: the agent
-        // reads the speaker's on demand, so it cannot leak to others.
+        // A group conversation never carries anyone's records: the agent
+        // reads the speaker's shared record on demand. Private records
+        // never appear outside a DM.
         const memoryPrefix =
           histories.length === 0 && !scope.shared
             ? await buildMemorySnapshot(
-                llm.memory,
+                { private: llm.memory, shared: llm.sharedMemory },
                 platform,
                 userId,
-                llm.logger
+                readableTiers(session.isDirect),
+                llm.logger,
+                session.username || userId
               )
             : ''
         const persistableEnvelope = memoryPrefix
@@ -696,7 +705,12 @@ export default class ChatCommand extends BasePlugin {
                 intra_turn_seq: nextSeq(),
               } as any)
             },
-            drainSteer: () => wrapSteer(activeEntry.inbox.splice(0)),
+            turnState,
+            drainSteer: () => {
+              const items = activeEntry.inbox.splice(0)
+              if (fromOthers(items)) getMemoryToolState(turnState).othersSpoke = true
+              return wrapSteer(items)
+            },
             onTurnEnd: async () => {
               // 强制把这一轮累积的可见文本发出，作为一条独立消息——
               // 否则多轮工具调用之间的 prelude 都被攒到最后一股脑发出

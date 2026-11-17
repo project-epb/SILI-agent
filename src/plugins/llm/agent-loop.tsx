@@ -101,6 +101,11 @@ export interface AgentLoopOptions {
    * iteration stays with the caller, to run as a turn of its own.
    */
   drainSteer?: () => string
+  /**
+   * Per-turn state shared across tool executions (see ToolContext). The
+   * caller may pass its own to set state up front; a fresh one otherwise.
+   */
+  turnState?: Record<string, unknown>
 }
 
 export interface AssistantTurnRecord {
@@ -142,7 +147,7 @@ export async function runAgentLoop(
   // Fresh per-turn state shared across tool executions in this loop.
   // Lets read_user_memory hand off `last_updated_at` to save_user_memory
   // (read-before-write + optimistic-lock).
-  const turnState: Record<string, unknown> = {}
+  const turnState: Record<string, unknown> = opts.turnState ?? {}
 
   const allTools = opts.registry.listDefinitions()
   const isAborted = () => opts.signal?.aborted === true

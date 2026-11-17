@@ -66,7 +66,9 @@ export class IdleCompactor {
     const res = await summary.compactNow({
       conversation_id: row.conversation_id,
       conversation_owner: row.conversation_owner,
-      includeMemory: !group,
+      // A session row does not record whether it is a DM; outside a group's
+      // shared conversation it almost always is (v5 serves QQ DMs and groups).
+      memoryTiers: group ? [] : ['private', 'shared'],
       systemPrompt,
       provider,
       model,
