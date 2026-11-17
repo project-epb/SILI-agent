@@ -24,7 +24,7 @@ declare module 'koishi' {
 }
 
 export default class PluginGitHub extends BasePlugin<Config> {
-  static inject = ['database', 'server', 'http']
+  static inject = { required: ['database', 'server', 'http'], optional: ['channelMessageHistory'] }
 
   static Config: Schema<Config> = Schema.object({
     path: Schema.string().default('/github'),
@@ -140,8 +140,14 @@ export default class PluginGitHub extends BasePlugin<Config> {
     })
 
     ctx.middleware(async (session, next) => {
-      if (!session.quote) return next()
-      const entry = await history.fetch(session.quote.id)
+      if (!session.quote?.id) return next()
+      // A QQ official quote names the pushed message by its reference index
+      // (`REFIDX_…`), while history is keyed by the id the push got when sent.
+      let quoteId = session.quote.id
+      if (quoteId.startsWith('REFIDX_'))
+        quoteId =
+          (await ctx.channelMessageHistory?.messageIdByRef(session, quoteId)) ?? quoteId
+      const entry = await history.fetch(quoteId)
       if (!entry) return next()
       const body = session.stripped.content.trim()
       if (!body) return next() // empty reply (bare @bot / whitespace) — don't post an empty comment

@@ -98,6 +98,7 @@
     "plugins/*"
   ],
   "patchedDependencies": {
-    "@koishijs/plugin-auth@4.1.7": "patches/@koishijs%2Fplugin-auth@4.1.7.patch"
+    "@koishijs/plugin-auth@4.1.7": "patches/@koishijs%2Fplugin-auth@4.1.7.patch",
+    "koishi-plugin-adapter-qq-crack@1.0.33": "patches/koishi-plugin-adapter-qq-crack@1.0.33.patch"
   }
 }
