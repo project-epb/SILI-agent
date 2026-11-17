@@ -3,7 +3,7 @@
  * @author dragon-fish
  * @license MIT
  */
-import { Context } from 'koishi'
+import { Context, Time } from 'koishi'
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -23,6 +23,7 @@ import { OpenAIProvider } from './providers/openai'
 import { ActiveChatRegistry } from './services/active-chats'
 import { ChatHistoryService } from './services/chat-history'
 import { resolveConversationScope } from './services/conversation-scope'
+import { IdleCompactor } from './services/idle-compactor'
 import { CommandCatalogService } from './services/command-catalog'
 import { ImageReferenceCache } from './services/image-cache'
 import { MemoryStore } from './services/memory'
@@ -348,6 +349,23 @@ export default class PluginLLM extends BasePlugin<Config> {
       this.memory,
       { maxContextTokens: config.compactAtContextTokens ?? 256_000 }
     )
+    const idleCompactor = new IdleCompactor({
+      ctx: this.ctx,
+      logger: this.logger,
+      history: this.chatHistory,
+      summary: this.summary,
+      activeChats: this.activeChats,
+      idleMs: config.idleCompactAfterMs ?? 6 * 60 * 60 * 1000,
+      minTokens: config.idleCompactMinTokens ?? 24_000,
+      turnSetup: () => ({
+        provider: this.defaultProvider,
+        model: config.providers[0]?.model || config.model || 'gpt-4o-mini',
+        systemPrompt: this.systemPrompt.get(this.catalog.getOrRefresh()),
+      }),
+    })
+    this.ctx.on('ready', () => {
+      this.ctx.setInterval(() => idleCompactor.run(), 10 * Time.minute)
+    })
 
     for (const providerConfig of config.providers) {
       switch (providerConfig.type) {
