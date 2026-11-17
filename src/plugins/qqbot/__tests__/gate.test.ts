@@ -16,6 +16,7 @@ const rules: GateRules = {
   publicGroupCommands: new Set(['help', '帮助', 'wiki']),
   publicGroupContent: /\[\[.+?\]\]/,
   dmCommands: new Set(['bind', '多账号绑定']),
+  publicDmCommands: new Set(['help', 'dice']),
   bindTokenPrefix: 'koishi/',
 }
 
@@ -106,6 +107,12 @@ describe('decideGate', () => {
       decideGate(group(), 'hello', 'hello', lookup({ groups: ['G1'] }), rules)
     ).toBe('pass')
   })
+  it('lets strangers use public DM commands but not group-only ones', () => {
+    expect(decideGate(dm(), 'help', 'help', lookup(), rules)).toBe('pass')
+    expect(decideGate(dm(), 'wiki x', 'wiki', lookup(), rules)).toBe('drop')
+    expect(decideGate(dm(), '[[萌娘百科]]', '[[萌娘百科]]', lookup(), rules)).toBe('drop')
+    expect(autoAuthorizeFor(dm('qq'), 'help', lookup(), rules)).toBe(1)
+  })
   it('drops stranger DMs except bind and its alias', () => {
     expect(decideGate(dm(), 'hi', 'hi', lookup(), rules)).toBe('drop')
     expect(decideGate(dm(), 'bind', 'bind', lookup(), rules)).toBe('pass')
@@ -174,9 +181,9 @@ describe('autoAuthorizeFor / autoAssignFor', () => {
     ).toBe(1)
     expect(autoAuthorizeFor(group('discord'), null, lookup(), rules)).toBe(1)
   })
-  it('auto-assigns only on unguarded platforms', () => {
-    expect(autoAssignFor('qq')).toBe(false)
-    expect(autoAssignFor('qqguild')).toBe(false)
+  it('auto-assigns everywhere except OneBot (assignee is routing only)', () => {
+    expect(autoAssignFor('qq')).toBe(true)
+    expect(autoAssignFor('qqguild')).toBe(true)
     expect(autoAssignFor('onebot')).toBe(false)
     expect(autoAssignFor('discord')).toBe(true)
   })

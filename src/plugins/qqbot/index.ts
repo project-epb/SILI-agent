@@ -50,9 +50,13 @@ declare module 'koishi' {
 /** plugin-bind's default code prefix; SILI does not override it. */
 export const BIND_TOKEN_PREFIX = 'koishi/'
 /** Allowed in unactivated groups (with their aliases). */
-const GROUP_COMMANDS = ['assign', GROUP_MIGRATE_COMMAND]
+/** Activates a group: all features, the LLM included. Ops only. */
+const ACTIVATE_COMMAND = 'channel.activate'
+const GROUP_COMMANDS = [ACTIVATE_COMMAND, GROUP_MIGRATE_COMMAND]
 /** Allowed in unserved DMs (with their aliases). */
 const DM_COMMANDS = ['bind']
+/** Usable by anyone in an unactivated DM. wiki and github need a group. */
+const PUBLIC_DM_COMMANDS = ['help', 'about', 'dice', 'sticker', 'manosaba']
 /** Usable by anyone in an unactivated group; everything else needs activation. */
 const PUBLIC_GROUP_COMMANDS = [
   'help',
@@ -87,6 +91,7 @@ function rulesOf(app: Context): GateRules {
     publicGroupCommands: commandWords(app, PUBLIC_GROUP_COMMANDS),
     publicGroupContent: WIKI_LINK,
     dmCommands: commandWords(app, DM_COMMANDS),
+    publicDmCommands: commandWords(app, PUBLIC_DM_COMMANDS),
     bindTokenPrefix: BIND_TOKEN_PREFIX,
   }
 }
@@ -145,6 +150,7 @@ export default class QQBotService extends Service {
     this.metadata = new MetadataRecorder(ctx, this.state)
     new MigrationFeatures(ctx, this)
     setupGroupPanel(ctx)
+    this.setupActivateCommands()
 
     ctx.on('ready', () => this.reload())
     ctx.setInterval(() => this.reload(), 30 * Time.second)
@@ -155,8 +161,40 @@ export default class QQBotService extends Service {
       // schedules) are cancelled; migrated groups get them via the QQ bot.
       if (out.platform === 'onebot' && !options?.session) return true
       passiveFallback(out, options)
-      return this.rewriteAssignReply(out, options)
     })
+  }
+
+  private setupActivateCommands() {
+    this.ctx
+      .command(`${ACTIVATE_COMMAND}`, '激活本群的全部功能', { authority: 4 })
+      .alias('激活')
+      .option('remove', '-r 取消激活')
+      .action(async ({ session, options }) => {
+        if (!session || !GUARDED_PLATFORMS.has(session.platform) || session.isDirect)
+          return '请在要激活的群里使用这条命令。'
+        const { platform, selfId, channelId } = session
+        const active = this.state.isGroupActive(platform, selfId, channelId!)
+        if (options?.remove) {
+          if (!active) return 'SILI 本来就没有在这个群开通全部功能。'
+          await this.deactivateGroup(platform, selfId, channelId!)
+          return '好的，这个群回到基础功能了。'
+        }
+        if (active) return 'SILI 已经在这个群开通全部功能啦。'
+        await this.activateGroup(platform, selfId, channelId!, session)
+        return '好的，SILI 在这个群开通全部功能啦！'
+      })
+
+    this.ctx
+      .command('user.activate <target:user>', '激活某人的私聊', { authority: 4 })
+      .option('remove', '-r 取消激活')
+      .action(async ({ session, options }, target) => {
+        if (!session || !target) return '请指定要激活的用户。'
+        const [platform, ...rest] = target.split(':')
+        const userId = rest.join(':')
+        if (!GUARDED_PLATFORMS.has(platform)) return '只能激活官方 bot 平台的用户。'
+        await this.setDmActive(platform, session.selfId, userId, !options?.remove)
+        return options?.remove ? '已取消这个人的私聊激活。' : '已激活这个人的私聊。'
+      })
   }
 
   /** Re-read activation, DM permissions and ops from the database. */
@@ -190,7 +228,7 @@ export default class QQBotService extends Service {
     if (guarded) this.metadata.record(session)
     if (decideGate(facts, content, command, this.state, rules) === 'drop') {
       if (platform === 'onebot') void this.remindOnOldAccount(session)
-      else if (guarded && !session.isDirect)
+      else if (guarded && command && !rules.dmCommands.has(command))
         void this.remindUnactivated(session)
       return
     }
@@ -210,75 +248,14 @@ export default class QQBotService extends Service {
     if (guarded && !session.isDirect && (command || session.stripped?.atSelf)) {
       void this.hintPermissionsOnce(session)
     }
-    if (
-      guarded &&
-      !session.isDirect &&
-      command &&
-      commandWords(this.ctx, ['assign']).has(command)
-    ) {
-      this.afterAssign(session)
-    }
     return result
   }
 
   /**
-   * plugin-admin answers `assign` with its generic channel replies
-   * ("频道数据已修改" / "频道数据未改动"), shared by every channel admin
-   * command, so the i18n text cannot be changed globally. Koishi sends a
-   * command's reply itself, so rewrite it in `before-send`, only when the
-   * source session ran `assign` on a guarded platform and the reply is one of
-   * those two texts. Anything else (permission errors, usage) is untouched.
+   * Activate a group: all features, the LLM included (`channel.activate`,
+   * admin page, group migration). Also makes sure the group is assigned to
+   * this bot, which is routing only.
    */
-  private rewriteAssignReply(out: Session, options: any) {
-    const source: Session | undefined = options?.session
-    if (!source || !GUARDED_PLATFORMS.has(source.platform)) return
-    if (source.argv?.command?.name !== 'assign') return
-    const text = out.content?.trim()
-    const updated = source.text('admin.channel-updated')
-    const unchanged = source.text('admin.channel-unchanged')
-    if (text !== updated && text !== unchanged) return
-    // Assigning another account (`assign <bot>`) is rare; keep plugin-admin's text.
-    if (source.argv?.args?.length) return
-    // Decide from the command, not from source.channel: plugin-admin swaps in
-    // its own channel object while running and restores the original (whose
-    // assignee is stale) before the reply is sent.
-    const removing = !!(source.argv?.options as { remove?: boolean })?.remove
-    const reply =
-      text === updated
-        ? removing
-          ? '好的，SILI 之后不会在这个群回复了。管理员可以再用 assign 叫醒我。'
-          : '好的，SILI 开始在这个群工作啦！'
-        : removing
-          ? 'SILI 本来就没有在这个群工作。'
-          : 'SILI 已经在这个群工作啦。'
-    out.elements = [h.text(reply)]
-  }
-
-  /**
-   * `assign` writes `channel.assignee` through Koishi's observed channel, which
-   * is saved after the middleware chain; re-read it shortly after.
-   */
-  private afterAssign(session: Session) {
-    const { platform, selfId, channelId } = session
-    this.ctx.setTimeout(async () => {
-      try {
-        const [row] = await this.ctx.database.get(
-          'channel',
-          { platform, id: channelId },
-          ['assignee']
-        )
-        const active = row?.assignee === selfId
-        const wasActive = this.state.isGroupActive(platform, selfId, channelId)
-        this.state.setGroupActive(platform, selfId, channelId, active)
-        if (active && !wasActive)
-          await this.onActivated(platform, selfId, channelId, session)
-      } catch (error) {
-        this.logger.warn('after assign', error)
-      }
-    }, 1500)
-  }
-
-  /** Activate a group (admin page, group migration). Equivalent to `assign`. */
   async activateGroup(
     platform: string,
     selfId: string,
@@ -288,18 +265,19 @@ export default class QQBotService extends Service {
     await this.ctx.database.upsert('channel', [
       { platform, id: channelId, assignee: selfId, guildId: channelId },
     ])
+    await this.ctx.database.upsert('qqbot_channel', [
+      { selfId, id: channelId, platform, activated: true },
+    ])
     const wasActive = this.state.isGroupActive(platform, selfId, channelId)
     this.state.setGroupActive(platform, selfId, channelId, true)
     if (!wasActive) await this.onActivated(platform, selfId, channelId, via)
   }
 
-  /** Deactivate a group. Equivalent to `assign -r`. */
+  /** Deactivate a group: back to the public commands only. */
   async deactivateGroup(platform: string, selfId: string, channelId: string) {
-    await this.ctx.database.set(
-      'channel',
-      { platform, id: channelId, assignee: selfId },
-      { assignee: '' }
-    )
+    await this.ctx.database.upsert('qqbot_channel', [
+      { selfId, id: channelId, platform, activated: false },
+    ])
     this.state.setGroupActive(platform, selfId, channelId, false)
   }
 
@@ -440,7 +418,7 @@ export default class QQBotService extends Service {
    * people who pulled it in, without becoming a free chat target.
    */
   private async remindUnactivated(session: Session) {
-    if (!session.stripped?.atSelf) return
+    if (!session.isDirect && !session.stripped?.atSelf) return
     const key = `${session.selfId}:${session.channelId}`
     if (Date.now() - (this.remindedAt.get(key) ?? 0) < 8 * Time.hour) {
       return
@@ -448,7 +426,9 @@ export default class QQBotService extends Service {
     this.remindedAt.set(key, Date.now())
     try {
       await session.send(
-        'SILI 还没在本群开通这个功能，需要找小鱼君（824399619）激活本群服务哦'
+        session.isDirect
+          ? 'SILI 还没给你开通这个功能，需要找小鱼君（824399619）激活哦'
+          : 'SILI 还没在本群开通这个功能，需要找小鱼君（824399619）激活本群服务哦'
       )
     } catch (error) {
       this.logger.warn('unactivated group hint', error)
@@ -539,11 +519,12 @@ export default class QQBotService extends Service {
 }
 
 /**
- * A group on a guarded platform that is not activated. The gate lets only
- * the public group commands and wiki links through from such a group.
+ * Any session on a guarded platform, activated or not: the context of the
+ * plugins behind the public commands. The gate decides what reaches them
+ * from an unactivated group or DM.
  */
-export function isUnactivatedGroup(session: Session) {
-  return GUARDED_PLATFORMS.has(session.platform) && !session.isDirect
+export function isGuardedSession(session: Session) {
+  return GUARDED_PLATFORMS.has(session.platform)
 }
 
 /** Filter for the served context of a profile. */

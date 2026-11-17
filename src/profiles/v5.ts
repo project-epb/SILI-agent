@@ -58,7 +58,7 @@ import PluginProfile from '~/profile'
 import QQBotService, {
   ServedState,
   accessAppOptions,
-  isUnactivatedGroup,
+  isGuardedSession,
   servedFilter,
 } from '~/qqbot'
 import PluginQueue from '~/queue'
@@ -272,11 +272,11 @@ function install(app: App) {
 
   const served = app.intersect(servedFilter(state))
   const servedNotQQ = served.exclude(isQQ)
-  // Served sessions plus unactivated QQ groups, for the plugins behind the
-  // public group commands. The qqbot gate decides what reaches them from an
-  // unactivated group: only PUBLIC_GROUP_COMMANDS and wiki links.
+  // Served sessions plus unactivated QQ groups and DMs, for the plugins behind
+  // the public commands. The qqbot gate decides what reaches them from an
+  // unactivated group or DM: only the public commands (and wiki links in groups).
   const publicGroups = app.intersect(
-    (session) => servedFilter(state)(session) || isUnactivatedGroup(session)
+    (session) => servedFilter(state)(session) || isGuardedSession(session)
   )
 
   // 核心与通用

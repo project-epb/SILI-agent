@@ -27,6 +27,8 @@ export interface QQBotChannel {
   noticePending: boolean
   /** When the one-time "enable full messages + proactive" hint was settled. */
   permissionHintAt: Date
+  /** All features (the LLM included) enabled here; otherwise public commands only. */
+  activated: boolean
 }
 
 /** Users this bot has seen, in groups or DMs. Metadata only. */
@@ -102,6 +104,7 @@ export function defineTables(ctx: Context) {
       noticeSentAt: 'timestamp',
       noticePending: 'boolean',
       permissionHintAt: 'timestamp',
+      activated: 'boolean',
     },
     { primary: ['selfId', 'id'] }
   )

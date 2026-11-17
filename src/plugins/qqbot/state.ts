@@ -90,14 +90,13 @@ export class ServedState implements ServedLookup {
   async reload(ctx: Context) {
     const platforms = [...GUARDED_PLATFORMS]
     const channels = await ctx.database.get(
-      'channel',
-      { platform: platforms },
-      ['id', 'platform', 'assignee']
+      'qqbot_channel',
+      { platform: platforms, activated: true },
+      ['id', 'platform', 'selfId']
     )
     const activeGroups = new Set<string>()
-    for (const { id, platform, assignee } of channels) {
-      if (assignee)
-        activeGroups.add(ServedState.groupKey(platform, assignee, id))
+    for (const { id, platform, selfId } of channels) {
+      activeGroups.add(ServedState.groupKey(platform, selfId, id))
     }
 
     const dmRows = await ctx.database.get('qqbot_user', { dmActive: true }, [

@@ -271,13 +271,9 @@ export class MetadataRecorder {
           noticeSentAt: null,
           noticePending: false,
           permissionHintAt: null,
+          activated: false,
         },
       ])
-      await this.ctx.database.set(
-        'channel',
-        { platform, id: guildId, assignee: selfId },
-        { assignee: '' }
-      )
       this.state.setGroupActive(platform, selfId, guildId, false)
     } catch (error) {
       this.logger.warn('guild-removed', error)
