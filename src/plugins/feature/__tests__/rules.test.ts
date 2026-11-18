@@ -4,7 +4,7 @@ import { type CommandNode, applyOverride, isOn, levelOf } from '../rules'
 
 const cmd = (name: string, level?: number, parent: CommandNode | null = null): CommandNode => ({
   name,
-  config: { level },
+  config: { featLevel: level },
   parent,
 })
 

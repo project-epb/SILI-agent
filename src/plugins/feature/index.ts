@@ -27,7 +27,7 @@ declare module 'koishi' {
   namespace Command {
     interface Config {
       /** Service level; undeclared means 1. Subcommands inherit it. */
-      level?: number
+      featLevel?: number
     }
   }
   interface Argv {
@@ -53,7 +53,7 @@ export interface FeatureOverride {
 
 export interface Config {
   /** Levels of third-party commands, which cannot declare one themselves. */
-  levels?: Record<string, number>
+  featLevels?: Record<string, number>
 }
 
 export interface FeatureRow {
@@ -122,9 +122,9 @@ export default class FeatureService extends Service {
   }
 
   private declare(command: Command) {
-    const level = this.options.levels?.[command.name]
-    if (typeof level === 'number' && command.config.level === undefined)
-      command.config.level = level
+    const level = this.options.featLevels?.[command.name]
+    if (typeof level === 'number' && command.config.featLevel === undefined)
+      command.config.featLevel = level
   }
 
   async reload() {

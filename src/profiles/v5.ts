@@ -269,7 +269,7 @@ function install(app: App) {
     })
     // 服务等级：每个指令在哪些群和私聊能用，以及 `feature` 指令（含激活）
     ctx.plugin(PluginFeature, {
-      levels: { help: 0, novelai: 100 },
+      featLevels: { help: 0, novelai: 100 },
     })
     ctx.plugin(PluginAdmin) // channel user auth, assign
     ctx.plugin(PluginBind)

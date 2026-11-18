@@ -15,7 +15,7 @@ export const DEFAULT_LEVEL = 1
 /** The slice of a Koishi command these rules read. */
 export interface CommandNode {
   name: string
-  config: { level?: number }
+  config: { featLevel?: number }
   parent: CommandNode | null
 }
 
@@ -37,7 +37,7 @@ function chain(command: CommandNode | null): CommandNode[] {
 /** The nearest declared level up the parent chain. */
 export function levelOf(command: CommandNode): number {
   for (const node of chain(command)) {
-    if (typeof node.config.level === 'number') return node.config.level
+    if (typeof node.config.featLevel === 'number') return node.config.featLevel
   }
   return DEFAULT_LEVEL
 }
