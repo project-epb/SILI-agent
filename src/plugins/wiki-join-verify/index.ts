@@ -49,6 +49,8 @@ export interface ChannelPolicy {
   id: string
   /** Wiki groups admitted (any one); empty admits any bound account. */
   groups?: string[]
+  /** A temporary membership counts only once held this many days. */
+  tempMinDays?: number
 }
 
 export interface Site {
@@ -207,7 +209,7 @@ export default class PluginWikiJoinVerify {
           action: 'query',
           list: 'users',
           ususerids: id,
-          usprop: 'groups|blockinfo',
+          usprop: 'groups|groupmemberships|blockinfo',
         })
         const user = data?.query?.users?.[0]
         if (!user || user.missing || user.invalid) return
@@ -215,6 +217,7 @@ export default class PluginWikiJoinVerify {
           id: user.userid,
           name: user.name,
           groups: user.groups ?? [],
+          memberships: user.groupmemberships ?? [],
           blocked: !!user.blockid,
         } satisfies WikiUser
       },
@@ -233,6 +236,24 @@ export default class PluginWikiJoinVerify {
           content: revision.slots?.main?.content ?? '',
           editor: revision.user ?? '',
         }
+      },
+      groupAddedAt: async (name, group) => {
+        const api = await useApi(site.api)
+        const { data } = await api.get({
+          action: 'query',
+          list: 'logevents',
+          letype: 'rights',
+          letitle: `User:${name}`,
+          leprop: 'timestamp|details',
+          lelimit: 50,
+        })
+        // Newest first; a renewal keeps the group on both sides and is skipped.
+        const granted = (data?.query?.logevents ?? []).find(
+          (e: any) =>
+            e.params?.newgroups?.includes(group) &&
+            !e.params?.oldgroups?.includes(group)
+        )
+        return granted ? Date.parse(granted.timestamp) : undefined
       },
       codeSpentBy: async (hash) => {
         const [row] = await this.ctx.database.get('wiki_join_code', { hash })
@@ -589,7 +610,11 @@ export default class PluginWikiJoinVerify {
 }
 
 function policyOf(site: Site, channel: ChannelPolicy): Policy {
-  return { label: site.label, groups: channel.groups ?? [] }
+  return {
+    label: site.label,
+    groups: channel.groups ?? [],
+    tempMinDays: channel.tempMinDays,
+  }
 }
 
 /**

@@ -45,6 +45,8 @@ export interface WikiUser {
   name: string
   /** Explicit and implicit groups (`autoconfirmed` included). */
   groups: string[]
+  /** Explicit groups with their expiry: ISO time, or `infinity`. */
+  memberships: { group: string; expiry: string }[]
   blocked: boolean
 }
 
@@ -61,6 +63,8 @@ export interface VerifySource {
   boundTo(openid: string): Promise<number | undefined>
   /** Openids bound to this wiki user on this wiki. */
   boundOpenids(wikiUserId: number): Promise<string[]>
+  /** When the user last gained this group (ms), from the rights log. */
+  groupAddedAt(name: string, group: string): Promise<number | undefined>
 }
 
 export interface Policy {
@@ -68,6 +72,8 @@ export interface Policy {
   label: string
   /** The applicant must be in one of these groups; empty means any account. */
   groups: string[]
+  /** A temporary membership counts only once held this many days. */
+  tempMinDays?: number
 }
 
 /** A binding to write: `hash` is the code to spend, absent when reusing one. */
@@ -125,21 +131,41 @@ async function checkCode(
   return { ok: true, user, hash: record.hash, spent: !!spentBy }
 }
 
+const DAY = 24 * 60 * 60 * 1000
+
 /** Membership and block state of the account the applicant joins as. */
-function admit(user: WikiUser, policy: Policy, bind?: Bind): Decision {
+async function admit(
+  user: WikiUser,
+  policy: Policy,
+  source: VerifySource,
+  now: number,
+  bind?: Bind
+): Promise<Decision> {
   const who = { id: user.id, name: user.name }
-  if (user.blocked)
-    return { ok: false, reason: `「${user.name}」当前处于封禁状态`, user: who }
-  if (
-    policy.groups.length &&
-    !policy.groups.some((g) => user.groups.includes(g))
+  const fail = (reason: string): Decision => ({ ok: false, reason, user: who })
+  if (user.blocked) return fail(`「${user.name}」当前处于封禁状态`)
+  if (!policy.groups.length) return { ok: true, user, bind }
+
+  const held = policy.groups.filter((g) => user.groups.includes(g))
+  if (!held.length)
+    return fail(
+      `「${user.name}」不满足本群要求（需要以下用户组之一：${policy.groups.join('、')}）`
+    )
+  if (!policy.tempMinDays) return { ok: true, user, bind }
+
+  // Permanent (or implicit) membership admits at once; a temporary one only
+  // after it has been held tempMinDays since it was granted.
+  for (const group of held) {
+    const membership = user.memberships.find((m) => m.group === group)
+    if (!membership || membership.expiry === 'infinity')
+      return { ok: true, user, bind }
+    const since = await source.groupAddedAt(user.name, group)
+    if (since !== undefined && now - since >= policy.tempMinDays * DAY)
+      return { ok: true, user, bind }
+  }
+  return fail(
+    `「${user.name}」的临时用户组（${held.join('、')}）持有不足 ${policy.tempMinDays} 天`
   )
-    return {
-      ok: false,
-      reason: `「${user.name}」不满足本群要求（需要以下用户组之一：${policy.groups.join('、')}）`,
-      user: who,
-    }
-  return { ok: true, user, bind }
 }
 
 /**
@@ -174,7 +200,7 @@ export async function decide(
           user: { id: user.id, name: user.name },
         }
     }
-    return admit(user, policy, bind)
+    return admit(user, policy, source, now, bind)
   }
 
   const boundId = await source.boundTo(applicant)
@@ -190,7 +216,7 @@ export async function decide(
       ok: false,
       reason: `已绑定的${policy.label}账号（ID ${boundId}）不存在了`,
     }
-  return admit(bound, policy)
+  return admit(bound, policy, source, now)
 }
 
 /**

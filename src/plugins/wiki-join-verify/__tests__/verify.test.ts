@@ -22,12 +22,14 @@ const users: Record<number, WikiUser> = {
     id: 32769624,
     name: 'Foo Bar',
     groups: ['user', 'autoconfirmed'],
+    memberships: [],
     blocked: false,
   },
   7: {
     id: 7,
     name: 'Old',
     groups: ['user', 'autoconfirmed', 'sysop'],
+    memberships: [{ group: 'sysop', expiry: 'infinity' }],
     blocked: false,
   },
 }
@@ -39,6 +41,7 @@ function source(over: Partial<VerifySource> = {}): VerifySource {
     codeSpentBy: async () => undefined,
     boundTo: async () => undefined,
     boundOpenids: async () => [],
+    groupAddedAt: async () => undefined,
     ...over,
   }
 }
@@ -176,6 +179,47 @@ describe('decide', () => {
         })
       )
     ).toContain('封禁')
+  })
+})
+
+describe('temporary group minimum', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const TEMP = '2099-01-01T00:00:00Z'
+  const patroller =
+    (expiry: string): VerifySource['user'] =>
+    async (id) => ({
+      ...users[id],
+      groups: [...users[id].groups, 'patroller'],
+      memberships: [{ group: 'patroller', expiry }],
+    })
+  const p: Policy = { label: '萌娘百科', groups: ['patroller'], tempMinDays: 7 }
+  const run = (src: VerifySource) => reasonOf(ANSWER, src, NOW, p)
+
+  it('admits a permanent membership at once', async () => {
+    expect(await run(source({ user: patroller('infinity') }))).toBe('ok')
+  })
+  it('admits a temporary membership held long enough', async () => {
+    expect(
+      await run(
+        source({
+          user: patroller(TEMP),
+          groupAddedAt: async () => NOW - 7 * DAY,
+        })
+      )
+    ).toBe('ok')
+  })
+  it('sends a fresh or untraceable temporary membership to a human', async () => {
+    expect(
+      await run(
+        source({
+          user: patroller(TEMP),
+          groupAddedAt: async () => NOW - 6 * DAY,
+        })
+      )
+    ).toContain('持有不足 7 天')
+    expect(await run(source({ user: patroller(TEMP) }))).toContain(
+      '持有不足 7 天'
+    )
   })
 })
 

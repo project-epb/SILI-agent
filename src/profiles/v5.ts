@@ -419,7 +419,7 @@ function joinVerifySites(env: NodeJS.ProcessEnv): JoinVerifySite[] {
     {
       key: 'moegirl',
       label: '萌娘百科',
-      api: 'https://zh.moegirl.org.cn/api.php',
+      api: 'https://mzh.moegirl.org.cn/api.php',
       articleUrl: 'https://zh.moegirl.org.cn/$1',
       verifyPage: 'QQVerify',
       channels: [
@@ -440,6 +440,7 @@ function joinVerifySites(env: NodeJS.ProcessEnv): JoinVerifySite[] {
         {
           id: 'DEBF09DFCC993859AF37B2146BB30CE3',
           groups: ['staff', 'sysop', 'patroller'],
+          tempMinDays: 7,
         },
       ],
     },
