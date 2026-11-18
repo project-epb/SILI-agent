@@ -25,14 +25,14 @@ import { getUserRoles } from '@/utils/formatSession'
 export const GROUP_ADMIN = 'group:admin'
 
 /** QQ group roles (`author.member_role`) that count as admins of the group. */
-const ADMIN_ROLES = ['owner', 'admin']
+export const GROUP_ADMIN_ROLES = ['owner', 'admin']
 
 /** Parent commands opened to group admins; see trap 2. */
 const OPENED_PARENTS = ['channel']
 
 export function isGroupAdmin(session: Session): boolean {
   if (session.isDirect) return false
-  return getUserRoles(session).some((r) => ADMIN_ROLES.includes(r.id))
+  return getUserRoles(session).some((r) => GROUP_ADMIN_ROLES.includes(r.id))
 }
 
 function patch(command: Command) {
