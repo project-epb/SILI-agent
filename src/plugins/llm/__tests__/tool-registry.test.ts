@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   EXTRACT_WEBPAGES_TOOL,
   type MemoryTier,
   type MemoryToolState,
+  type ToolContext,
   ToolRegistry,
   WEB_SEARCH_TOOL,
   type WebExtractClient,
@@ -11,6 +12,7 @@ import {
   type WebSearchResponse,
   type WebToolsState,
   buildSaveUserMemoryTool,
+  executeKoishiCommandHandler,
   getMemoryToolState,
   getWebToolsState,
   isForbiddenAgentCommand,
@@ -113,7 +115,16 @@ describe('renderAgentHelp', () => {
           args: [],
           options: [],
           aliases: [],
-          children: [],
+          children: [
+            {
+              name: 'wiki.connect.group',
+              description: '连接群聊',
+              args: [],
+              options: [],
+              aliases: [],
+              children: [],
+            },
+          ],
         },
       ],
     },
@@ -148,13 +159,42 @@ describe('renderAgentHelp', () => {
     expect(out).toContain('connect')
   })
 
-  it('returns an error for unknown commands', () => {
-    const out = renderAgentHelp(catalog, 'nope')
-    expect(out).toMatch(/Error: command "nope" not found/)
+  it('points to command search when a name does not match', () => {
+    expect(renderAgentHelp(catalog, 'connect')).toContain('`virtual:find-command`')
   })
 
   it('returns placeholder when catalog is empty and no arg', () => {
     expect(renderAgentHelp([])).toBe('(暂无可用指令)')
+  })
+
+  describe('virtual:find-command', () => {
+    const sessionExecute = vi.fn()
+    const search = (args: string[]) =>
+      executeKoishiCommandHandler.execute(
+        { name: 'virtual:find-command', args },
+        {
+          ctx: { llm: { getCatalog: () => catalog } },
+          session: { execute: sessionExecute },
+        } as unknown as ToolContext
+      )
+
+    it.each([' CONNECT ', '群聊'])(
+      'finds deep commands by keyword %s',
+      async (query) => {
+        expect(await search([query])).toContain('`wiki.connect.group` — 连接群聊')
+        expect(sessionExecute).not.toHaveBeenCalled()
+      }
+    )
+
+    it('lists descendants when the query is also an exact command name', async () => {
+      const result = await search(['wiki.connect'])
+      expect(result).toContain('`wiki.connect` — connect')
+      expect(result).toContain('`wiki.connect.group` — 连接群聊')
+    })
+
+    it('asks for a keyword when none is provided', async () => {
+      expect(await search([])).toContain('请在 `args[0]` 提供搜索关键词')
+    })
   })
 })
 

@@ -27,8 +27,6 @@ export interface CommandCatalogArg {
 export interface CommandCatalogOption {
   name: string
   type: string
-  /** Full koishi-rendered syntax e.g. `-d, --difficulty <difficulty>`. */
-  syntax?: string
   description?: string
 }
 
@@ -37,6 +35,7 @@ export interface CommandCatalogEntry {
   description: string
   /** Long-form usage block (multi-line, often with examples). */
   usage?: string
+  examples?: string[]
   /** agent-only 详情文案（来自 command config 的 helpForAgents）；优先于 description 渲染。 */
   agentHelp?: string
   args: CommandCatalogArg[]
@@ -66,9 +65,7 @@ function renderEntry(entry: CommandCatalogEntry, indent: number): string {
 
   if (entry.options.length) {
     const optDescs = entry.options
-      .map(
-        (o) => `--${o.name}${o.description ? '(' + o.description + ')' : ''}`
-      )
+      .map((o) => `${o.name}${o.description ? '(' + o.description + ')' : ''}`)
       .join(', ')
     lines.push(`${pad}  选项: ${optDescs}`)
   }
@@ -108,6 +105,22 @@ export function findCatalogEntry(
   return null
 }
 
+export function* searchCatalogEntries(
+  entries: readonly CommandCatalogEntry[],
+  keyword: string
+): Generator<CommandCatalogEntry> {
+  const query = keyword.toLowerCase()
+  for (const entry of entries) {
+    if (
+      entry.name.toLowerCase().includes(query) ||
+      entry.description.toLowerCase().includes(query)
+    ) {
+      yield entry
+    }
+    yield* searchCatalogEntries(entry.children, query)
+  }
+}
+
 /**
  * Detailed rendering for a single entry, written for the agent. Crucially
  * different from koishi's native `help`: child commands are listed with
@@ -144,22 +157,15 @@ export function renderCatalogEntryDetail(entry: CommandCatalogEntry): string {
   if (entry.options.length) {
     lines.push('')
     lines.push('## 选项')
-    lines.push('（调用时**必须用 `--long` 名字**；短旗标 `-x` 仅供参考）')
+    lines.push('将下列键和值传入 `options` 对象。')
     for (const o of entry.options) {
-      // Reorder koishi's `-d, --difficulty <difficulty>` into
-      // `--difficulty <difficulty>, -d` — long form first so agents lock
-      // onto the actually-usable name; short flag kept as a recognition aid.
-      const parts =
-        o.syntax
-          ?.split(',')
-          .map((s) => s.trim())
-          .filter(Boolean) ?? []
-      const longs = parts.filter((s) => s.startsWith('--'))
-      const shorts = parts.filter((s) => /^-[^-]/.test(s))
-      const sig = [...longs, ...shorts].join(', ') || `--${o.name}`
       const desc = o.description ? ' — ' + o.description : ''
-      lines.push(`- \`${sig}\`${desc}`)
+      lines.push(`- \`${o.name}\` (${o.type})${desc}`)
     }
+  }
+
+  if (entry.examples?.length) {
+    lines.push('', '## 示例', entry.examples.join('\n\n'))
   }
 
   if (entry.aliases.length) {
@@ -172,10 +178,7 @@ export function renderCatalogEntryDetail(entry: CommandCatalogEntry): string {
   if (entry.children.length) {
     lines.push('')
     lines.push('## 子指令')
-    lines.push(
-      `（子指令有两种：带\`.\`号=命名空间，${entry.name}.foo → name=${entry.name}.foo；无点号=仅分类，${entry.name}/bar → name=bar）。` +
-        `子指令可能有自己的参数，建议调用前查看帮助，例如 \`help ${entry.children[0].name}\`）`
-    )
+    lines.push('使用下列完整名称查询帮助或调用。')
     for (const c of entry.children) {
       const desc = c.description?.trim() || '(无描述)'
       lines.push(`- \`${c.name}\` — ${desc}`)
@@ -231,8 +234,8 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
     visited.add(cmd)
 
     const localeFallback = ['', cmd.locale ?? '', 'zh']
-    const i18n = (key: string): string =>
-      ctx.i18n.text(localeFallback, [key], {}) || ''
+    const i18n = (key: string, params = cmd.config?.params ?? {}): string =>
+      ctx.i18n.render(localeFallback, [key, ''], params).join('')
 
     const description: string =
       cmd.config?.descriptionForAgents ||
@@ -246,6 +249,9 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
     let usage = ''
     if (typeof cmd._usage === 'string') usage = cmd._usage
     if (!usage) usage = i18n(`commands.${cmd.name}.usage`)
+    const examples: string[] = cmd._examples?.length
+      ? cmd._examples.slice()
+      : i18n(`commands.${cmd.name}.examples`).split('\n').filter(Boolean)
 
     const args: CommandCatalogArg[] = (cmd._arguments ?? []).map((a: any) => ({
       name: a.name,
@@ -254,18 +260,19 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
       description: a.description,
     }))
 
-    const options: CommandCatalogOption[] = (
-      cmd._options ? Object.values(cmd._options) : []
-    ).map((o: any) => ({
-      name: o.name,
-      type: typeof o.type === 'string' ? o.type : 'string',
-      syntax: o.syntax || '',
-      // koishi stores option descriptions in i18n by default; fall back to
-      // `o.description` for options declared via the JS API with an inline
-      // description (rare in this codebase but supported by koishi).
-      description:
-        i18n(`commands.${cmd.name}.options.${o.name}`) || o.description || '',
-    }))
+    const options: CommandCatalogOption[] = Object.values(cmd._options ?? {})
+      .filter((o: any) => o.descPath !== 'commands.help.options.help')
+      .map((o: any) => ({
+        name: o.name,
+        type: typeof o.type === 'string' ? o.type : 'string',
+        description:
+          i18n(
+            o.descPath ?? `commands.${cmd.name}.options.${o.name}`,
+            o.params ?? {}
+          ) ||
+          o.description ||
+          '',
+      }))
 
     const aliases: string[] = cmd._aliases
       ? Object.keys(cmd._aliases).filter((a) => a !== cmd.name)
@@ -279,6 +286,7 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
       name: cmd.displayName || cmd.name,
       description,
       usage,
+      examples,
       agentHelp: cmd.config?.helpForAgents,
       args,
       options,
