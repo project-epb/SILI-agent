@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { groupAndTrimHistory, type HistoryRow } from '../services/history-filter'
+import {
+  INTERRUPT_NOTES,
+  buildHistory,
+  groupAndTrimHistory,
+  type HistoryRow,
+} from '../services/history-filter'
 
 const u = (content: string): HistoryRow => ({ role: 'user', content })
 const a = (content: string, tc?: string): HistoryRow => ({
@@ -77,5 +82,64 @@ describe('groupAndTrimHistory', () => {
 
   it('returns empty when limit is 0', () => {
     expect(groupAndTrimHistory([u('q'), a('a')], 0)).toEqual([])
+  })
+})
+
+const us = (content: string, turn_status: string): HistoryRow => ({
+  role: 'user',
+  content,
+  turn_status,
+})
+const calls = (...ids: string[]) =>
+  JSON.stringify(ids.map((id) => ({ id, name: 'f', arguments: {} })))
+
+describe('buildHistory: turns that did not finish', () => {
+  it('keeps a failed turn, answers its open calls, and notes the next message', () => {
+    const rows = [
+      us('q1', 'failed'),
+      a('', calls('c1')),
+      t('c1', 'f', 'done'),
+      a('', calls('c2', 'c3')),
+      t('c2', 'f', 'ok'),
+      us('q2', 'done'),
+      a('a2'),
+    ]
+    expect(buildHistory(rows, 5)).toEqual({
+      rows: [
+        rows[0],
+        rows[1],
+        rows[2],
+        rows[3],
+        rows[4],
+        t('c3', 'f', INTERRUPT_NOTES.failed.tool),
+        { ...rows[5], content: `${INTERRUPT_NOTES.failed.user}\n\nq2` },
+        rows[6],
+      ],
+      pendingNote: null,
+    })
+  })
+
+  it('owes the note to the caller when the last turn was cut short', () => {
+    const rows = [us('q1', 'running'), a('', calls('c1'))]
+    const out = buildHistory(rows, 5)
+    expect(out.rows).toEqual([rows[0], rows[1], t('c1', 'f', INTERRUPT_NOTES.failed.tool)])
+    expect(out.pendingNote).toBe(INTERRUPT_NOTES.failed.user)
+  })
+
+  it('uses the user-interrupt wording for aborted turns', () => {
+    const out = buildHistory([us('q1', 'aborted'), u('q2'), a('a2')], 5)
+    expect(out.rows[1].content).toBe(`${INTERRUPT_NOTES.aborted.user}\n\nq2`)
+  })
+
+  it('drops tool results whose call is missing', () => {
+    const rows = [us('q1', 'failed'), t('c9', 'f', 'stray')]
+    expect(buildHistory(rows, 5).rows).toEqual([rows[0]])
+  })
+
+  it('notes a message the same way however far the window has slid', () => {
+    const rows = [us('q1', 'failed'), u('q2'), a('a2')]
+    expect(buildHistory(rows, 1).rows[0].content).toBe(
+      `${INTERRUPT_NOTES.failed.user}\n\nq2`
+    )
   })
 })

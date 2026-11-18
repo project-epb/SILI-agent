@@ -37,6 +37,9 @@ function buildInterruptedContent(content: string): string {
   return content + '\n' + INTERRUPTED_MARKER
 }
 
+/** How much of a leaked DSML block is read and logged before giving up on it. */
+const DSML_LOG_LIMIT = 4000
+
 /**
  * Thrown when the DeepSeek "DSML leak" bug (see utils/dsml-leak.ts) keeps
  * corrupting the stream past `dsmlLeakMaxRetries` re-sends of the same
@@ -69,9 +72,10 @@ export interface AgentLoopOptions {
   dsmlLeakMaxRetries?: number
   session: Session
   logger: Logger
-  /** Optional signal to interrupt mid-loop. Aborts the in-flight LLM stream,
-   *  bails out of subsequent iterations, and skews input/output bookkeeping
-   *  so partial assistant text is preserved with an `<interrupted/>` marker. */
+  /** Optional signal to interrupt mid-loop. Aborts the in-flight LLM stream
+   *  and bails out of subsequent iterations: partial assistant text is
+   *  preserved with an `<interrupted/>` marker, tools that already ran keep
+   *  their stored results. */
   signal?: AbortSignal
   onUserVisibleText: (text: string) => Promise<void>
   /**
@@ -169,14 +173,7 @@ export async function runAgentLoop(
     let lastError: Error | undefined
     let usage: ChatCompletionUsage | undefined
     let streamAborted = false
-    /**
-     * Time the assistant turn finished streaming (or was aborted). Captured
-     * here — not at write-to-db time — so the persisted `time` field reflects
-     * actual stream order, not the moment we *finished waiting for tools*.
-     * Without this, an assistant message that defers persistence until tools
-     * complete ends up with a `time` LATER than the tool results' `time`,
-     * which breaks groupAndTrimHistory's turn ordering on read-back.
-     */
+    /** Time the assistant turn finished streaming (or was aborted). */
     let assistantTurnTime = 0
 
     // ---- DSML-leak workaround ----
@@ -220,8 +217,9 @@ export async function runAgentLoop(
               // Detect on the ACCUMULATED content — the sentinel can straddle
               // chunk boundaries. Once it fires, stop forwarding: the rest of
               // this stream is garbage we're about to discard, and we don't
-              // want it growing past the split threshold and flushing.
-              if (containsDsmlLeak(currentContent)) {
+              // want it growing past the split threshold and flushing. Keep
+              // reading a little so the log shows the whole leaked block.
+              if (dsmlLeaked || containsDsmlLeak(currentContent)) {
                 dsmlLeaked = true
                 break
               }
@@ -239,7 +237,7 @@ export async function runAgentLoop(
             case 'finish':
               break
           }
-          if (dsmlLeaked) break
+          if (dsmlLeaked && currentContent.length > DSML_LOG_LIMIT) break
         }
       } catch (e: any) {
         // SDKs throw AbortError when the upstream signal fires — treat as
@@ -255,6 +253,13 @@ export async function runAgentLoop(
       if (usage) totalUsage = mergeUsage(totalUsage, usage)
 
       if (dsmlLeaked && !isAborted()) {
+        opts.logger.warn(
+          '[agent] DSML leak content (%d chars, %d tool calls alongside):\n%s\n--- reasoning tail ---\n%s',
+          currentContent.length,
+          collectedToolCalls.length,
+          currentContent.slice(0, DSML_LOG_LIMIT),
+          currentReasoning.slice(-500)
+        )
         // Drop the partial garbage (+ any legit prelude) the caller buffered
         // but hasn't shown yet; the re-roll regenerates the turn from scratch.
         await opts.onDiscardVisible?.()
@@ -290,10 +295,6 @@ export async function runAgentLoop(
 
     if (lastError && !streamAborted) throw lastError
 
-    // Pin assistant turn time NOW — before any tool dispatch. If we wait
-    // until persistence (which happens after all tools complete), the
-    // assistant `time` ends up later than the tool results' `time` and
-    // history sort puts tool before assistant.
     assistantTurnTime = Date.now()
 
     // ---- Stream-level abort: bail before considering tool calls ----
@@ -337,30 +338,28 @@ export async function runAgentLoop(
     }
 
     // ---- Tool calls present ----
-    // Defer assistant record persistence until we know whether the tools
-    // complete: if abort fires during tool execution we want to write the
-    // turn as `<interrupted/>` (no tool_calls) so history stays well-formed.
     await opts.onTurnEnd?.({ hadToolCalls: true })
 
-    // Push assistant turn to in-memory messages so subsequent tool messages
-    // form a valid OpenAI/Anthropic conversation when we DO continue.
+    // Stored before any tool runs, and each result the moment it exists: a
+    // tool that ran had its effect, so history must show it even if the turn
+    // dies right after (crash, provider error, user interrupt). A call left
+    // without a result is answered with a placeholder when history is read.
+    await opts.onAssistantRecord({
+      content: currentContent,
+      reasoningContent: currentReasoning,
+      toolCalls: collectedToolCalls,
+      usage,
+      model: opts.options.model,
+      time: assistantTurnTime,
+    })
     messages.push({
       role: 'assistant',
       content: currentContent,
       tool_calls: collectedToolCalls,
     })
 
-    const completedToolMessages: Array<{
-      tc: ToolCall
-      resultText: string
-      time: number
-    }> = []
-
-    for (const tc of collectedToolCalls) {
-      if (isAborted()) {
-        // Don't even start more tools after abort.
-        break
-      }
+    for (const [index, tc] of collectedToolCalls.entries()) {
+      if (isAborted()) break
       if (opts.showToolCallNotice) {
         // tc.name is the LLM tool name (execute_koishi_command), opaque to
         // users; show the real koishi command name from arguments instead.
@@ -374,70 +373,37 @@ export async function runAgentLoop(
           .catch(() => {})
       }
       opts.logger.info('[agent] tool call:', tc.name, tc.arguments)
-      const resultText = await dispatchTool(opts, tc, turnState)
+      // Tool output comes from outside (web pages, chat history): a forged
+      // envelope tag in it must not read as a real message.
+      let resultText = escapeProtocolTags(await dispatchTool(opts, tc, turnState))
       opts.logger.info(
         '[agent] tool result:',
         tc.name,
         resultText.slice(0, 200)
       )
-      // Check abort AFTER tool finishes. We can't cancel a running koishi
-      // command — let it finish, then drop the result if user has moved on.
-      if (isAborted()) break
-      completedToolMessages.push({
-        tc,
-        resultText,
+      // Steer rides on the iteration's last result, drained once every tool
+      // has finished; skipped when interrupted so it runs as its own turn.
+      if (index === collectedToolCalls.length - 1 && !isAborted()) {
+        const steer = opts.drainSteer?.()
+        if (steer) resultText += `\n\n${steer}`
+      }
+      messages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        tool_name: tc.name,
+        content: resultText,
+      })
+      await opts.onToolRecord({
+        toolCallId: tc.id,
+        toolName: tc.name,
+        content: resultText,
         time: Date.now(),
       })
     }
 
     if (isAborted()) {
-      // Tool round-trip didn't complete cleanly. Persist assistant as
-      // interrupted (no tool_calls field) and drop the partial tool
-      // results. History stays well-formed: user → assistant<interrupted/>.
-      if (currentContent) {
-        await opts.onAssistantRecord({
-          content: buildInterruptedContent(currentContent),
-          reasoningContent: currentReasoning,
-          toolCalls: undefined,
-          usage,
-          model: opts.options.model,
-          time: assistantTurnTime,
-        })
-      }
       lastFullContent = currentContent
       break outer
-    }
-
-    // ---- All tools finished cleanly; persist the full turn ----
-    await opts.onAssistantRecord({
-      content: currentContent,
-      reasoningContent: currentReasoning,
-      toolCalls: collectedToolCalls,
-      usage,
-      model: opts.options.model,
-      time: assistantTurnTime,
-    })
-    // Tool output comes from outside (web pages, chat history): a forged
-    // envelope tag in it must not read as a real message.
-    for (const m of completedToolMessages) {
-      m.resultText = escapeProtocolTags(m.resultText)
-    }
-    const steer = opts.drainSteer?.()
-    const lastTool = completedToolMessages.at(-1)
-    if (steer && lastTool) lastTool.resultText += `\n\n${steer}`
-    for (const m of completedToolMessages) {
-      messages.push({
-        role: 'tool',
-        tool_call_id: m.tc.id,
-        tool_name: m.tc.name,
-        content: m.resultText,
-      })
-      await opts.onToolRecord({
-        toolCallId: m.tc.id,
-        toolName: m.tc.name,
-        content: m.resultText,
-        time: m.time,
-      })
     }
     lastFullContent = currentContent
   }

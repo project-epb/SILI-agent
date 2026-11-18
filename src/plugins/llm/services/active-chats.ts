@@ -34,6 +34,12 @@ export interface ActiveChatEntry {
    * when the turn ends runs as the next turn.
    */
   inbox: SteerItem[]
+  /**
+   * The turn stored an assistant or tool row. An interrupted turn that did
+   * keeps its rows in history, so the interrupting turn must not merge its
+   * prompt in again.
+   */
+  wroteRecords: boolean
 }
 
 export type AbortReason = 'user-stop' | 'user-reset' | 'user-interrupt'
