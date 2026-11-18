@@ -1,7 +1,21 @@
 diff --git a/lib/index.js b/lib/index.js
-index 5cc288ee1c20fc08cd182fb54dddd96a84af88b6..9f3aa4217fde9aab26e088685cb1b340bbeb0edb 100644
+index 5cc288ee1c20fc08cd182fb54dddd96a84af88b6..f6f07119356f3d2e921430145253834d0a668fcf 100644
 --- a/lib/index.js
 +++ b/lib/index.js
+@@ -659,11 +659,11 @@ async function decodeGroupMessage(bot, data, message = {}, payload = message) {
+   registerMessageReference(data.id, data.message_scene?.ext?.map(extractReferenceFromExt).find(Boolean));
+   message.elements = [];
+   const quotedReferenceId = data.message_scene?.ext?.map(extractQuotedReferenceFromExt).find(Boolean);
+-  const quotedMessageId = resolveMessageIdByReference(quotedReferenceId);
++  const quotedMessageId = resolveMessageIdByReference(quotedReferenceId) ?? quotedReferenceId;
+   const quotedContent = extractQuotedContent(data);
+   const groupId = data.group_openid || data.group_id;
+   if (quotedMessageId || quotedContent) {
+-    const quote = quotedMessageId && groupId && bot.getMessage ? await bot.getMessage(groupId, quotedMessageId).catch(() => ({ id: quotedMessageId })) : quotedMessageId ? { id: quotedMessageId } : {};
++    const quote = quotedMessageId && !isReferenceId(quotedMessageId) && groupId && bot.getMessage ? await bot.getMessage(groupId, quotedMessageId).catch(() => ({ id: quotedMessageId })) : quotedMessageId ? { id: quotedMessageId } : {};
+     if (quotedContent) {
+       if (quotedContent.elements?.length) quote.elements = quotedContent.elements;
+       if (quotedContent.content) quote.content = quotedContent.content;
 @@ -2585,6 +2585,7 @@ var _QQGuildMessageEncoder = class _QQGuildMessageEncoder extends import_koishi6
          this.reference
        );
