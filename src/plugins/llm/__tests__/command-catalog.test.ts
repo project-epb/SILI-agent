@@ -1,4 +1,6 @@
-import { App } from 'koishi'
+// From @koishijs/core, never 'koishi': importing koishi under vitest loads
+// @koishijs/loader, which crashes at import time and fails the whole file.
+import { Context } from '@koishijs/core'
 
 import { describe, expect, it } from 'vitest'
 
@@ -396,7 +398,7 @@ function makeCtx(commands: any[]): any {
 
 describe('buildCommandCatalog: Koishi help metadata', () => {
   it('uses registered examples and skips missing translations and injected help options', () => {
-    const app = new App()
+    const app = new Context()
     app
       .command('sample', '示例指令')
       .option('difficultyLevel', '-d <level:number> 难度')
@@ -417,7 +419,7 @@ describe('buildCommandCatalog: Koishi help metadata', () => {
   })
 
   it('reads localized examples when no inline examples are registered', () => {
-    const app = new App()
+    const app = new Context()
     app.command('sample', '示例指令').usage('选择一种用法')
     app.i18n.define(
       'zh-CN',
