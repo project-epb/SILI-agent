@@ -46,16 +46,14 @@ export interface GateRules {
    */
   groupCommands: ReadonlySet<string>
   /**
-   * Command names and aliases anyone may use in an unactivated group: the
-   * cheap everyday features, so a group works before anyone activates it.
+   * Level-0 command names and aliases: anyone may use them in an unactivated
+   * group or DM (see the feature plugin).
    */
-  publicGroupCommands: ReadonlySet<string>
+  publicCommands: ReadonlySet<string>
   /** Message content anyone may send in an unactivated group (wiki links). */
   publicGroupContent: RegExp
   /** Command names and aliases allowed in unserved DMs. */
   dmCommands: ReadonlySet<string>
-  /** Command names and aliases anyone may use in an unactivated DM. */
-  publicDmCommands: ReadonlySet<string>
   /** OneBot messages starting with this pass through (plugin-bind codes). */
   bindTokenPrefix: string
 }
@@ -82,10 +80,10 @@ export function decideGate(
   if (!commandName) return 'drop'
   if (facts.isDirect)
     return rules.dmCommands.has(commandName) ||
-      rules.publicDmCommands.has(commandName)
+      rules.publicCommands.has(commandName)
       ? 'pass'
       : 'drop'
-  if (rules.publicGroupCommands.has(commandName)) return 'pass'
+  if (rules.publicCommands.has(commandName)) return 'pass'
   return rules.groupCommands.has(commandName) &&
     served.isOp(facts.platform, facts.userId)
     ? 'pass'
@@ -131,12 +129,12 @@ export function autoAuthorizeFor(
   if (
     facts.isDirect &&
     commandName &&
-    (rules.dmCommands.has(commandName) || rules.publicDmCommands.has(commandName))
+    (rules.dmCommands.has(commandName) || rules.publicCommands.has(commandName))
   )
     return 1
   // A public command needs the caller's user row: without one its authority
   // is 0 and Koishi answers "权限不足".
-  if (!facts.isDirect && commandName && rules.publicGroupCommands.has(commandName))
+  if (!facts.isDirect && commandName && rules.publicCommands.has(commandName))
     return 1
   return 0
 }

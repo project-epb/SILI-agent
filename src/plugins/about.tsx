@@ -11,7 +11,7 @@ export default class PluginAbout extends BasePlugin {
     super(ctx, null, 'about')
 
     ctx
-      .command('about', '自我介绍')
+      .command('about', '自我介绍', { level: 0 })
       .alias('自我介绍', '关于')
       .action(async ({ session }) => {
         const masterPid = await this.getMasterPlatformId(session as Session)

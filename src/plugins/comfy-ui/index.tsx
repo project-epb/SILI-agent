@@ -130,6 +130,8 @@ export default class PluginComfyUI extends BasePlugin<Config> {
 
     ctx
       .command('comfyui', 'ComfyUI 绘图工具箱', {
+        // Costs GPU time: off until enabled per chat (feature plugin).
+        level: 100,
         descriptionForAgents:
           'Use this command when the user wants to generate, draw, or paint an image (such as anime, realistic, concept art, or avatars) using AI. ' +
           'This is a multi-step pipeline. Always check available templates via `comfyui.templates` before executing a generation request.',

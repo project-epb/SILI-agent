@@ -147,6 +147,67 @@ const Members = defineComponent({
   },
 })
 
+const LEVEL_LABELS = { 0: '0 试用', 1: '1 标准' }
+const ACTION_LABELS = { enable: '打开', disable: '关闭', reset: '恢复默认' }
+
+/** Service levels of one group or DM (feature plugin): state and overrides. */
+const Features = defineComponent({
+  props: { selfId: String, id: String, kind: String },
+  setup(props) {
+    const data = ref(null)
+    const err = ref('')
+    const busy = ref('')
+    const target = () => ({ selfId: props.selfId, id: props.id, kind: props.kind })
+    const load = async () => {
+      try {
+        data.value = await send('qqbot-admin/features', target())
+      } catch (e) {
+        err.value = String(e?.message ?? e)
+      }
+    }
+    const override = async (name, action) => {
+      busy.value = name
+      err.value = ''
+      try {
+        await send('qqbot-admin/feature-override', { ...target(), name, action })
+        await load()
+      } catch (e) {
+        err.value = String(e?.message ?? e)
+      } finally {
+        busy.value = ''
+      }
+    }
+    onMounted(load)
+    return () => {
+      if (err.value) return h('p', { class: 'qa-err' }, err.value)
+      if (!data.value) return h('p', { class: 'qa-dim' }, '加载中…')
+      const { level, rows } = data.value
+      return h('div', [
+        h('p', { class: 'qa-dim' }, `${props.kind === 'dm' ? '本私聊' : '本群'}等级 ${level}（${level ? '已激活' : '试用'}）：指令等级不高于它就能用，覆写优先。等级只能在代码里改。`),
+        h('table', { class: 'qa-sub' }, [
+          h('thead', h('tr', [h('th', '指令'), h('th', '等级'), h('th', '状态'), h('th', '操作')])),
+          h('tbody', rows.map((r) =>
+            h('tr', { key: r.name }, [
+              h('td', [h('div', r.name), r.description ? h('div', { class: 'qa-dim' }, r.description) : null]),
+              h('td', LEVEL_LABELS[r.level] ?? String(r.level)),
+              h('td', [statusPill(r.on, '可用', '不可用'), r.overridden ? badge('已覆写', 'is-warn') : null]),
+              actions(
+                (r.overridden ? ['reset'] : [r.on ? 'disable' : 'enable']).map((action) =>
+                  h('button', {
+                    class: `qa-btn ${action === 'disable' ? 'is-danger' : action === 'reset' ? 'is-plain' : ''}`,
+                    disabled: busy.value === r.name,
+                    onClick: () => override(r.name, action),
+                  }, ACTION_LABELS[action])
+                )
+              ),
+            ])
+          )),
+        ]),
+      ])
+    }
+  },
+})
+
 const Page = defineComponent({
   setup() {
     const tab = ref('groups')
@@ -193,6 +254,15 @@ const Page = defineComponent({
       } finally {
         busy.value = ''
       }
+    }
+
+    /** One detail row per table row: `${key}#m` members, `${key}#f` features. */
+    const expandButton = (key, panel, label) => {
+      const id = `${key}#${panel}`
+      return h('button', {
+        class: 'qa-btn is-plain',
+        onClick: () => (expanded.value = expanded.value === id ? '' : id),
+      }, expanded.value === id ? '收起' : label)
     }
 
     const toolbar = () =>
@@ -262,15 +332,15 @@ const Page = defineComponent({
                 disabled: busy.value === key,
                 onClick: () => act(key, 'qqbot-admin/refresh-group', { selfId: r.selfId, id: r.id }),
               }, '刷新信息'),
-              h('button', {
-                class: 'qa-btn is-plain',
-                onClick: () => (expanded.value = expanded.value === key ? '' : key),
-              }, expanded.value === key ? '收起' : '出现过的人'),
+              expandButton(key, 'f', '功能'),
+              expandButton(key, 'm', '出现过的人'),
             ]),
           ])
-          const detail = expanded.value === key
+          const detail = expanded.value === `${key}#m`
             ? h('tr', { key: key + ':m' }, h('td', { colspan: 9, class: 'qa-detail' }, h(Members, { selfId: r.selfId, channelId: r.id })))
-            : null
+            : expanded.value === `${key}#f`
+              ? h('tr', { key: key + ':f' }, h('td', { colspan: 9, class: 'qa-detail' }, h(Features, { selfId: r.selfId, id: r.id, kind: 'group' })))
+              : null
           return [main, detail]
         })),
       ])
@@ -315,15 +385,15 @@ const Page = defineComponent({
                     disabled: busy.value === key,
                     onClick: () => act(key, 'qqbot-admin/toggle-dm', { selfId: r.selfId, id: r.id, active: !r.dmActive }),
                   }, r.dmActive ? '取消私聊激活' : '激活私聊'),
-              h('button', {
-                class: 'qa-btn is-plain',
-                onClick: () => (expanded.value = expanded.value === key ? '' : key),
-              }, expanded.value === key ? '收起' : '出现过的群'),
+              expandButton(key, 'f', '功能'),
+              expandButton(key, 'm', '出现过的群'),
             ]),
           ])
-          const detail = expanded.value === key
+          const detail = expanded.value === `${key}#m`
             ? h('tr', { key: key + ':m' }, h('td', { colspan: 7, class: 'qa-detail' }, h(Members, { selfId: r.selfId, userId: r.id })))
-            : null
+            : expanded.value === `${key}#f`
+              ? h('tr', { key: key + ':f' }, h('td', { colspan: 7, class: 'qa-detail' }, h(Features, { selfId: r.selfId, id: r.id, kind: 'dm' })))
+              : null
           return [main, detail]
         })),
       ])
@@ -331,7 +401,8 @@ const Page = defineComponent({
     const notice = () =>
       h('ul', { class: 'qa-notice' }, (tab.value === 'groups'
         ? [
-            '激活群等同于在群里发「激活」（channel.activate）；未激活的群也能用基础功能。',
+            '激活群等同于在群里发 feature -a（群等级 0 → 1）；未激活的群只能用等级 0 的功能。',
+            '「功能」里的开关等同于在群里发 feature -e / -d / -r。',
             '「出现过的人」只含发过言的成员，不是完整名单。',
           ]
         : [

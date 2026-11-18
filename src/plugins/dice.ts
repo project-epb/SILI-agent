@@ -56,6 +56,7 @@ export default class PluginDice extends BasePlugin {
   private initCommands() {
     this.ctx
       .command('dice [dice]', '掷骰子', {
+        level: 0,
         minInterval: 1000,
       })
       .alias('掷骰子', '投掷', '检定', 'r', 'roll')

@@ -160,6 +160,9 @@ async function runExecuteKoishiCommand(
         name: input.name,
         args: input.args || [],
         options: input.options || {},
+        // Lets access checks explain a refusal to the model instead of
+        // returning nothing, which it would paper over.
+        viaAgent: true,
       },
       true
     )

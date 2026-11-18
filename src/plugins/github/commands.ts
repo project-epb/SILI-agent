@@ -103,7 +103,7 @@ export function applyCommands(
 
   // ---- github [name] / gh : channel subscription management ----
   ctx
-    .command('github [name]')
+    .command('github [name]', { level: 0 })
     .alias('gh')
     .channelFields(['github'])
     .option('list', '-l', { hidden })
