@@ -197,7 +197,7 @@ $(function () {
     '.qqverify-panel { padding: 0 .9em .8em; }',
     '.qqverify-panel:empty, .qqverify-panel:empty + .qqverify-foot { display: none; }',
     '.qqverify-ticket { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; padding: .55em .5em .55em .9em; border: 1px dashed var(--qqv-accent); border-radius: 8px; background: var(--fandom-secondary-color, #fff); }',
-    '.qqverify-ticket code { flex: 1; padding: 0; border: 0; background: none; color: inherit; font-size: 1.25em; font-weight: bold; letter-spacing: .04em; word-break: break-all; user-select: all; }',
+    '.qqverify-answer { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: inherit; font-size: 1.25em; font-weight: bold; letter-spacing: .04em; word-break: break-all; user-select: all; }',
     '.qqverify-tip { margin-top: .6em; padding: .5em .8em; border-radius: 6px; background: var(--fandom-secondary-color, #fff); color: var(--fandom-text-color--secondary, #595358); font-size: .92em; }',
     '.qqverify-tip b { color: var(--fandom-text-color, #1e0c1b); }',
     '.qqverify-error { color: #d73333; }',
@@ -277,7 +277,7 @@ $(function () {
       $generate.prop('disabled', true).text('正在生成……')
       saveCode()
         .then(function (answer) {
-          var $answer = $('<code>', { text: answer })
+          var $answer = $('<span>', { class: 'qqverify-answer', text: answer })
           var $copy = button('复制', true)
           $copy.on('click', function () {
             copyText(answer, $answer).then(function () {

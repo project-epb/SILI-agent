@@ -12,7 +12,7 @@
 .qqverify-link:hover { color: var(--qqv-accent); text-decoration: underline; }
 .qqverify-panel { padding: 0 .9em .8em; }
 .qqverify-ticket { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; padding: .55em .5em .55em .9em; border: 1px dashed var(--qqv-accent); border-radius: 8px; background: #fff; }
-.qqverify-ticket code { flex: 1; padding: 0; border: 0; background: none; color: #202122; font-size: 1.25em; font-weight: bold; letter-spacing: .04em; word-break: break-all; user-select: all; }
+.qqverify-answer { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #202122; font-size: 1.25em; font-weight: bold; letter-spacing: .04em; word-break: break-all; user-select: all; }
 .qqverify-tip { margin-top: .6em; padding: .5em .8em; border-radius: 6px; background: rgba(255, 255, 255, .75); color: #54595d; font-size: .92em; }
 .qqverify-tip b { color: #202122; }
 .qqverify-step { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5em .8em; }
@@ -78,7 +78,7 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
     const $actions = $(actions).empty();
     const $panel = $(panel).empty();
 
-    mw.loader.using(["mediawiki.api", "mediawiki.util", "mediawiki.notification"]).then(() => {
+    mw.loader.using(["mediawiki.api", "mediawiki.util", "mediawiki.user", "mediawiki.notification"]).then(() => {
         if (!userName) {
             $actions.append($("<a>").addClass("qqverify-btn")
                 .attr("href", mw.util.getUrl("Special:UserLogin", { returnto: mw.config.get("wgPageName") }))
@@ -106,7 +106,7 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
                 mw.notify($("<span>").html(NOTICE_HTML), { title: "加群码已复制", autoHideSeconds: 10 });
             });
             $result.empty().append(
-                $("<div>").addClass("qqverify-ticket").append($("<code>").text(answer), $copy),
+                $("<div>").addClass("qqverify-ticket").append($("<span>").addClass("qqverify-answer").text(answer), $copy),
                 $("<div>").addClass("qqverify-tip").html(NOTICE_HTML),
                 $extra || null,
             );
@@ -132,16 +132,28 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
                     showAnswer(answer);
                 } else {
                     // Non-autoconfirmed users cannot save through the API here:
-                    // they save the preloaded edit form themselves.
-                    const url = mw.util.getUrl(verifyPage, {
-                        action: "edit",
-                        summary: "生成加群码",
-                        preload: "Template:QQVerify/preload",
-                        "preloadparams[]": text,
+                    // they save a prefilled edit form themselves. A POST to
+                    // action=submit prefills existing pages too (preload does not).
+                    const $open = button("打开编辑页保存", true).on("click", () => {
+                        const $form = $("<form>").attr({
+                            method: "post",
+                            action: mw.util.getUrl(verifyPage, { action: "submit" }),
+                            target: "_blank",
+                        }).hide();
+                        for (const [name, value] of Object.entries({
+                            wpTextbox1: text,
+                            wpSummary: "生成加群码",
+                            wpEditToken: mw.user.tokens.get("csrfToken"),
+                            wpPreview: "1",
+                            wpUltimateParam: "1",
+                        })) {
+                            $form.append($("<input>").attr({ type: "hidden", name, value }));
+                        }
+                        $form.appendTo(document.body).trigger("submit").remove();
                     });
                     showAnswer(answer, $("<div>").addClass("qqverify-tip qqverify-step").append(
                         $("<span>").html("你还不是自动确认用户，这个加群码要<b>手动保存</b>后才生效。先复制加群码，再打开编辑页点击「保存」。"),
-                        $("<a>").addClass("qqverify-btn is-secondary").attr({ href: url, target: "_blank" }).text("打开编辑页保存"),
+                        $open,
                     ));
                 }
                 cooldown();
