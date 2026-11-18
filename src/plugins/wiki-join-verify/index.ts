@@ -99,6 +99,13 @@ export default class PluginWikiJoinVerify {
   })
 
   private logger: Logger
+  /**
+   * Applicants being reviewed, by `channel:openid`. Taken before any await, so
+   * two presses at once (two admins, two devices) cannot both handle one
+   * request; always released in `finally`, so it never outgrows the reviews
+   * in flight.
+   */
+  private reviewing = new Set<string>()
 
   constructor(
     private ctx: Context,
@@ -147,8 +154,13 @@ export default class PluginWikiJoinVerify {
       if (prefix !== BUTTON_PREFIX || !openid) return
       const target = this.lookup(session.channelId)
       if (!target) return
-      void this.review(session, target, openid, action === 'a')
-        .then((text) => this.notify(session, text))
+      void this.review(session, target, openid, action === 'a', {
+        quiet: true,
+      })
+        .then((text) => {
+          if (text) return this.notify(session, text)
+          this.logger.info('button on a handled request %s', openid)
+        })
         .catch((error) => this.logger.warn('button', error))
     })
 
@@ -176,10 +188,10 @@ export default class PluginWikiJoinVerify {
           if (!this.isReviewer(session!))
             return '只有群管理员可以审批入群申请。'
           if (!id) return '请提供申请编号，可以先发送「入群申请」查看。'
-          return h(
-            'markdown',
-            h.text(await this.review(session!, target, id, approve, reason))
-          )
+          const text = await this.review(session!, target, id, approve, {
+            reason,
+          })
+          return h('markdown', h.text(text ?? ''))
         })
     }
   }
@@ -482,22 +494,49 @@ export default class PluginWikiJoinVerify {
 
   /**
    * Approves or rejects one pending request picked by openid (full, from a
-   * button) or short id (typed). Returns the markdown reply.
+   * button) or short id (typed). Returns the markdown reply, or null when a
+   * `quiet` caller (a button) has nothing to say: the request is gone — handled
+   * already, perhaps from another device — or is being handled right now.
+   * Repeated presses stay out of the group that way; buttons cannot be
+   * disabled, QQ only marks them as visited on the device that pressed them.
    */
   private async review(
     session: Session,
-    { site, policy }: { site: Site; policy: Policy },
+    target: { site: Site; policy: Policy },
     key: string,
+    approve: boolean,
+    { reason, quiet = false }: { reason?: string; quiet?: boolean } = {}
+  ): Promise<string | null> {
+    const gone = quiet ? null : '没有找到这条申请，可能已被处理。'
+    const matches = (await this.fetchRequests(session)).filter((r) =>
+      r.member_openid.startsWith(key.toUpperCase())
+    )
+    if (!matches.length) return gone
+    if (matches.length > 1) return '编号对应多条申请，请多写几位。'
+    const openid = matches[0].member_openid
+    const lock = `${session.channelId}:${openid}`
+    if (this.reviewing.has(lock)) return quiet ? null : '这条申请正在处理中。'
+    this.reviewing.add(lock)
+    try {
+      // The list above may predate a review that just finished: confirm under
+      // the lock that the request is still pending.
+      const request = (await this.fetchRequests(session)).find(
+        (r) => r.member_openid === openid
+      )
+      if (!request) return gone
+      return await this.settle(session, target, request, approve, reason)
+    } finally {
+      this.reviewing.delete(lock)
+    }
+  }
+
+  private async settle(
+    session: Session,
+    { site, policy }: { site: Site; policy: Policy },
+    request: JoinRequest,
     approve: boolean,
     reason?: string
   ) {
-    const requests = await this.fetchRequests(session)
-    const matches = requests.filter((r) =>
-      r.member_openid.startsWith(key.toUpperCase())
-    )
-    if (!matches.length) return '没有找到这条申请，可能已被处理。'
-    if (matches.length > 1) return '编号对应多条申请，请多写几位。'
-    const request = matches[0]
     const applicant = applicantLabel(request)
     const operator = `<qqbot-at-user id="${session.userId}" />`
 
