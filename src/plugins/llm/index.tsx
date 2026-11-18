@@ -37,6 +37,7 @@ import { SystemPromptBuilder } from './services/system-prompt'
 import { TavilySearchClient } from './services/tavily-client'
 import { TurnAllocator } from './services/turn-allocator'
 import { migrateTurnNumbers } from './services/turn-migration'
+import type { TurnStatus } from './services/history-filter'
 import {
   EXTRACT_WEBPAGES_TOOL,
   READ_USER_MEMORY_TOOL,
@@ -103,6 +104,10 @@ interface OpenAIConversationLog {
    * 1, 2, 3, ... in the order the chat handler writes them.
    */
   intra_turn_seq: number
+  /** User rows only: how the turn ended. See history-filter `TurnStatus`. */
+  turn_status?: TurnStatus
+  /** User rows only: why a failed turn failed. For people; never sent. */
+  turn_error?: string
 }
 
 export type ProviderConfig =
@@ -672,6 +677,10 @@ export default class PluginLLM extends BasePlugin<Config> {
         time: 'integer',
         turn_number: 'unsigned',
         intra_turn_seq: 'unsigned',
+        // User rows only: how the turn ended (history-filter TurnStatus)
+        // and, when it failed, why — the reason is for people, never sent.
+        turn_status: 'string',
+        turn_error: 'text',
       },
       {
         primary: 'id',

@@ -1,6 +1,6 @@
 import type { Context } from 'koishi'
 
-import { type HistoryRow, groupAndTrimHistory } from './history-filter'
+import { type HistoryRow, buildHistory } from './history-filter'
 import type { ChatMessage, ToolCall } from '../providers/_base'
 
 /**
@@ -9,9 +9,9 @@ import type { ChatMessage, ToolCall } from '../providers/_base'
  *
  *  1. Pull the most recent rows by descending time (cap to 200 to avoid
  *     unbounded queries even when the caller requests a large turn limit).
- *  2. Pass them through groupAndTrimHistory which understands turn
- *     boundaries (1 user + N assistant tool_calls + N tool + 1 final
- *     assistant) and returns the most recent N completed turns.
+ *  2. Pass them through buildHistory which understands turn boundaries
+ *     (1 user + N assistant tool_calls + N tool + 1 final assistant),
+ *     repairs turns that did not finish, and returns the most recent N.
  *
  * `reasoning_content` is always populated (even with empty string) so the
  * provider layer can decide whether to keep it based on the target model.
@@ -56,9 +56,21 @@ export class ChatHistoryService {
     conversation_id: string,
     limit = Infinity
   ): Promise<ChatMessage[]> {
+    return (await this.getHistory(conversation_id, limit)).messages
+  }
+
+  /**
+   * `getById` plus the note the next user message must start with when the
+   * last turn did not finish (see history-filter). Only the caller that sends
+   * a new user message needs it.
+   */
+  async getHistory(
+    conversation_id: string,
+    limit = Infinity
+  ): Promise<{ messages: ChatMessage[]; pendingNote: string | null }> {
     const unlimited = !Number.isFinite(limit)
     const userTurnLimit = unlimited ? Infinity : Math.max(0, Math.floor(limit))
-    if (!userTurnLimit) return []
+    if (!userTurnLimit) return { messages: [], pendingNote: null }
 
     // 一个回合最多 1 user + N assistant(tool_calls) + N tool + 1 final assistant
     const queryLimit = unlimited
@@ -86,14 +98,15 @@ export class ChatHistoryService {
           'tool_calls',
           'tool_call_id',
           'tool_name',
+          'turn_status',
         ],
       }
     )) as Array<HistoryRow & { reasoning_content?: string }> | null
 
     const rowsAsc = (raw ?? []).slice().reverse()
-    const trimmed = groupAndTrimHistory(rowsAsc, userTurnLimit)
+    const { rows: trimmed, pendingNote } = buildHistory(rowsAsc, userTurnLimit)
 
-    return trimmed.map((row): ChatMessage => {
+    const messages = trimmed.map((row): ChatMessage => {
       if (row.role === 'tool') {
         return {
           role: 'tool',
@@ -115,5 +128,6 @@ export class ChatHistoryService {
       }
       return { role: row.role as 'user' | 'system', content: row.content }
     })
+    return { messages, pendingNote }
   }
 }

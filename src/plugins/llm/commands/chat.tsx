@@ -11,6 +11,7 @@ import { runAgentLoop } from '../agent-loop'
 import type { ChatMessage } from '../providers/_base'
 import type { ActiveChatEntry, SteerItem } from '../services/active-chats'
 import { resolveConversationScope } from '../services/conversation-scope'
+import type { TurnStatus } from '../services/history-filter'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry, getMemoryToolState, snapshotTiers } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
@@ -223,6 +224,10 @@ export default class ChatCommand extends BasePlugin {
           existingActive.abort.abort('user-interrupt')
           // 等老 session 真的 unwind（finally 解锁），避免和它的入库竞态
           await existingActive.completion.catch(() => {})
+          // Nothing shown, but tools ran: the old turn stays in history with
+          // its prompt, and the history note says it was interrupted.
+          if (interruptScenario === 'pre-stream' && existingActive.wroteRecords)
+            interruptScenario = 'fresh'
         }
 
         if (options['no-prompt']) options.prompt = ''
@@ -448,6 +453,7 @@ export default class ChatCommand extends BasePlugin {
           completion,
           conversationId: conversation_id,
           inbox: [],
+          wroteRecords: false,
         }
         llm.activeChats.register(scope.key, activeEntry)
         if (scope.conversationId !== conversation_id) {
@@ -591,7 +597,8 @@ export default class ChatCommand extends BasePlugin {
 
         // Everything since the last compaction: compaction keeps it in
         // check, and a stable prefix keeps the prompt cache warm.
-        const histories = await llm.chatHistory.getById(conversation_id)
+        const { messages: histories, pendingNote } =
+          await llm.chatHistory.getHistory(conversation_id)
         llm.logger.info('[chat] user data', {
           conversation_owner,
           conversation_id,
@@ -626,10 +633,18 @@ export default class ChatCommand extends BasePlugin {
           ? `${memoryPrefix}\n\n${userMessageEnvelopeBase}`
           : userMessageEnvelopeBase
 
+        // When the previous turn did not finish, the note goes in front of
+        // what is sent but not what is stored: replay derives it again from
+        // that turn's status (history-filter), so the bytes match.
         chatMessages.push(
           { role: 'system', content: systemPromptText },
           ...histories,
-          { role: 'user', content: userMessageEnvelope }
+          {
+            role: 'user',
+            content: pendingNote
+              ? `${pendingNote}\n\n${userMessageEnvelope}`
+              : userMessageEnvelope,
+          }
         )
 
         // 分配本 chat invocation 的 turn_number。在 session rotation 之后、
@@ -637,6 +652,45 @@ export default class ChatCommand extends BasePlugin {
         // 串行 chat，所以 in-memory counter 严格单调，被打断的老 chat 与
         // 后续新 chat 拿到的 turn_number 不会撞。
         turnNumber = await llm.turns.allocate(conversation_id)
+
+        // The user row is stored now, as `running`, and its status set when
+        // the turn ends. Stored at the end instead, a turn that dies midway
+        // (provider error, crash, restart) vanishes from history along with
+        // the tools it already ran. Persist the wrapped envelope (sans
+        // interrupt notice and note) so the bytes in db match what was sent
+        // at this position and the provider's prefix cache survives replay.
+        // Behind a config flag while we measure the cache-hit-rate impact.
+        const persistedUserContent =
+          llm.config.persistWrappedUserMessage !== false
+            ? persistableEnvelope
+            : userPrompt
+        await llm.ctx.database.create('openai_chat', {
+          conversation_owner,
+          conversation_id,
+          role: 'user',
+          content: persistedUserContent,
+          reasoning_content: '',
+          time: startTime,
+          turn_number: turnNumber,
+          intra_turn_seq: 0,
+          turn_status: 'running',
+        } as any)
+        const thisTurn = {
+          conversation_id,
+          turn_number: turnNumber,
+        }
+        const endTurn = (turn_status: TurnStatus, turn_error?: string) =>
+          llm.ctx.database
+            .set(
+              'openai_chat',
+              { ...thisTurn, intra_turn_seq: 0, role: 'user' },
+              { turn_status, ...(turn_error && { turn_error }) }
+            )
+            .catch((e) => llm.logger.warn('[chat] turn status update failed:', e))
+        const dropTurn = () =>
+          llm.ctx.database
+            .remove('openai_chat', thisTurn)
+            .catch((e) => llm.logger.warn('[chat] turn removal failed:', e))
 
         // 逐字流给用户的 helper
         const flushVisibleText = async (force: boolean) => {
@@ -705,6 +759,7 @@ export default class ChatCommand extends BasePlugin {
               sendBuffer = sendBuffer.slice(0, sendFromIndex.value)
             },
             onAssistantRecord: async (record) => {
+              activeEntry.wroteRecords = true
               await llm.ctx.database.create('openai_chat', {
                 conversation_owner,
                 conversation_id,
@@ -722,6 +777,7 @@ export default class ChatCommand extends BasePlugin {
               } as any)
             },
             onToolRecord: async (record) => {
+              activeEntry.wroteRecords = true
               await llm.ctx.database.create('openai_chat', {
                 conversation_owner,
                 conversation_id,
@@ -749,6 +805,7 @@ export default class ChatCommand extends BasePlugin {
           })
         } catch (e) {
           llm.logger.error('[chat] agent loop error:', e)
+          await endTurn('failed', String((e as any)?.stack ?? e))
           llm.activeChats.unregister(scope.key)
           this.#runSteerLeftovers(scope.key, activeEntry)
           resolveCompletion()
@@ -766,6 +823,7 @@ export default class ChatCommand extends BasePlugin {
         // 把"用户让我闭嘴 + 我闭了"当作系统控制信号处理，等价于 llm.stop。
         if (agentResult.silentChosen) {
           llm.logger.info('[chat] silent chosen by agent')
+          await dropTurn()
           llm.activeChats.unregister(scope.key)
           this.#runSteerLeftovers(scope.key, activeEntry)
           resolveCompletion()
@@ -805,30 +863,10 @@ export default class ChatCommand extends BasePlugin {
           aborted: agentResult.aborted,
         })
 
-        // 落库 user 消息。排序由 (turn_number, intra_turn_seq) 决定，
-        // user 永远 intra_turn_seq=0 是 turn 头；即使该 chat 被打断、
-        // 中途有 record 先落库，user 仍排在 turn 起始。
-        //
-        // Persist the wrapped envelope (sans interrupt notice) so that the
-        // bytes in db match what we SENT this turn for the user-message
-        // position. Next turn replays this row at that exact position, so
-        // the provider's prefix cache stays valid through it instead of
-        // missing on the raw/wrapped mismatch. Behind a config flag while
-        // we measure the cache-hit-rate impact in production.
-        const persistedUserContent =
-          llm.config.persistWrappedUserMessage !== false
-            ? persistableEnvelope
-            : userPrompt
-        await llm.ctx.database.create('openai_chat', {
-          conversation_owner,
-          conversation_id,
-          role: 'user',
-          content: persistedUserContent,
-          reasoning_content: '',
-          time: startTime,
-          turn_number: turnNumber,
-          intra_turn_seq: 0,
-        } as any)
+        // An interrupt that left nothing but the user row: the interrupting
+        // turn already carries this prompt (pre-stream merge), so drop it.
+        if (agentResult.aborted && intraSeq === 0) await dropTurn()
+        else await endTurn(agentResult.aborted ? 'aborted' : 'done')
 
         // 被打断时对方的 abort 已经触发（abort 早于这里）；正常完成时
         // 释放 activeChats 让下次 chat 能继续。
