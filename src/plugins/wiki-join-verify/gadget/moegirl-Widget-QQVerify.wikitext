@@ -13,8 +13,9 @@
 .qqverify-panel { padding: 0 .9em .8em; }
 .qqverify-ticket { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; padding: .55em .5em .55em .9em; border: 1px dashed var(--qqv-accent); border-radius: 8px; background: #fff; }
 .qqverify-ticket code { flex: 1; padding: 0; border: 0; background: none; color: #202122; font-size: 1.25em; font-weight: bold; letter-spacing: .04em; word-break: break-all; user-select: all; }
-.qqverify-tip { margin-top: .6em; padding: .5em .8em; border-left: 3px solid #ffb300; border-radius: 4px; background: #fff8e1; font-size: .92em; }
-.qqverify-tip.is-warn { border-left-color: #d73333; background: #fdeeee; }
+.qqverify-tip { margin-top: .6em; padding: .5em .8em; border-radius: 6px; background: rgba(255, 255, 255, .75); color: #54595d; font-size: .92em; }
+.qqverify-tip b { color: #202122; }
+.qqverify-step { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5em .8em; }
 .qqverify-error { color: #d73333; }
 .qqverify-admin { display: flex; flex-wrap: wrap; gap: .6em; margin-top: .6em; }
 .qqverify-admin input { flex: 1; min-width: 12em; padding: .3em .9em; border: 1px solid #a2a9b1; border-radius: 999px; font-size: 1em; }
@@ -138,10 +139,9 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
                         preload: "Template:QQVerify/preload",
                         "preloadparams[]": text,
                     });
-                    showAnswer(answer, $("<div>").addClass("qqverify-tip is-warn").append(
-                        "你还不是自动确认用户，加群码要<b>手动保存</b>后才生效：先记下上面的加群码，再",
-                        $("<a>").attr({ href: url, target: "_blank" }).text("打开编辑页并点击「保存」"),
-                        "。",
+                    showAnswer(answer, $("<div>").addClass("qqverify-tip qqverify-step").append(
+                        $("<span>").html("你还不是自动确认用户，这个加群码要<b>手动保存</b>后才生效。先复制加群码，再打开编辑页点击「保存」。"),
+                        $("<a>").addClass("qqverify-btn is-secondary").attr({ href: url, target: "_blank" }).text("打开编辑页保存"),
                     ));
                 }
                 cooldown();
