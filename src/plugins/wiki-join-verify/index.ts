@@ -687,30 +687,40 @@ function shortId(request: JoinRequest) {
 
 /** Markdown with an approve/reject button row per request, admins only. */
 function keyboardMessage(markdown: string, requests: JoinRequest[]) {
-  const button = (request: JoinRequest, approve: boolean) => ({
-    id: `${approve ? 'a' : 'r'}${shortId(request)}`,
-    group_id: shortId(request),
-    render_data: {
-      label: approve ? `通过 ${request.username}`.slice(0, 20) : '拒绝',
-      visited_label: approve ? '已通过' : '已拒绝',
-      style: approve ? 4 : 0,
-    },
-    action: {
-      type: 1,
-      permission: { type: 1 },
-      data: `${BUTTON_PREFIX}:${approve ? 'a' : 'r'}:${request.member_openid}`,
-      unsupport_tips: '请升级 QQ 后操作，或发送「入群申请」',
-      ...(approve
-        ? {}
-        : {
-            modal: {
-              content: `确定拒绝 ${request.username} 的入群申请？`.slice(0, 40),
-              confirm_text: '拒绝',
-              cancel_text: '取消',
-            },
-          }),
-    },
-  })
+  const button = (request: JoinRequest, approve: boolean) => {
+    const label = approve ? `通过 ${request.username}`.slice(0, 20) : '拒绝'
+    return {
+      id: `${approve ? 'a' : 'r'}${shortId(request)}`,
+      group_id: shortId(request),
+      // visited_label shows on the pressing device the moment it is pressed,
+      // whatever came of it (a repeat, a race, a press QQ never delivered), so it
+      // must not claim an outcome: keep the label. QQ greys pressed buttons out
+      // anyway; the reply in the group is the result.
+      render_data: {
+        label,
+        visited_label: label,
+        style: approve ? 4 : 0,
+      },
+      action: {
+        type: 1,
+        permission: { type: 1 },
+        data: `${BUTTON_PREFIX}:${approve ? 'a' : 'r'}:${request.member_openid}`,
+        unsupport_tips: '请升级 QQ 后操作，或发送「入群申请」',
+        ...(approve
+          ? {}
+          : {
+              modal: {
+                content: `确定拒绝 ${request.username} 的入群申请？`.slice(
+                  0,
+                  40
+                ),
+                confirm_text: '拒绝',
+                cancel_text: '取消',
+              },
+            }),
+      },
+    }
+  }
   return h('qq:rawmarkdown', {
     content: markdown,
     keyboard: {
