@@ -5,7 +5,7 @@
  *       the join answer `<user id>-<code>`. SILI checks the answer against the
  *       page; sysops can check it here by hand when SILI is down.
  *       Deployed by hand to MediaWiki:Gadget-verify-qq.js on
- *       community.fandom.com/zh. Must match src/plugins/fandom-join-verify.
+ *       community.fandom.com/zh. Must match src/plugins/wiki-join-verify.
  * @author 机智的小鱼君
  */
 
@@ -21,7 +21,11 @@ $(function () {
     CODE_LENGTH = 16,
     ANSWER_PATTERN = /(\d{1,12})\s*-\s*([0-9A-Za-z]{16})/,
     CODE_TTL_MS = 2 * 60 * 60 * 1000,
-    CODE_TTL_LABEL = '2 小时'
+    CODE_TTL_LABEL = '2 小时',
+    NOTICE_HTML =
+      '这是你的<b>一次性</b>加群码，<b><i>请勿分享给其他人</i></b>。<br>' +
+      '请在2小时内使用，将其完整粘贴到加群答案中即可。<br>' +
+      '如有遗失，可回到这里重新生成（旧码作废）。'
 
   // Variables
   var config = mw.config.get(),
@@ -178,21 +182,11 @@ $(function () {
   function VerifyBox() {
     var $container = $('<div>', { id: 'verify-qq-container' })
     var $button = $('<button>', {
-      text: '生成入群答案',
+      text: '生成加群码',
       class: 'wds-button wds-primary',
     })
     var $error = $('<div>', { class: 'error' })
     var $result = $('<div>', { style: 'margin-top: 0.5em;' })
-    var $tips = $('<ol>').append(
-      $('<li>', { text: '点击「生成入群答案」' }),
-      $('<li>', {
-        text:
-          '在 ' + CODE_TTL_LABEL + ' 内申请加入 QQ 群，把答案原样填进验证问题',
-      }),
-      $('<li>', { text: '每个答案只能用一次；丢了就重新生成，旧的会作废' }),
-      $('<li>', { text: '不要把答案发给别人，否则别人能以你的身份入群' })
-    )
-
     $button.on('click', function (e) {
       e.preventDefault()
       $error.empty()
@@ -213,9 +207,16 @@ $(function () {
             ev.preventDefault()
             copyText(answer, $answer).then(function () {
               $copy.text('已复制')
+              mw.notify($('<span>').html(NOTICE_HTML), {
+                title: '加群码已复制',
+                autoHideSeconds: 10,
+              })
             })
           })
-          $result.append('入群答案：', $answer, $copy)
+          $result.append(
+            $('<div>').append('加群码：', $answer, $copy),
+            $('<p>').html(NOTICE_HTML)
+          )
           $button.removeAttr('disabled').text('重新生成')
         })
         .catch(function (errorCode) {
@@ -225,11 +226,10 @@ $(function () {
     })
 
     $container.append(
-      $('<h2>', { text: '生成 QQ 群入群答案' }),
+      $('<h2>', { text: '生成 QQ 群加群码' }),
       $button,
       $result,
-      $error,
-      $tips
+      $error
     )
     this.App = $container
   }

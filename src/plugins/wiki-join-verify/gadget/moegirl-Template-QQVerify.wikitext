@@ -1,0 +1,7 @@
+<includeonly>{{Info
+|leftimage=[[File:QQ.png|80px|link=]]
+|title=萌娘百科官方群组加群码
+|text=申请加入官方 QQ 群前，在这里生成一次性加群码，把它填进加群答案，SILI 会核对你的萌娘百科账号并自动审批。加群码记录在[[Special:MyPage/QQVerify|你的用户子页面]]，只保存哈希，不含 QQ 号。<div id="QQVerify"></div>{{#Widget:QQVerify}}
+|type=none
+|color=#1e90ff}}</includeonly><noinclude>{{doc|content=
+{{QQVerify}}}}</noinclude>

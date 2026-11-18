@@ -1,0 +1,172 @@
+<noinclude>Only for {{tl|QQVerify}}. Source: SILI-agent src/plugins/wiki-join-verify (must match its verify.ts).</noinclude><includeonly><!--{if !isset($wgQQVerify) || !$wgQQVerify}--><!--{assign var="wgQQVerify" value=true scope="global"}--><script>
+// <pre>
+/**
+ * Generates a one-time code for joining Moegirlpedia QQ groups: saves
+ * `<timestamp>#<sha1(timestamp#code)>` to User:<name>/QQVerify and shows the
+ * join answer `<user id>-<code>`. SILI checks the answer against the page;
+ * staff can check it here by hand when SILI is down.
+ */
+"use strict";
+window.RLQ = window.RLQ || [];
+window.RLQ.push([["mediawiki.base", "jquery"], () => {
+    const VERIFY_SUFFIX = "/QQVerify";
+    const ADMIN_GROUPS = ["sysop", "staff", "patroller"];
+    // Crockford base32 (no I, L, O, U); 32 divides 256, so byte % 32 is unbiased
+    const CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    const CODE_LENGTH = 16;
+    const ANSWER_PATTERN = /(\d{1,12})\s*-\s*([0-9A-Za-z]{16})/;
+    const CODE_TTL_MS = 2 * 60 * 60 * 1000;
+    const NOTICE_HTML = "这是你的<b>一次性</b>加群码，<b><i>请勿分享给其他人</i></b>。<br>请在2小时内使用，将其完整粘贴到加群答案中即可。<br>如有遗失，可回到这里重新生成（旧码作废）。";
+
+    const root = document.getElementById("QQVerify");
+    if (!root) return;
+    const userName = mw.config.get("wgUserName"); // raw name, spaces kept
+    const userId = mw.config.get("wgUserId");
+    const groups = mw.config.get("wgUserGroups") || [];
+    const isAutoconfirmed = groups.includes("autoconfirmed");
+    const isAdmin = groups.some((g) => ADMIN_GROUPS.includes(g));
+
+    const sha1 = async (text) => {
+        const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text));
+        return [...new Uint8Array(buf)].map((x) => x.toString(16).padStart(2, "0")).join("");
+    };
+    const sameUser = (a, b) => `${a}`.replace(/[\s_]+/g, "_") === `${b}`.replace(/[\s_]+/g, "_");
+    const randomCode = () => [...crypto.getRandomValues(new Uint8Array(CODE_LENGTH))]
+        .map((byte) => CODE_ALPHABET[byte % 32]).join("");
+    const parseAnswer = (text) => {
+        const match = ANSWER_PATTERN.exec(`${text}`);
+        if (!match) return null;
+        const code = match[2].toUpperCase();
+        if ([...code].some((c) => !CODE_ALPHABET.includes(c))) return null;
+        return { userId: match[1], code };
+    };
+
+    const $root = $(root).empty();
+    if (!userName) {
+        $root.text("请先登录后再使用该功能。");
+        return;
+    }
+
+    mw.loader.using(["mediawiki.api", "mediawiki.util", "mediawiki.notification"]).then(() => {
+        const api = new mw.Api({ parameters: { format: "json", formatversion: 2 } });
+        const verifyPage = `User:${userName}${VERIFY_SUFFIX}`;
+
+        // ---- Generate ----
+        const $button = $("<button>").addClass("mw-ui-button mw-ui-progressive").text("生成加群码");
+        const $result = $("<div>").css("margin-top", "0.5em");
+        const $error = $("<div>").addClass("error");
+
+        const showAnswer = (answer, $extra) => {
+            const $answer = $("<code>").text(answer).css({ fontSize: "1.2em", userSelect: "all" });
+            const $copy = $("<button>").addClass("mw-ui-button").css("margin-left", "0.5em").text("复制");
+            $copy.on("click", async () => {
+                await navigator.clipboard.writeText(answer);
+                $copy.text("已复制");
+                mw.notify($("<span>").html(NOTICE_HTML), { title: "加群码已复制", autoHideSeconds: 10 });
+            });
+            $result.empty().append(
+                $("<div>").append("加群码：", $answer, $copy),
+                $("<p>").html(NOTICE_HTML),
+                $extra || null,
+            );
+        };
+
+        $button.on("click", async () => {
+            $error.empty();
+            $result.empty();
+            $button.prop("disabled", true).text("正在生成……");
+            const code = randomCode();
+            const now = Date.now();
+            const text = `${now}#${await sha1(`${now}#${code}`)}`;
+            const answer = `${userId}-${code}`;
+            try {
+                if (isAutoconfirmed) {
+                    await api.postWithToken("csrf", {
+                        action: "edit",
+                        title: verifyPage,
+                        text,
+                        summary: "生成加群码",
+                        tags: "Automation tool",
+                    });
+                    showAnswer(answer);
+                } else {
+                    // Non-autoconfirmed users cannot save through the API here:
+                    // they save the preloaded edit form themselves.
+                    const url = mw.util.getUrl(verifyPage, {
+                        action: "edit",
+                        summary: "生成加群码",
+                        preload: "Template:QQVerify/preload",
+                        "preloadparams[]": text,
+                    });
+                    showAnswer(answer, $("<p>").addClass("error").append(
+                        "你还不是自动确认用户，加群码要手动保存后才生效：",
+                        $("<a>").attr({ href: url, target: "_blank" }).text("打开编辑页并点击「保存」"),
+                        "。保存前请先记下上面的加群码。",
+                    ));
+                }
+                $button.text("重新生成");
+            } catch (e) {
+                $error.text(`保存失败：${e}`);
+                $button.text("再试一次");
+            }
+            $button.prop("disabled", false);
+        });
+
+        $root.append($("<h3>").text("生成 QQ 群加群码"), $button, $result, $error);
+
+        // ---- Staff check ----
+        if (!isAdmin) return;
+        const readRecord = async (name) => {
+            const data = await api.get({
+                action: "query",
+                prop: "revisions",
+                rvprop: "user|content",
+                rvslots: "main",
+                titles: `User:${name}${VERIFY_SUFFIX}`,
+            });
+            const rev = data.query.pages[0]?.revisions?.[0];
+            return rev ? { editor: rev.user, content: rev.slots.main.content } : null;
+        };
+        // Same checks as SILI except "already used", which only SILI records.
+        const check = async (input) => {
+            const parsed = parseAnswer(input);
+            if (!parsed) return { ok: false, text: "答案格式不对" };
+            const data = await api.get({ action: "query", list: "users", ususerids: parsed.userId });
+            const user = data.query.users[0];
+            if (!user || user.missing) return { ok: false, text: "答案里的萌娘百科用户 ID 不存在" };
+            const record = await readRecord(user.name);
+            if (!record) return { ok: false, text: `「${user.name}」还没生成加群码` };
+            if (!sameUser(record.editor, user.name)) return { ok: false, text: `「${user.name}」的验证页最后不是本人编辑的` };
+            const [time, hash, ...rest] = `${record.content}`.trim().split("#");
+            if (rest.length || await sha1(`${time}#${parsed.code}`) !== hash) return { ok: false, text: `加群码和「${user.name}」的验证页对不上` };
+            const age = Date.now() - Number(time);
+            const fresh = age <= CODE_TTL_MS;
+            return { ok: fresh, text: `答案属于「${user.name}」，生成于 ${Math.max(0, Math.floor(age / 60000))} 分钟前${fresh ? "" : "，已超过 2 小时"}` };
+        };
+        const $input = $("<input>").attr({ type: "text", placeholder: "用户ID-加群码" }).css({ width: "20em", padding: "0.2em 0.5em" });
+        const $check = $("<button>").addClass("mw-ui-button mw-ui-progressive").text("核对");
+        const $verdict = $("<div>");
+        $check.on("click", async () => {
+            $verdict.empty();
+            $check.prop("disabled", true).text("核对中……");
+            try {
+                const res = await check($input.val());
+                $verdict.append(
+                    $("<div>").css({ fontWeight: "bold", color: res.ok ? "green" : "red" }).text(`${res.ok ? "✓ 匹配：" : "✗ 不通过："}${res.text}`),
+                    $("<div>").css({ fontSize: "0.85em", opacity: 0.7 }).text("这里无法判断加群码是否已被 SILI 用过。"),
+                );
+            } catch (e) {
+                $verdict.append($("<div>").addClass("error").text(`核对失败：${e}`));
+            }
+            $check.prop("disabled", false).text("核对");
+        });
+        $input.on("input", () => $verdict.empty());
+        $root.append(
+            $("<h3>").text("核对加群答案"),
+            $("<div>").css({ display: "flex", gap: "1em" }).append($input, $check),
+            $verdict,
+        );
+    });
+}]);
+// </pre>
+</script><!--{/if}--></includeonly>
