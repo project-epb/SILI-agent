@@ -6,8 +6,6 @@
  */
 import { Context, Time } from 'koishi'
 
-import { authorityOrGroupAdmin } from '@/modules/GroupAdminPermission'
-
 import BasePlugin from '~/_boilerplate'
 
 import { QQBot } from 'koishi-plugin-adapter-qq-crack'
@@ -18,15 +16,17 @@ export default class PluginMute extends BasePlugin {
 
     ctx
       .channel()
-      .command(
-        'channel.mute',
-        '群禁言相关 (查看子指令)',
-        authorityOrGroupAdmin(3)
-      )
+      .command('channel.mute', '群禁言相关 (查看子指令)', {
+        authority: 3,
+        permissions: ['group:admin'],
+      })
 
     ctx
       .channel()
-      .command('channel.mute.all', '群全员禁言', authorityOrGroupAdmin(3))
+      .command('channel.mute.all', '群全员禁言', {
+        authority: 3,
+        permissions: ['group:admin'],
+      })
       .option('set', '-s 开启')
       .option('unset', '-u 关闭')
       .action(async ({ session, options }) => {
@@ -58,7 +58,10 @@ export default class PluginMute extends BasePlugin {
 
     ctx
       .channel()
-      .command('channel.mute.member', '群成员禁言', authorityOrGroupAdmin(3))
+      .command('channel.mute.member', '群成员禁言', {
+        authority: 3,
+        permissions: ['group:admin'],
+      })
       .option('user', '-u <user:user> 禁言指定用户（@提及或 @用户ID）')
       .option(
         'duration',
