@@ -16,6 +16,7 @@ import process from 'node:process'
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import { logProcessErrors } from '@/bootstrap'
 import FallbackHandler from '@/modules/FallbackHandler'
+import GroupAdminPermission from '@/modules/GroupAdminPermission'
 import PluginFeature from '@/plugins/feature'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
 import PluginMute from '@/plugins/mute'
@@ -273,6 +274,8 @@ function install(app: App) {
       featLevels: { help: 0, novelai: 100 },
     })
     ctx.plugin(PluginAdmin) // channel user auth, assign
+    // 群主和群管理也能用的指令（authorityOrGroupAdmin），并放开 `channel` 父指令
+    ctx.plugin(GroupAdminPermission)
     ctx.plugin(PluginBind)
   })
 

@@ -12,6 +12,7 @@ import process from 'node:process'
 
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import FallbackHandler from '@/modules/FallbackHandler'
+import GroupAdminPermission from '@/modules/GroupAdminPermission'
 import { FixQQSendLinks } from '@/modules/FixQQSendLinks'
 import { GuildRequestFirewall } from '@/modules/GuildRequestFirewall'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
@@ -256,6 +257,8 @@ function install(app: App) {
     // [common]
     ctx.plugin(function PluginCollectionLegacyCommon(ctx) {
       ctx.plugin(PluginAdmin) // channel user auth
+      // 群主和群管理也能用的指令（authorityOrGroupAdmin），并放开 `channel` 父指令
+      ctx.plugin(GroupAdminPermission)
       ctx.plugin(PluginBind)
       ctx.plugin(PluginBroadcast)
       ctx.plugin(PluginCallme)

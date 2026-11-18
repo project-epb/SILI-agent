@@ -2,9 +2,11 @@
  * @name mute
  * @command channel.mute
  * @desc 设置群组成员禁言/全员禁言
- * @authority 3
+ * @authority 3, or an admin of the group
  */
 import { Context, Time } from 'koishi'
+
+import { authorityOrGroupAdmin } from '@/modules/GroupAdminPermission'
 
 import BasePlugin from '~/_boilerplate'
 
@@ -16,11 +18,15 @@ export default class PluginMute extends BasePlugin {
 
     ctx
       .channel()
-      .command('channel.mute', '群禁言相关 (查看子指令)', { authority: 3 })
+      .command(
+        'channel.mute',
+        '群禁言相关 (查看子指令)',
+        authorityOrGroupAdmin(3)
+      )
 
     ctx
       .channel()
-      .command('channel.mute.all', '群全员禁言', { authority: 3 })
+      .command('channel.mute.all', '群全员禁言', authorityOrGroupAdmin(3))
       .option('set', '-s 开启')
       .option('unset', '-u 关闭')
       .action(async ({ session, options }) => {
@@ -52,7 +58,7 @@ export default class PluginMute extends BasePlugin {
 
     ctx
       .channel()
-      .command('channel.mute.member', '群成员禁言', { authority: 3 })
+      .command('channel.mute.member', '群成员禁言', authorityOrGroupAdmin(3))
       .option('user', '-u <user:user> 禁言指定用户（@提及或 @用户ID）')
       .option(
         'duration',
