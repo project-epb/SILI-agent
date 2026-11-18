@@ -51,6 +51,9 @@ export interface ExecuteKoishiCommandInput {
  * the agent itself (chat would recurse; llm.* manage memory/sessions/
  * providers and the user — not the AI — should drive them).
  */
+const UNAVAILABLE_HERE =
+  'This command is not available in this chat. Tell the user it is unavailable here; do not retry or try to work around it.'
+
 const FORBIDDEN_AGENT_COMMANDS = new Set(['chat', 'llm'])
 
 export function isForbiddenAgentCommand(name: string): boolean {
@@ -99,7 +102,7 @@ function renderCommandSearch(
   )
 }
 
-async function runExecuteKoishiCommand(
+export async function runExecuteKoishiCommand(
   session: Session,
   input: ExecuteKoishiCommandInput,
   ctx: Context
@@ -123,6 +126,13 @@ async function runExecuteKoishiCommand(
       ? renderAgentHelp(catalog, input.args?.[0])
       : renderCommandSearch(catalog, input.args?.[0])
   }
+
+  // A command whose plugin cannot see this session (installed in a context
+  // that leaves it out, e.g. a served-only plugin in an unactivated group)
+  // is dropped by Koishi with no output at all. Say so, or the model papers
+  // over the silence.
+  const command = (session.app as any).$commander?.get(input.name)
+  if (command && !command.ctx.filter(session)) return UNAVAILABLE_HERE
 
   // 部分 koishi 插件违反开发规范，在 action 里直接 session.send 而不是
   // return string（典型例子：mediawiki 插件）。我们在底层 bot.sendMessage
@@ -173,6 +183,9 @@ async function runExecuteKoishiCommand(
         name: input.name,
         args: input.args || [],
         options: input.options || {},
+        // Lets access checks explain a refusal to the model instead of
+        // returning nothing, which it would paper over.
+        viaAgent: true,
       },
       true
     )

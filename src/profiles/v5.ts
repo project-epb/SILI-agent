@@ -16,9 +16,9 @@ import process from 'node:process'
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import { logProcessErrors } from '@/bootstrap'
 import FallbackHandler from '@/modules/FallbackHandler'
+import PluginFeature from '@/plugins/feature'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
 import PluginMute from '@/plugins/mute'
-import SilentSwitch from '@/modules/SilentSwitch'
 import { PluginCollectionDialogue } from '@/profiles/shared/dialogue'
 import { installNovelAI } from '@/profiles/shared/novelai'
 import {
@@ -109,7 +109,6 @@ import * as PluginRateLimit from 'koishi-plugin-rate-limit'
 import * as PluginRecall from 'koishi-plugin-recall'
 import * as PluginSchedule from 'koishi-plugin-schedule'
 import PluginSilk from 'koishi-plugin-silk'
-import * as PluginSwitch from 'koishi-plugin-switch'
 
 import PluginHTTP from '@cordisjs/plugin-http'
 
@@ -269,6 +268,10 @@ function install(app: App) {
       state,
       migrationWindow: !!env.ONEBOT_SELFID,
     })
+    // 服务等级：每个指令在哪些群和私聊能用，以及 `feature` 指令（含激活）
+    ctx.plugin(PluginFeature, {
+      featLevels: { help: 0, novelai: 100 },
+    })
     ctx.plugin(PluginAdmin) // channel user auth, assign
     ctx.plugin(PluginBind)
   })
@@ -285,7 +288,6 @@ function install(app: App) {
   // 核心与通用
   served.plugin(function PluginCollectionCore(ctx) {
     ctx.plugin(PluginCommands)
-    ctx.plugin(PluginSwitch)
     ctx.plugin(PluginAssetsS3, assetsS3Config(env))
     ctx.plugin(PluginHTTP)
     // HTMLService 依赖 puppeteer，md、hljs、webshot、reboot、dbadmin、sticker 又依赖 HTMLService；
@@ -336,7 +338,7 @@ function install(app: App) {
     ctx.plugin(PluginBasedata)
   })
 
-  // 免激活也能用的功能（见 qqbot 的 PUBLIC_GROUP_COMMANDS）
+  // 服务等级 0 的指令所在的插件：未激活的群和私聊也要收得到（PluginFeature 启动时会检查）
   publicGroups.plugin(function PluginCollectionPublic(ctx) {
     ctx.plugin(PluginHelp)
     ctx.plugin(PluginGithub, githubConfig(env))
@@ -354,27 +356,14 @@ function install(app: App) {
     ctx.plugin(PluginHljs)
     ctx.plugin(PluginMarkdown)
     ctx.plugin(PluginMinecraft)
-    // 频道仍是 OneBot 的群号，在官方 bot 上待改配置（见 profile spec 的过滤清单）
-    installNovelAI(ctx, [
-      env.CHANNEL_QQ_SANDBOX,
-      env.CHANNEL_QQ_SILI_HOME,
-      env.CHANNEL_QQ_NGNL_COMMON,
-      env.CHANNEL_QQ_IPE,
-    ])
+    // 服务等级 100（见 PluginFeature 配置），按群用 `feature -e novelai` 打开
+    installNovelAI(ctx)
     ctx.inject(['channelMessageHistory'], (ctx) => {
       ctx.plugin(PluginLLM, llmConfig(env))
       ctx.plugin(PluginWhoAsked)
     })
-    // 同上：放行的频道仍是 OneBot 的群号与 QQ 号，待改配置
-    ctx.plugin(
-      PluginComfyUI,
-      comfyUIConfig(env, ctx.baseDir, [
-        env.ACCOUNT_QQ_XIAOYUJUN && `private:${env.ACCOUNT_QQ_XIAOYUJUN}`,
-        env.CHANNEL_QQ_SANDBOX,
-        env.CHANNEL_QQ_NGNL_COMMON,
-        env.CHANNEL_QQ_FEIFEIYAOREN,
-      ])
-    )
+    // 服务等级 100（声明在插件里），按群用 `feature -e comfyui` 打开
+    ctx.plugin(PluginComfyUI, comfyUIConfig(env, ctx.baseDir, []))
     ctx.plugin(PluginGelbooru, gelbooruConfig(env))
     ctx.plugin(PluginPing)
     ctx.plugin(PluginPowerUser)
@@ -395,7 +384,6 @@ function install(app: App) {
     ctx.command('tools', '实用工具集')
     ctx.plugin(HTMLService)
     ctx.plugin(FallbackHandler)
-    ctx.plugin(SilentSwitch)
     ctx.plugin(HelpAuthorityHint)
     ctx.plugin(PatchCallme)
     ctx.plugin(PiggybackService)

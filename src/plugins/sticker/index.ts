@@ -18,7 +18,7 @@ import 黑橙网站 from './黑橙网站'
 export default class PluginSticker extends BasePlugin {
   constructor(ctx: Context) {
     super(ctx, {}, 'sticker')
-    const sticker = ctx.command('sticker', '生成表情包！').alias('表情包')
+    const sticker = ctx.command('sticker', '生成表情包！', { featLevel: 0 }).alias('表情包')
     // koishi-plugin-manosaba-memes is a sticker pack too: list it under
     // sticker. Re-parent the existing instance; `ctx.command('sticker/manosaba')`
     // would also move its caller context to this plugin.

@@ -3,14 +3,16 @@ import { Context } from 'koishi'
 import * as PluginNovelAi from 'koishi-plugin-novelai'
 
 /**
- * NovelAI, only when credentials are configured, limited to `channels`.
- * Channel ids are platform-specific (OneBot group numbers vs official-bot
- * openids), so each profile passes its own.
+ * NovelAI, only when credentials are configured, limited to `channels` when
+ * given. Channel ids are platform-specific (OneBot group numbers vs
+ * official-bot openids), so each profile passes its own; v5 passes none and
+ * gates it by service level instead.
  */
-export function installNovelAI(ctx: Context, channels: (string | undefined)[]) {
+export function installNovelAI(ctx: Context, channels?: (string | undefined)[]) {
   if (!process.env.NOVELAI_USERNAME) return
   // 部分开启 NovelAI 测试
-  ctx.channel(...(channels as string[])).plugin(PluginNovelAi, {
+  const scope = channels ? ctx.channel(...(channels as string[])) : ctx
+  scope.plugin(PluginNovelAi, {
     type: 'login',
     email: process.env.NOVELAI_USERNAME,
     password: process.env.NOVELAI_PASSWORD,

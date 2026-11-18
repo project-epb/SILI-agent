@@ -13,10 +13,9 @@ import {
 
 const rules: GateRules = {
   groupCommands: new Set(['assign', 'group-migrate']),
-  publicGroupCommands: new Set(['help', '帮助', 'wiki']),
+  publicCommands: new Set(['help', '帮助', 'wiki', 'dice']),
   publicGroupContent: /\[\[.+?\]\]/,
   dmCommands: new Set(['bind', '多账号绑定']),
-  publicDmCommands: new Set(['help', 'dice']),
   bindTokenPrefix: 'koishi/',
 }
 
@@ -107,9 +106,9 @@ describe('decideGate', () => {
       decideGate(group(), 'hello', 'hello', lookup({ groups: ['G1'] }), rules)
     ).toBe('pass')
   })
-  it('lets strangers use public DM commands but not group-only ones', () => {
+  it('lets strangers use public commands in DMs, but not wiki links', () => {
     expect(decideGate(dm(), 'help', 'help', lookup(), rules)).toBe('pass')
-    expect(decideGate(dm(), 'wiki x', 'wiki', lookup(), rules)).toBe('drop')
+    expect(decideGate(dm(), 'pixiv 1', 'pixiv', lookup(), rules)).toBe('drop')
     expect(decideGate(dm(), '[[萌娘百科]]', '[[萌娘百科]]', lookup(), rules)).toBe('drop')
     expect(autoAuthorizeFor(dm('qq'), 'help', lookup(), rules)).toBe(1)
   })

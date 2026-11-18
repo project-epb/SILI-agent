@@ -4,6 +4,8 @@ import { resolve } from 'node:path'
 
 import '@koishijs/console'
 
+import type {} from '../../src/plugins/feature'
+
 import type {
   QQBotChannel,
   QQBotMember,
@@ -19,7 +21,7 @@ const AUTH = 4
 const PLATFORM = 'qq'
 
 export const name = 'qqbot-admin'
-export const inject = ['console', 'database', 'qqbot']
+export const inject = ['console', 'database', 'qqbot', 'feature']
 
 type Status = 'all' | 'active' | 'inactive'
 
@@ -392,6 +394,38 @@ export function apply(ctx: Context) {
         id: auth.id,
         authority: auth.authority,
       })
+    },
+    { authority: AUTH }
+  )
+
+  // Service levels (feature plugin) of one group or DM. A DM's chat id is
+  // `private:<user id>`; its level is 1 when served (op or activated).
+  const chatOf = ({ selfId, id, kind }: { selfId: string; id: string; kind: 'group' | 'dm' }) =>
+    kind === 'dm'
+      ? {
+          chatId: `private:${id}`,
+          level: ctx.qqbot.state.isDmAllowed(PLATFORM, selfId, id) ? 1 : 0,
+        }
+      : {
+          chatId: id,
+          level: ctx.qqbot.state.isGroupActive(PLATFORM, selfId, id) ? 1 : 0,
+        }
+
+  ctx.console.addListener(
+    'qqbot-admin/features',
+    async (target) => {
+      const { chatId, level } = chatOf(target)
+      return { level, rows: ctx.feature.list(PLATFORM, chatId, level) }
+    },
+    { authority: AUTH }
+  )
+
+  ctx.console.addListener(
+    'qqbot-admin/feature-override',
+    async ({ name, action, ...target }) => {
+      const { chatId, level } = chatOf(target as Parameters<typeof chatOf>[0])
+      await ctx.feature.override(PLATFORM, chatId, level, name, action)
+      return { ok: true }
     },
     { authority: AUTH }
   )

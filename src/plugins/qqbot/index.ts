@@ -27,6 +27,7 @@ import {
   extractCommandName,
   isServed,
 } from './gate'
+import { FEATURE_COMMAND, levelOf } from '../feature/rules'
 import { MetadataRecorder } from './metadata'
 import {
   GROUP_MIGRATE_COMMAND,
@@ -49,24 +50,13 @@ declare module 'koishi' {
 
 /** plugin-bind's default code prefix; SILI does not override it. */
 export const BIND_TOKEN_PREFIX = 'koishi/'
-/** Allowed in unactivated groups (with their aliases). */
-/** Activates a group: all features, the LLM included. Ops only. */
-const ACTIVATE_COMMAND = 'channel.activate'
-const GROUP_COMMANDS = [ACTIVATE_COMMAND, GROUP_MIGRATE_COMMAND]
+/**
+ * Allowed in unactivated groups for ops only (with their aliases): `feature -a`
+ * activates a group.
+ */
+const GROUP_COMMANDS = [FEATURE_COMMAND, GROUP_MIGRATE_COMMAND]
 /** Allowed in unserved DMs (with their aliases). */
 const DM_COMMANDS = ['bind']
-/** Usable by anyone in an unactivated DM. wiki and github need a group. */
-const PUBLIC_DM_COMMANDS = ['help', 'about', 'dice', 'sticker', 'manosaba']
-/** Usable by anyone in an unactivated group; everything else needs activation. */
-const PUBLIC_GROUP_COMMANDS = [
-  'help',
-  'about',
-  'wiki',
-  'dice',
-  'sticker',
-  'manosaba',
-  'github',
-]
 /** `[[wiki links]]`, expanded by the mediawiki plugin. */
 const WIKI_LINK = /\[\[.+?\]\]/
 
@@ -74,8 +64,8 @@ const PERMISSION_HINT =
   '💡 想获得最佳体验的话，请群主点击 SILI 的头像，在机器人权限中开启「接收全部消息」和「推送主动消息」'
 
 /**
- * Names and aliases of these commands and all their subcommands (`wiki` lets
- * `wiki.connect` through too). Each command still checks its own authority.
+ * Names and aliases of these commands and all their subcommands (`bind` lets
+ * its subcommands through too). Each command still checks its own authority.
  */
 function commandWords(app: Context, names: string[]) {
   const words = new Set<string>()
@@ -92,13 +82,23 @@ function commandWords(app: Context, names: string[]) {
   return words
 }
 
+/** Names and aliases of every level-0 command: usable before activation. */
+function levelZeroWords(app: Context) {
+  const words = new Set<string>()
+  for (const command of (app.$commander as any)._commandList) {
+    if (levelOf(command) !== 0) continue
+    words.add(command.name.toLowerCase())
+    for (const alias in command._aliases) words.add(alias.toLowerCase())
+  }
+  return words
+}
+
 function rulesOf(app: Context): GateRules {
   return {
     groupCommands: commandWords(app, GROUP_COMMANDS),
-    publicGroupCommands: commandWords(app, PUBLIC_GROUP_COMMANDS),
+    publicCommands: levelZeroWords(app),
     publicGroupContent: WIKI_LINK,
     dmCommands: commandWords(app, DM_COMMANDS),
-    publicDmCommands: commandWords(app, PUBLIC_DM_COMMANDS),
     bindTokenPrefix: BIND_TOKEN_PREFIX,
   }
 }
@@ -157,7 +157,7 @@ export default class QQBotService extends Service {
     this.metadata = new MetadataRecorder(ctx, this.state)
     new MigrationFeatures(ctx, this)
     setupGroupPanel(ctx)
-    this.setupActivateCommands()
+    this.setupDmActivateCommand()
     // QQ group events carry no group name, and the adapter (qq-crack 1.0.33)
     // drops the group card QQ added to them: fill both in before anything
     // reads the session.
@@ -196,26 +196,7 @@ export default class QQBotService extends Service {
     })
   }
 
-  private setupActivateCommands() {
-    this.ctx
-      .command(`${ACTIVATE_COMMAND}`, '激活本群的全部功能', { authority: 4 })
-      .alias('激活')
-      .option('remove', '-r 取消激活')
-      .action(async ({ session, options }) => {
-        if (!session || !GUARDED_PLATFORMS.has(session.platform) || session.isDirect)
-          return '请在要激活的群里使用这条命令。'
-        const { platform, selfId, channelId } = session
-        const active = this.state.isGroupActive(platform, selfId, channelId!)
-        if (options?.remove) {
-          if (!active) return 'SILI 本来就没有在这个群开通全部功能。'
-          await this.deactivateGroup(platform, selfId, channelId!)
-          return '好的，这个群回到基础功能了。'
-        }
-        if (active) return 'SILI 已经在这个群开通全部功能啦。'
-        await this.activateGroup(platform, selfId, channelId!, session)
-        return '好的，SILI 在这个群开通全部功能啦！'
-      })
-
+  private setupDmActivateCommand() {
     this.ctx
       .command('user.activate <target:user>', '激活某人的私聊', { authority: 4 })
       .option('remove', '-r 取消激活')
@@ -284,7 +265,7 @@ export default class QQBotService extends Service {
   }
 
   /**
-   * Activate a group: all features, the LLM included (`channel.activate`,
+   * Activate a group: all features, the LLM included (`feature -a`,
    * admin page, group migration). Also makes sure the group is assigned to
    * this bot, which is routing only.
    */
