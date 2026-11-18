@@ -1,10 +1,38 @@
-<noinclude>Only for {{tl|QQVerify}}. Source: SILI-agent src/plugins/wiki-join-verify (must match its verify.ts).</noinclude><includeonly><!--{if !isset($wgQQVerify) || !$wgQQVerify}--><!--{assign var="wgQQVerify" value=true scope="global"}--><script>
+<noinclude>Only for {{tl|QQVerify}}. Source: SILI-agent src/plugins/wiki-join-verify (must match its verify.ts).</noinclude><includeonly><!--{if !isset($wgQQVerify) || !$wgQQVerify}--><!--{assign var="wgQQVerify" value=true scope="global"}--><style>
+.qqverify { --qqv-accent: var(--theme-accent-color, #25b449); margin: .75em 0 1em; border-left: 4px solid var(--qqv-accent); border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--qqv-accent) 8%, transparent); line-height: 1.6; }
+.qqverify-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .8em; padding: .5em .9em; }
+.qqverify-bar img { flex: none; }
+.qqverify-lead { flex: 1; min-width: 12em; }
+.qqverify-actions { display: inline-flex; align-items: center; gap: .8em; }
+.qqverify-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 2em; padding: 0 1.1em; border: 1px solid var(--qqv-accent); border-radius: 999px; background: var(--qqv-accent); color: #fff; font-size: .95em; font-weight: bold; white-space: nowrap; cursor: pointer; transition: filter .15s; }
+.qqverify-btn:hover { filter: brightness(1.06); }
+.qqverify-btn:disabled { opacity: .55; cursor: default; filter: none; }
+.qqverify-btn.is-secondary { background: #fff; color: var(--qqv-accent); }
+.qqverify-link { color: #72777d; font-size: .85em; cursor: pointer; white-space: nowrap; }
+.qqverify-link:hover { color: var(--qqv-accent); text-decoration: underline; }
+.qqverify-panel { padding: 0 .9em .8em; }
+.qqverify-ticket { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; padding: .55em .5em .55em .9em; border: 1px dashed var(--qqv-accent); border-radius: 8px; background: #fff; }
+.qqverify-ticket code { flex: 1; padding: 0; border: 0; background: none; color: #202122; font-size: 1.25em; font-weight: bold; letter-spacing: .04em; word-break: break-all; user-select: all; }
+.qqverify-tip { margin-top: .6em; padding: .5em .8em; border-left: 3px solid #ffb300; border-radius: 4px; background: #fff8e1; font-size: .92em; }
+.qqverify-tip.is-warn { border-left-color: #d73333; background: #fdeeee; }
+.qqverify-error { color: #d73333; }
+.qqverify-admin { display: flex; flex-wrap: wrap; gap: .6em; margin-top: .6em; }
+.qqverify-admin input { flex: 1; min-width: 12em; padding: .3em .9em; border: 1px solid #a2a9b1; border-radius: 999px; font-size: 1em; }
+.qqverify-admin input:focus { border-color: var(--qqv-accent); outline: none; }
+.qqverify-verdict { flex-basis: 100%; }
+.qqverify-verdict.is-ok { color: var(--qqv-accent); font-weight: bold; }
+.qqverify-verdict.is-bad { color: #d73333; font-weight: bold; }
+.qqverify-foot { padding: 0 .9em .4em; color: #a2a9b1; font-size: .75em; text-align: right; }
+.qqverify-foot a { color: inherit; }
+.qqverify-panel:empty, .qqverify-panel:empty + .qqverify-foot { display: none; }
+</style><script>
 // <pre>
 /**
  * Generates a one-time code for joining Moegirlpedia QQ groups: saves
  * `<timestamp>#<sha1(timestamp#code)>` to User:<name>/QQVerify and shows the
  * join answer `<user id>-<code>`. SILI checks the answer against the page;
  * staff can check it here by hand when SILI is down.
+ * Mounts into {{QQVerify}}: actions go to #QQVerify, results to #QQVerifyPanel.
  */
 "use strict";
 window.RLQ = window.RLQ || [];
@@ -18,8 +46,9 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
     const CODE_TTL_MS = 2 * 60 * 60 * 1000;
     const NOTICE_HTML = "这是你的<b>一次性</b>加群码，<b><i>请勿分享给其他人</i></b>。<br>请在2小时内使用，将其完整粘贴到加群答案中即可。<br>如有遗失，可回到这里重新生成（旧码作废）。";
 
-    const root = document.getElementById("QQVerify");
-    if (!root) return;
+    const actions = document.getElementById("QQVerify");
+    const panel = document.getElementById("QQVerifyPanel");
+    if (!actions || !panel) return;
     const userName = mw.config.get("wgUserName"); // raw name, spaces kept
     const userId = mw.config.get("wgUserId");
     const groups = mw.config.get("wgUserGroups") || [];
@@ -40,41 +69,50 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
         if ([...code].some((c) => !CODE_ALPHABET.includes(c))) return null;
         return { userId: match[1], code };
     };
+    const button = (text, secondary) => $("<button>").attr("type", "button")
+        .addClass(`qqverify-btn${secondary ? " is-secondary" : ""}`).text(text);
 
-    const $root = $(root).empty();
-    if (!userName) {
-        $root.text("请先登录后再使用该功能。");
-        return;
-    }
+    const $actions = $(actions).empty();
+    const $panel = $(panel).empty();
 
     mw.loader.using(["mediawiki.api", "mediawiki.util", "mediawiki.notification"]).then(() => {
+        if (!userName) {
+            $actions.append($("<a>").addClass("qqverify-btn")
+                .attr("href", mw.util.getUrl("Special:UserLogin", { returnto: mw.config.get("wgPageName") }))
+                .text("登录后生成"));
+            return;
+        }
         const api = new mw.Api({ parameters: { format: "json", formatversion: 2 } });
         const verifyPage = `User:${userName}${VERIFY_SUFFIX}`;
+        const $result = $("<div>");
+        const $admin = $("<div>");
+        // Keep the panel :empty while nothing is shown, so CSS hides it.
+        const layout = () => {
+            $panel.children().detach();
+            if ($result.children().length) $panel.append($result);
+            if ($admin.children().length) $panel.append($admin);
+        };
 
         // ---- Generate ----
-        const $button = $("<button>").addClass("mw-ui-button mw-ui-progressive").text("生成加群码");
-        const $result = $("<div>").css("margin-top", "0.5em");
-        const $error = $("<div>").addClass("error");
-
+        const $generate = button("生成加群码");
         const showAnswer = (answer, $extra) => {
-            const $answer = $("<code>").text(answer).css({ fontSize: "1.2em", userSelect: "all" });
-            const $copy = $("<button>").addClass("mw-ui-button").css("margin-left", "0.5em").text("复制");
+            const $copy = button("复制", true);
             $copy.on("click", async () => {
                 await navigator.clipboard.writeText(answer);
                 $copy.text("已复制");
                 mw.notify($("<span>").html(NOTICE_HTML), { title: "加群码已复制", autoHideSeconds: 10 });
             });
             $result.empty().append(
-                $("<div>").append("加群码：", $answer, $copy),
-                $("<p>").html(NOTICE_HTML),
+                $("<div>").addClass("qqverify-ticket").append($("<code>").text(answer), $copy),
+                $("<div>").addClass("qqverify-tip").html(NOTICE_HTML),
                 $extra || null,
             );
+            layout();
         };
-
-        $button.on("click", async () => {
-            $error.empty();
+        $generate.on("click", async () => {
             $result.empty();
-            $button.prop("disabled", true).text("正在生成……");
+            layout();
+            $generate.prop("disabled", true).text("正在生成……");
             const code = randomCode();
             const now = Date.now();
             const text = `${now}#${await sha1(`${now}#${code}`)}`;
@@ -98,21 +136,21 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
                         preload: "Template:QQVerify/preload",
                         "preloadparams[]": text,
                     });
-                    showAnswer(answer, $("<p>").addClass("error").append(
-                        "你还不是自动确认用户，加群码要手动保存后才生效：",
+                    showAnswer(answer, $("<div>").addClass("qqverify-tip is-warn").append(
+                        "你还不是自动确认用户，加群码要<b>手动保存</b>后才生效：先记下上面的加群码，再",
                         $("<a>").attr({ href: url, target: "_blank" }).text("打开编辑页并点击「保存」"),
-                        "。保存前请先记下上面的加群码。",
+                        "。",
                     ));
                 }
-                $button.text("重新生成");
+                $generate.text("重新生成");
             } catch (e) {
-                $error.text(`保存失败：${e}`);
-                $button.text("再试一次");
+                $result.empty().append($("<div>").addClass("qqverify-error").text(`保存失败：${e}`));
+                layout();
+                $generate.text("再试一次");
             }
-            $button.prop("disabled", false);
+            $generate.prop("disabled", false);
         });
-
-        $root.append($("<h3>").text("生成 QQ 群加群码"), $button, $result, $error);
+        $actions.append($generate);
 
         // ---- Staff check ----
         if (!isAdmin) return;
@@ -141,31 +179,35 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
             if (rest.length || await sha1(`${time}#${parsed.code}`) !== hash) return { ok: false, text: `加群码和「${user.name}」的验证页对不上` };
             const age = Date.now() - Number(time);
             const fresh = age <= CODE_TTL_MS;
-            return { ok: fresh, text: `答案属于「${user.name}」，生成于 ${Math.max(0, Math.floor(age / 60000))} 分钟前${fresh ? "" : "，已超过 2 小时"}` };
+            return { ok: fresh, text: `答案属于「${user.name}」，生成于 ${Math.max(0, Math.floor(age / 60000))} 分钟前${fresh ? "" : "，已超过 2 小时"}；无法判断是否已被 bot 用过` };
         };
-        const $input = $("<input>").attr({ type: "text", placeholder: "用户ID-加群码" }).css({ width: "20em", padding: "0.2em 0.5em" });
-        const $check = $("<button>").addClass("mw-ui-button mw-ui-progressive").text("核对");
-        const $verdict = $("<div>");
-        $check.on("click", async () => {
-            $verdict.empty();
-            $check.prop("disabled", true).text("核对中……");
-            try {
-                const res = await check($input.val());
-                $verdict.append(
-                    $("<div>").css({ fontWeight: "bold", color: res.ok ? "green" : "red" }).text(`${res.ok ? "✓ 匹配：" : "✗ 不通过："}${res.text}`),
-                    $("<div>").css({ fontSize: "0.85em", opacity: 0.7 }).text("这里无法判断加群码是否已被 SILI 用过。"),
-                );
-            } catch (e) {
-                $verdict.append($("<div>").addClass("error").text(`核对失败：${e}`));
+        const $toggle = $("<a>").addClass("qqverify-link").attr("role", "button").text("核对答案");
+        $toggle.on("click", () => {
+            if ($admin.children().length) {
+                $admin.empty();
+                layout();
+                return;
             }
-            $check.prop("disabled", false).text("核对");
+            const $input = $("<input>").attr({ type: "text", placeholder: "用户ID-加群码" });
+            const $check = button("核对", true);
+            const $verdict = $("<div>").addClass("qqverify-verdict");
+            $check.on("click", async () => {
+                $verdict.removeClass("is-ok is-bad").empty();
+                $check.prop("disabled", true).text("核对中……");
+                try {
+                    const res = await check($input.val());
+                    $verdict.addClass(res.ok ? "is-ok" : "is-bad").text(`${res.ok ? "✓ 匹配：" : "✗ 不通过："}${res.text}`);
+                } catch (e) {
+                    $verdict.addClass("is-bad").text(`核对失败：${e}`);
+                }
+                $check.prop("disabled", false).text("核对");
+            });
+            $input.on("input", () => $verdict.removeClass("is-ok is-bad").empty());
+            $admin.append($("<div>").addClass("qqverify-admin").append($input, $check, $verdict));
+            layout();
+            $input.trigger("focus");
         });
-        $input.on("input", () => $verdict.empty());
-        $root.append(
-            $("<h3>").text("核对加群答案"),
-            $("<div>").css({ display: "flex", gap: "1em" }).append($input, $check),
-            $verdict,
-        );
+        $actions.append($toggle);
     });
 }]);
 // </pre>

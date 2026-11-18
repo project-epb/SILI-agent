@@ -1,7 +1,7 @@
-<includeonly>{{Info
-|leftimage=[[File:QQ.png|80px|link=]]
-|title=萌娘百科官方群组加群码
-|text=申请加入官方 QQ 群前，在这里生成一次性加群码，把它填进加群答案，SILI 会核对你的萌娘百科账号并自动审批。加群码记录在[[Special:MyPage/QQVerify|你的用户子页面]]，只保存哈希，不含 QQ 号。<div id="QQVerify"></div>{{#Widget:QQVerify}}
-|type=none
-|color=#1e90ff}}</includeonly><noinclude>{{doc|content=
+<includeonly><div class="qqverify" id="QQVerifyBox"><div class="qqverify-bar">[[File:QQ.png|28px|link=]]<span class="qqverify-lead">{{{1|申请加入下列群组前，请先生成一次性加群码}}}</span><span class="qqverify-actions" id="QQVerify"></span></div><div class="qqverify-panel" id="QQVerifyPanel"></div><div class="qqverify-foot">Powered by [https://github.com/project-epb/SILI-agent SILI Agent]</div></div>{{#Widget:QQVerify}}</includeonly><noinclude>{{doc|content=
+用于[[萌娘百科:官方群组]]，生成加入官方 QQ 群所需的一次性加群码。
+
+* 参数 1（可选）：横条上的说明文字。
+* 页内其他位置可用 <code><nowiki>[[#QQVerifyBox|上方按钮]]</nowiki></code> 链到这里。
+
 {{QQVerify}}}}</noinclude>

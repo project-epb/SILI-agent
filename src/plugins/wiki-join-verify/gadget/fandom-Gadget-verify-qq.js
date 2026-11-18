@@ -179,32 +179,91 @@ $(function () {
   }
 
   // UI
-  function VerifyBox() {
-    var $container = $('<div>', { id: 'verify-qq-container' })
-    var $button = $('<button>', {
-      text: '生成加群码',
-      class: 'wds-button wds-primary',
+  var CSS = [
+    '.qqverify { --qqv-accent: var(--fandom-accent-color, #520044); margin: .75em 0 1em; border-left: 4px solid var(--qqv-accent); border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--qqv-accent) 6%, transparent); color: var(--fandom-text-color, #1e0c1b); line-height: 1.6; }',
+    '.qqverify-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .4em .8em; padding: .5em .9em; }',
+    '.qqverify-icon { flex: none; font-size: 1.4em; line-height: 1; }',
+    '.qqverify-lead { flex: 1; min-width: 12em; }',
+    '.qqverify-actions { display: inline-flex; align-items: center; gap: .8em; }',
+    '.qqverify-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 2em; padding: 0 1.1em; border: 1px solid var(--qqv-accent); border-radius: 999px; background: var(--qqv-accent); color: var(--fandom-accent-label-color, #fff); font-size: .95em; font-weight: bold; white-space: nowrap; cursor: pointer; }',
+    '.qqverify-btn:hover { background: var(--fandom-accent-color--hover, var(--qqv-accent)); border-color: var(--fandom-accent-color--hover, var(--qqv-accent)); }',
+    '.qqverify-btn:disabled { opacity: .55; cursor: default; }',
+    '.qqverify-btn.is-secondary { background: var(--fandom-secondary-color, #fff); color: var(--qqv-accent); }',
+    '.qqverify-btn.is-secondary:hover { background: var(--fandom-secondary-color--hover, #e2e2e2); }',
+    '.qqverify-link { color: var(--fandom-text-color--secondary, #595358); font-size: .85em; cursor: pointer; white-space: nowrap; }',
+    '.qqverify-link:hover { color: var(--fandom-link-color, #9b004e); text-decoration: underline; }',
+    '.qqverify-panel { padding: 0 .9em .8em; }',
+    '.qqverify-panel:empty, .qqverify-panel:empty + .qqverify-foot { display: none; }',
+    '.qqverify-ticket { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; padding: .55em .5em .55em .9em; border: 1px dashed var(--qqv-accent); border-radius: 8px; background: var(--fandom-secondary-color, #fff); }',
+    '.qqverify-ticket code { flex: 1; padding: 0; border: 0; background: none; color: inherit; font-size: 1.25em; font-weight: bold; letter-spacing: .04em; word-break: break-all; user-select: all; }',
+    '.qqverify-tip { margin-top: .6em; padding: .5em .8em; border-left: 3px solid #ffb300; border-radius: 4px; background: #fff8e1; color: #1e0c1b; font-size: .92em; }',
+    '.qqverify-error { color: #d73333; }',
+    '.qqverify-admin { display: flex; flex-wrap: wrap; gap: .6em; margin-top: .6em; }',
+    '.qqverify-admin input { flex: 1; min-width: 12em; padding: .3em .9em; border: 1px solid var(--fandom-border-color, #d6d0d5); border-radius: 999px; background: var(--fandom-secondary-color, #fff); color: inherit; font-size: 1em; }',
+    '.qqverify-admin input:focus { border-color: var(--qqv-accent); outline: none; }',
+    '.qqverify-verdict { flex-basis: 100%; font-weight: bold; }',
+    '.qqverify-verdict.is-ok { color: #14866d; }',
+    '.qqverify-verdict.is-bad { color: #d73333; }',
+    '.qqverify-foot { padding: 0 .9em .4em; color: var(--fandom-text-color--secondary, #595358); font-size: .75em; text-align: right; opacity: .7; }',
+    '.qqverify-foot a { color: inherit; }',
+  ].join('\n')
+
+  function button(text, secondary) {
+    return $('<button>', {
+      type: 'button',
+      class: 'qqverify-btn' + (secondary ? ' is-secondary' : ''),
+      text: text,
     })
-    var $error = $('<div>', { class: 'error' })
-    var $result = $('<div>', { style: 'margin-top: 0.5em;' })
-    $button.on('click', function (e) {
-      e.preventDefault()
-      $error.empty()
-      $result.empty()
-      $button.attr('disabled', '').text('正在生成')
+  }
+
+  /**
+   * The strip: one line with actions, a panel that expands below it.
+   * Resolves nothing; returns { $el, $actions, show($content) }.
+   */
+  function Strip(lead) {
+    var $actions = $('<span>', { class: 'qqverify-actions' })
+    var $panel = $('<div>', { class: 'qqverify-panel' })
+    var $el = $('<div>', { class: 'qqverify', id: 'QQVerifyBox' }).append(
+      $('<div>', { class: 'qqverify-bar' }).append(
+        $('<span>', { class: 'qqverify-icon', text: '🐧' }),
+        $('<span>', { class: 'qqverify-lead', text: lead }),
+        $actions
+      ),
+      $panel,
+      $('<div>', { class: 'qqverify-foot' }).append(
+        'Powered by ',
+        $('<a>', {
+          href: 'https://github.com/project-epb/SILI-agent',
+          target: '_blank',
+          text: 'SILI Agent',
+        })
+      )
+    )
+    var parts = { result: null, admin: null }
+    // Keep the panel :empty while nothing is shown, so CSS hides it.
+    function layout() {
+      $panel.children().detach()
+      if (parts.result) $panel.append(parts.result)
+      if (parts.admin) $panel.append(parts.admin)
+    }
+    this.$el = $el
+    this.$actions = $actions
+    this.set = function (part, $content) {
+      parts[part] = $content
+      layout()
+    }
+  }
+
+  function addGenerator(strip) {
+    var $generate = button('生成加群码')
+    $generate.on('click', function () {
+      strip.set('result', null)
+      $generate.prop('disabled', true).text('正在生成……')
       saveCode()
         .then(function (answer) {
-          var $answer = $('<code>', {
-            text: answer,
-            style: 'font-size: 1.2em; user-select: all;',
-          })
-          var $copy = $('<button>', {
-            text: '复制',
-            class: 'wds-button wds-secondary',
-            style: 'margin-left: 0.5em;',
-          })
-          $copy.on('click', function (ev) {
-            ev.preventDefault()
+          var $answer = $('<code>', { text: answer })
+          var $copy = button('复制', true)
+          $copy.on('click', function () {
             copyText(answer, $answer).then(function () {
               $copy.text('已复制')
               mw.notify($('<span>').html(NOTICE_HTML), {
@@ -213,80 +272,79 @@ $(function () {
               })
             })
           })
-          $result.append(
-            $('<div>').append('加群码：', $answer, $copy),
-            $('<p>').html(NOTICE_HTML)
+          strip.set(
+            'result',
+            $('<div>').append(
+              $('<div>', { class: 'qqverify-ticket' }).append($answer, $copy),
+              $('<div>', { class: 'qqverify-tip' }).html(NOTICE_HTML)
+            )
           )
-          $button.removeAttr('disabled').text('重新生成')
+          $generate.prop('disabled', false).text('重新生成')
         })
         .catch(function (errorCode) {
-          $error.text('保存失败：' + errorCode)
-          $button.removeAttr('disabled').text('再试一次')
+          strip.set(
+            'result',
+            $('<div>', {
+              class: 'qqverify-error',
+              text: '保存失败：' + errorCode,
+            })
+          )
+          $generate.prop('disabled', false).text('再试一次')
         })
     })
-
-    $container.append(
-      $('<h2>', { text: '生成 QQ 群加群码' }),
-      $button,
-      $result,
-      $error
-    )
-    this.App = $container
+    strip.$actions.append($generate)
   }
 
   // expectedName: check against this user only (on their qq-hash page).
-  function AdminVerifyBox(expectedName) {
-    var $container = $('<div>', { id: 'verify-qq-admin-container' })
+  function adminBox(expectedName) {
     var $input = $('<input>', {
       type: 'text',
-      placeholder: '用户ID-验证码',
-      style: 'display: block; width: 20em; padding: 0.2em 0.5em;',
+      placeholder: '用户ID-加群码',
     })
-    var $button = $('<button>', {
-      text: '核对',
-      class: 'wds-button wds-primary',
-    })
-    var $result = $('<div>')
-
-    $button.on('click', function (e) {
-      e.preventDefault()
-      $result.empty()
-      $button.attr('disabled', '').text('核对中')
+    var $check = button('核对', true)
+    var $verdict = $('<div>', { class: 'qqverify-verdict' })
+    $check.on('click', function () {
+      $verdict.removeClass('is-ok is-bad').empty()
+      $check.prop('disabled', true).text('核对中……')
       checkAnswer($input.val(), expectedName)
         .then(function (res) {
-          $result.append(
-            $('<div>', {
-              style: 'font-weight: bold; color: ' + (res.ok ? 'green' : 'red'),
-              text: (res.ok ? '✓ 匹配：' : '✗ 不通过：') + res.text,
-            }),
-            $('<div>', {
-              text: '这里无法判断答案是否已被 SILI 用过。',
-              style: 'font-size: 0.85em; opacity: 0.7;',
-            })
-          )
+          $verdict
+            .addClass(res.ok ? 'is-ok' : 'is-bad')
+            .text(
+              (res.ok ? '✓ 匹配：' : '✗ 不通过：') +
+                res.text +
+                '；无法判断是否已被 bot 用过'
+            )
         })
         .catch(function (errorCode) {
-          $result.append(
-            $('<div>', { class: 'error', text: '核对失败：' + errorCode })
-          )
+          $verdict.addClass('is-bad').text('核对失败：' + errorCode)
         })
         .then(function () {
-          $button.removeAttr('disabled').text('核对')
+          $check.prop('disabled', false).text('核对')
         })
     })
     $input.on('input', function () {
-      $result.empty()
+      $verdict.removeClass('is-ok is-bad').empty()
     })
-
-    $container.append(
-      $('<h2>', { text: '核对入群答案' }),
-      expectedName
-        ? $('<div>').append('核对对象：', $('<code>', { text: expectedName }))
-        : null,
-      $('<div>', { style: 'display: flex; gap: 1em;' }).append($input, $button),
-      $result
+    return $('<div>', { class: 'qqverify-admin' }).append(
+      $input,
+      $check,
+      $verdict
     )
-    this.App = $container
+  }
+
+  function addAdminToggle(strip, expectedName) {
+    var $toggle = $('<a>', {
+      class: 'qqverify-link',
+      role: 'button',
+      text: expectedName ? '核对此用户的答案' : '核对答案',
+    })
+    var open = false
+    $toggle.on('click', function () {
+      open = !open
+      strip.set('admin', open ? adminBox(expectedName) : null)
+    })
+    strip.$actions.append($toggle)
   }
 
   // Main
@@ -296,34 +354,48 @@ $(function () {
   var pageOwner = isHashPage
     ? pageName.split('/').shift().split(':').pop()
     : null
-
-  // Someone else's qq-hash page: sysops check answers, others are warned off.
-  if (isHashPage && !sameUser(pageOwner, userName)) {
-    $('#mw-content-text').prepend(
-      isAdmin
-        ? new AdminVerifyBox(pageOwner).App
-        : $('<div>', {
-            id: 'verify-qq-container',
-            class: 'error',
-            text: '警告：请勿修改他人的验证数据！',
-          })
-    )
-    return
-  }
+  var isOthersHashPage = isHashPage && !sameUser(pageOwner, userName)
 
   if (!isHashPage && !appRoot) return
+  mw.loader.using(['mediawiki.util', 'mediawiki.notification']).then(render)
 
-  var $app = userName
-    ? new VerifyBox().App
-    : $('<div>', {
-        id: 'verify-qq-container',
-        text: '请先登录后再使用该功能。',
-      })
-  var $admin = isAdmin && !isHashPage ? new AdminVerifyBox(null).App : null
+  function render() {
+    mw.util.addCSS(CSS)
 
-  if (isHashPage) {
-    $('#mw-content-text').prepend($app)
-  } else {
-    $(appRoot).empty().append($app, $admin)
+    // Someone else's qq-hash page: sysops check answers, others are warned off.
+    if (isOthersHashPage) {
+      if (!isAdmin) {
+        $('#mw-content-text').prepend(
+          $('<div>', { class: 'error', text: '警告：请勿修改他人的验证数据！' })
+        )
+        return
+      }
+      var check = new Strip('核对「' + pageOwner + '」的入群答案')
+      addAdminToggle(check, pageOwner)
+      $('#mw-content-text').prepend(check.$el)
+      return
+    }
+
+    var strip = new Strip('申请加入 QQ 群前，请先生成一次性加群码')
+    if (userName) {
+      addGenerator(strip)
+    } else {
+      strip.$actions.append(
+        $('<a>', {
+          class: 'qqverify-btn',
+          href: mw.util.getUrl('Special:UserLogin', {
+            returnto: config.wgPageName,
+          }),
+          text: '登录后生成',
+        })
+      )
+    }
+    if (isAdmin && !isHashPage) addAdminToggle(strip, null)
+
+    if (isHashPage) {
+      $('#mw-content-text').prepend(strip.$el)
+    } else {
+      $(appRoot).empty().append(strip.$el)
+    }
   }
 })
