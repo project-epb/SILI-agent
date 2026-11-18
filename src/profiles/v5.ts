@@ -17,6 +17,7 @@ import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import { logProcessErrors } from '@/bootstrap'
 import FallbackHandler from '@/modules/FallbackHandler'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
+import PluginMute from '@/plugins/mute'
 import SilentSwitch from '@/modules/SilentSwitch'
 import { PluginCollectionDialogue } from '@/profiles/shared/dialogue'
 import { installNovelAI } from '@/profiles/shared/novelai'
@@ -383,6 +384,7 @@ function install(app: App) {
     ctx.plugin(PluginWebShot)
     ctx.plugin(PluginPixiv, pixivConfig(env))
     ctx.plugin(PluginWikiJoinVerify, { sites: joinVerifySites(env) })
+    ctx.plugin(PluginMute)
   })
 
   servedNotQQ.plugin(PluginCanIUse)
