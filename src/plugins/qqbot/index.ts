@@ -173,6 +173,17 @@ export default class QQBotService extends Service {
         session.event.channel = { ...session.event.channel!, name }
     })
 
+    // Every button press that reaches Koishi. Without it a press that "does
+    // nothing" cannot be told apart from one QQ never delivered (old clients,
+    // button permissions).
+    ctx.on('interaction/button' as any, (session: Session) => {
+      this.logger.info(
+        'button %s by %s in %s',
+        (session.event as any).button?.data ?? '',
+        session.userId,
+        session.isDirect ? 'DM' : session.channelId
+      )
+    })
     ctx.on('ready', () => this.reload())
     ctx.setInterval(() => this.reload(), 30 * Time.second)
     ctx.middleware((session, next) => this.gate(session, next), true)
