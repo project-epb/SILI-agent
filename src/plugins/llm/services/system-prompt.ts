@@ -81,7 +81,7 @@ export function buildSystemPromptText(
     parts.push(
       [
         '## 调用工具',
-        '上方清单列出顶层指令。通过 `execute_koishi_command` 调用 `_find_command_` 按关键词搜索所有层级，再用 `help` 加完整名称查看详情。',
+        '上方清单列出顶层指令。通过 `execute_koishi_command` 调用 `virtual:find-command` 按关键词搜索所有层级，再用 `help` 加完整名称查看详情。',
         '',
         '当用户问 "你能干什么 / 有什么功能" 时，用 SILI 自己的口吻举几个例子（"SILI 可以帮你查 wiki、搜图、掷骰子……"），别像报菜名一样复读清单。想看完整清单的用户，引导他自己输入 `帮助` 或 `help`。',
       ].join('\n')

@@ -160,18 +160,18 @@ describe('renderAgentHelp', () => {
   })
 
   it('points to command search when a name does not match', () => {
-    expect(renderAgentHelp(catalog, 'connect')).toContain('`_find_command_`')
+    expect(renderAgentHelp(catalog, 'connect')).toContain('`virtual:find-command`')
   })
 
   it('returns placeholder when catalog is empty and no arg', () => {
     expect(renderAgentHelp([])).toBe('(暂无可用指令)')
   })
 
-  describe('_find_command_', () => {
+  describe('virtual:find-command', () => {
     const sessionExecute = vi.fn()
     const search = (args: string[]) =>
       executeKoishiCommandHandler.execute(
-        { name: '_find_command_', args },
+        { name: 'virtual:find-command', args },
         {
           ctx: { llm: { getCatalog: () => catalog } },
           session: { execute: sessionExecute },
