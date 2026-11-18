@@ -37,6 +37,9 @@ function buildInterruptedContent(content: string): string {
   return content + '\n' + INTERRUPTED_MARKER
 }
 
+/** How much of a leaked DSML block is read and logged before giving up on it. */
+const DSML_LOG_LIMIT = 4000
+
 /**
  * Thrown when the DeepSeek "DSML leak" bug (see utils/dsml-leak.ts) keeps
  * corrupting the stream past `dsmlLeakMaxRetries` re-sends of the same
@@ -214,8 +217,9 @@ export async function runAgentLoop(
               // Detect on the ACCUMULATED content — the sentinel can straddle
               // chunk boundaries. Once it fires, stop forwarding: the rest of
               // this stream is garbage we're about to discard, and we don't
-              // want it growing past the split threshold and flushing.
-              if (containsDsmlLeak(currentContent)) {
+              // want it growing past the split threshold and flushing. Keep
+              // reading a little so the log shows the whole leaked block.
+              if (dsmlLeaked || containsDsmlLeak(currentContent)) {
                 dsmlLeaked = true
                 break
               }
@@ -233,7 +237,7 @@ export async function runAgentLoop(
             case 'finish':
               break
           }
-          if (dsmlLeaked) break
+          if (dsmlLeaked && currentContent.length > DSML_LOG_LIMIT) break
         }
       } catch (e: any) {
         // SDKs throw AbortError when the upstream signal fires — treat as
@@ -249,6 +253,13 @@ export async function runAgentLoop(
       if (usage) totalUsage = mergeUsage(totalUsage, usage)
 
       if (dsmlLeaked && !isAborted()) {
+        opts.logger.warn(
+          '[agent] DSML leak content (%d chars, %d tool calls alongside):\n%s\n--- reasoning tail ---\n%s',
+          currentContent.length,
+          collectedToolCalls.length,
+          currentContent.slice(0, DSML_LOG_LIMIT),
+          currentReasoning.slice(-500)
+        )
         // Drop the partial garbage (+ any legit prelude) the caller buffered
         // but hasn't shown yet; the re-roll regenerates the turn from scratch.
         await opts.onDiscardVisible?.()
