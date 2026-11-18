@@ -237,3 +237,21 @@ export async function bindOnApproval(
     ...(code.spent ? {} : { hash: code.hash }),
   }
 }
+
+/**
+ * One pending request per applicant: the latest. QQ lists every application,
+ * and one person can apply or be invited again before the first is handled;
+ * their rows would share a button id and QQ rejects the whole keyboard
+ * (40011021 rows.buttons.id 无效), and their short ids would match twice.
+ */
+export function latestPerMember<
+  T extends { member_openid: string; apply_at: string },
+>(list: T[]): T[] {
+  const latest = new Map<string, T>()
+  for (const item of list) {
+    const kept = latest.get(item.member_openid)
+    if (!kept || Date.parse(item.apply_at) >= Date.parse(kept.apply_at))
+      latest.set(item.member_openid, item)
+  }
+  return list.filter((item) => latest.get(item.member_openid) === item)
+}

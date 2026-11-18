@@ -7,6 +7,7 @@ import {
   type WikiUser,
   bindOnApproval,
   decide,
+  latestPerMember,
   parseAnswer,
   sha1,
 } from '../verify'
@@ -243,5 +244,21 @@ describe('bindOnApproval', () => {
     expect(
       await bindOnApproval('hello', 'me', source(), policy())
     ).toBeUndefined()
+  })
+})
+
+describe('latestPerMember', () => {
+  it('keeps only the latest application of each applicant', () => {
+    const r = (id: string, member: string, at: string) => ({
+      join_request_id: id,
+      member_openid: member,
+      apply_at: at,
+    })
+    const list = [
+      r('1', 'A', '2026-11-18T18:47:22+08:00'),
+      r('2', 'B', '2026-11-18T19:04:37+08:00'),
+      r('3', 'A', '2026-11-18T19:09:51+08:00'),
+    ]
+    expect(latestPerMember(list).map((x) => x.join_request_id)).toEqual(['2', '3'])
   })
 })
