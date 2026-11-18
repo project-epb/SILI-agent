@@ -44,6 +44,8 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
     const CODE_LENGTH = 16;
     const ANSWER_PATTERN = /(\d{1,12})\s*-\s*([0-9A-Za-z]{16})/;
     const CODE_TTL_MS = 2 * 60 * 60 * 1000;
+    // Each code is an edit and replaces the one just shown: slow down regeneration.
+    const REGENERATE_COOLDOWN_S = 10;
     const NOTICE_HTML = "这是你的<b>一次性</b>加群码，<b><i>请勿分享给其他人</i></b>。<br>请在2小时内使用，将其完整粘贴到加群答案中即可。<br>如有遗失，可回到这里重新生成（旧码作废）。";
 
     const actions = document.getElementById("QQVerify");
@@ -142,14 +144,25 @@ window.RLQ.push([["mediawiki.base", "jquery"], () => {
                         "。",
                     ));
                 }
-                $generate.text("重新生成");
+                cooldown();
             } catch (e) {
                 $result.empty().append($("<div>").addClass("qqverify-error").text(`保存失败：${e}`));
                 layout();
-                $generate.text("再试一次");
+                $generate.prop("disabled", false).text("再试一次");
             }
-            $generate.prop("disabled", false);
         });
+        const cooldown = () => {
+            let left = REGENERATE_COOLDOWN_S;
+            const tick = () => {
+                if (left <= 0) {
+                    $generate.prop("disabled", false).text("重新生成");
+                    return;
+                }
+                $generate.text(`重新生成（${left--}）`);
+                setTimeout(tick, 1000);
+            };
+            tick();
+        };
         $actions.append($generate);
 
         // ---- Staff check ----

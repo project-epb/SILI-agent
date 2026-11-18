@@ -22,6 +22,8 @@ $(function () {
     ANSWER_PATTERN = /(\d{1,12})\s*-\s*([0-9A-Za-z]{16})/,
     CODE_TTL_MS = 2 * 60 * 60 * 1000,
     CODE_TTL_LABEL = '2 小时',
+    // Each code is an edit and replaces the one just shown: slow down regeneration.
+    REGENERATE_COOLDOWN_S = 10,
     NOTICE_HTML =
       '这是你的<b>一次性</b>加群码，<b><i>请勿分享给其他人</i></b>。<br>' +
       '请在2小时内使用，将其完整粘贴到加群答案中即可。<br>' +
@@ -254,6 +256,19 @@ $(function () {
     }
   }
 
+  function cooldown($button) {
+    var left = REGENERATE_COOLDOWN_S
+    function tick() {
+      if (left <= 0) {
+        $button.prop('disabled', false).text('重新生成')
+        return
+      }
+      $button.text('重新生成（' + left-- + '）')
+      setTimeout(tick, 1000)
+    }
+    tick()
+  }
+
   function addGenerator(strip) {
     var $generate = button('生成加群码')
     $generate.on('click', function () {
@@ -279,7 +294,7 @@ $(function () {
               $('<div>', { class: 'qqverify-tip' }).html(NOTICE_HTML)
             )
           )
-          $generate.prop('disabled', false).text('重新生成')
+          cooldown($generate)
         })
         .catch(function (errorCode) {
           strip.set(
