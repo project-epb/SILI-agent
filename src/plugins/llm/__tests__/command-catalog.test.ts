@@ -1,12 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { App } from 'koishi'
+
+import { describe, expect, it } from 'vitest'
+
 import {
+  type CommandCatalogEntry,
   buildCommandCatalog,
   findCatalogEntry,
   projectHideForHuman,
   renderCatalogEntryDetail,
   renderCommandCatalog,
   renderCompactCatalog,
-  type CommandCatalogEntry,
 } from '../utils/command-catalog'
 
 describe('renderCommandCatalog', () => {
@@ -63,7 +66,7 @@ describe('renderCommandCatalog', () => {
       },
     ]
     const out = renderCommandCatalog(entries)
-    expect(out).toContain('--verbose')
+    expect(out).toContain('verbose(详细输出)')
   })
 
   it('renders aliases', () => {
@@ -254,7 +257,12 @@ describe('renderCatalogEntryDetail', () => {
       name: 'wiki',
       description: 'MediaWiki 工具',
       args: [
-        { name: 'titles', type: 'string', required: false, description: '页面' },
+        {
+          name: 'titles',
+          type: 'string',
+          required: false,
+          description: '页面',
+        },
       ],
       options: [
         { name: 'details', type: 'boolean', description: '详情' },
@@ -278,7 +286,7 @@ describe('renderCatalogEntryDetail', () => {
     expect(out).toContain('## 参数')
     expect(out).toContain('`titles`')
     expect(out).toContain('## 选项')
-    expect(out).toContain('`--details`')
+    expect(out).toContain('`details` (boolean)')
     expect(out).toContain('## 别名')
     expect(out).toContain('维基')
     expect(out).toContain('## 子指令')
@@ -291,7 +299,8 @@ describe('renderCatalogEntryDetail', () => {
     const entry: CommandCatalogEntry = {
       name: 'dice',
       description: '掷骰子',
-      usage: '投掷 [骰子表达式] [--difficulty 难度值]\n例如"两个20面骰加5"：dice 2d20+5',
+      usage:
+        '投掷 [骰子表达式] [--difficulty 难度值]\n例如"两个20面骰加5"：dice 2d20+5',
       args: [{ name: 'dice', type: 'string', required: false }],
       options: [],
       aliases: [],
@@ -306,44 +315,24 @@ describe('renderCatalogEntryDetail', () => {
     expect(out.indexOf('## 用法')).toBeLessThan(out.indexOf('## 参数'))
   })
 
-  it('renders option syntax with long form first, short flag after', () => {
+  it('renders option keys as declared for the JSON payload', () => {
     const entry: CommandCatalogEntry = {
       name: 'dice',
       description: 'd',
       args: [],
       options: [
         {
-          name: 'difficulty',
+          name: 'difficultyLevel',
           type: 'string',
-          syntax: '-d, --difficulty <difficulty>',
           description: '难度值',
         },
-        {
-          name: 'no-critical',
-          type: 'boolean',
-          syntax: '-C, --no-critical',
-          description: '不检查大成功/大失败',
-        },
-        // 没有 syntax 的选项 fallback 到 `--name`
-        { name: 'plain', type: 'boolean', description: '普通选项' },
       ],
       aliases: [],
       children: [],
     }
     const out = renderCatalogEntryDetail(entry)
-    // long 在前、short 在后；value placeholder 跟在 long 后面
-    expect(out).toContain('`--difficulty <difficulty>, -d`')
-    expect(out).toContain('`--no-critical, -C`')
-    // 不能出现 koishi 风格"短旗标在前"
-    expect(out).not.toContain('-d, --difficulty')
-    expect(out).not.toContain('-C, --no-critical')
-    // 没 syntax 的 fallback
-    expect(out).toContain('`--plain`')
-    // 描述照常带
-    expect(out).toContain('难度值')
-    expect(out).toContain('不检查大成功/大失败')
-    // 必须告诉 AI 用 long 名字
-    expect(out).toMatch(/必须用.*--long|长.*名字/)
+    expect(out).toContain('`difficultyLevel` (string) — 难度值')
+    expect(out).not.toContain('--difficulty-level')
   })
 
   it('omits empty sections', () => {
@@ -401,9 +390,45 @@ function makeCmd(over: any = {}): any {
 function makeCtx(commands: any[]): any {
   return {
     $commander: { _commandList: commands },
-    i18n: { text: () => '' },
+    i18n: { render: () => [] },
   }
 }
+
+describe('buildCommandCatalog: Koishi help metadata', () => {
+  it('uses registered examples and skips missing translations and injected help options', () => {
+    const app = new App()
+    app
+      .command('sample', '示例指令')
+      .option('difficultyLevel', '-d <level:number> 难度')
+      .option('plain', '-p')
+      .option('help', '-h', {
+        hidden: true,
+        descPath: 'commands.help.options.help',
+      })
+      .example('sample -d 2')
+      .example('sample -p')
+    app.i18n.define('zh-CN', 'commands.sample.examples', '较低优先级的示例')
+    const [entry] = buildCommandCatalog(app)
+    const detail = renderCatalogEntryDetail(entry)
+    expect(detail).toContain('`difficultyLevel` (number) — 难度')
+    expect(detail).toContain('`plain` (boolean)')
+    expect(detail).toContain('## 示例\nsample -d 2\n\nsample -p')
+    expect(detail).not.toMatch(/commands\.|## 用法|`help`|较低优先级/)
+  })
+
+  it('reads localized examples when no inline examples are registered', () => {
+    const app = new App()
+    app.command('sample', '示例指令').usage('选择一种用法')
+    app.i18n.define(
+      'zh-CN',
+      'commands.sample.examples',
+      'sample one\nsample two'
+    )
+    const [entry] = buildCommandCatalog(app)
+    expect(renderCatalogEntryDetail(entry)).toContain('## 用法\n选择一种用法')
+    expect(entry.examples).toEqual(['sample one', 'sample two'])
+  })
+})
 
 describe('buildCommandCatalog: descriptionForAgents', () => {
   it('uses descriptionForAgents over the human description', () => {

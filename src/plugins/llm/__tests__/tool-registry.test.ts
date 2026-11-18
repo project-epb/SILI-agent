@@ -113,7 +113,16 @@ describe('renderAgentHelp', () => {
           args: [],
           options: [],
           aliases: [],
-          children: [],
+          children: [
+            {
+              name: 'wiki.connect.group',
+              description: '连接群聊',
+              args: [],
+              options: [],
+              aliases: [],
+              children: [],
+            },
+          ],
         },
       ],
     },
@@ -148,9 +157,17 @@ describe('renderAgentHelp', () => {
     expect(out).toContain('connect')
   })
 
-  it('returns an error for unknown commands', () => {
+  it.each([' CONNECT ', '群聊'])(
+    'finds deep commands by keyword %s',
+    (query) => {
+      const out = renderAgentHelp(catalog, query)
+      expect(out).toContain('`wiki.connect.group` — 连接群聊')
+    }
+  )
+
+  it('reports an empty search for an unknown keyword', () => {
     const out = renderAgentHelp(catalog, 'nope')
-    expect(out).toMatch(/Error: command "nope" not found/)
+    expect(out).toContain('没有找到与「nope」匹配的指令')
   })
 
   it('returns placeholder when catalog is empty and no arg', () => {
