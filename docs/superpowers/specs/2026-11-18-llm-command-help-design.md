@@ -6,11 +6,12 @@
 
 ## 约定
 
-- 复用现有 `help` 工具入口。无参时列顶层概览，完整名字命中时显示详情。否则在可见目录的所有层级按名字或描述做大小写无关的子串匹配，返回完整命令名和描述。系统提示词保留顶层概览，说明如何按关键词找指令。
+- `execute_koishi_command` 的 `_find_command_` 是模型专用的只读伪命令。它接受一个关键词，在可见目录的所有层级按名字或描述做大小写无关的子串匹配，返回完整命令名和描述。搜索在工具内部完成，无需注册 Koishi 命令。
+- `help` 无参时列顶层概览，传完整名字时查看详情。系统提示词保留顶层概览，并指向 `_find_command_` 和 `help`。
 - 选项显示实际的 JSON `options` 键、类型和描述。Koishi 自动注入的隐藏帮助选项由工具自身的 `help` 入口替代。
 - 描述、用法、选项和本地化示例采用 Koishi 的空串回退。示例优先取 `.example()` 注册的列表，缺省时取本地化 `commands.<name>.examples`，与原生命令帮助的优先级一致。
 
 ## 验收
 
-- `help mute` 和 `help 禁言` 都能返回 `channel.mute.all` 与 `channel.mute.member`，完整名字直接打开详情。
+- `_find_command_` 搜索 `mute` 或 `禁言` 都能返回 `channel.mute.all` 与 `channel.mute.member`。用 `help` 加完整名字打开详情。
 - 详情直接显示 `duration` 等 JSON 键，省略缺失翻译对应的用法或描述，展示命令注册的用法和示例。
