@@ -1,0 +1,655 @@
+import { Context, Logger, Schema, Session, h } from 'koishi'
+
+import { getUserRoles } from '@/utils/formatSession'
+
+import { markdownLink, markdownText } from '~/mediawiki/qq-reply'
+import { useApi } from '~/mediawiki/utils'
+
+import {
+  type Bind,
+  type Policy,
+  type VerifySource,
+  type WikiUser,
+  bindOnApproval,
+  decide,
+} from './verify'
+
+declare module 'koishi' {
+  interface Tables {
+    wiki_join_code: WikiJoinCode
+    wiki_join_binding: WikiJoinBinding
+  }
+}
+
+/** A spent one-time code: the page hash it was saved as. */
+export interface WikiJoinCode {
+  hash: string
+  wiki: string
+  wikiUserId: number
+  platform: string
+  selfId: string
+  userId: string
+  time: Date
+}
+
+/** The wiki account an openid joins as. One per openid and wiki. */
+export interface WikiJoinBinding {
+  wiki: string
+  platform: string
+  selfId: string
+  userId: string
+  wikiUserId: number
+  wikiUserName: string
+  source: 'auto' | 'manual'
+  time: Date
+}
+
+export interface ChannelPolicy {
+  /** Group openid, as this bot sees it. */
+  id: string
+  /** Wiki groups admitted (any one); empty admits any bound account. */
+  groups?: string[]
+}
+
+export interface Site {
+  /** Stable key stored with codes and bindings. */
+  key: string
+  /** Site name shown in messages. */
+  label: string
+  /** api.php URL. */
+  api: string
+  /** Page URL template, `$1` is the title. */
+  articleUrl: string
+  /** Verify page is `User:<name>/<verifyPage>`. */
+  verifyPage: string
+  channels: ChannelPolicy[]
+}
+
+export interface Config {
+  sites: Site[]
+}
+
+/** QQ group roles that may approve or reject join requests. */
+const REVIEWER_ROLES = ['owner', 'admin']
+const BUTTON_PREFIX = 'wjv'
+/** Requests listed per message: QQ allows 5 keyboard rows. */
+const LIST_LIMIT = 5
+/** Short request id shown to admins: the openid's first characters. */
+const SHORT_ID_LENGTH = 6
+
+/** One pending request as returned by `join_request_list`. */
+interface JoinRequest {
+  join_request_id: string
+  member_openid: string
+  username: string
+  apply_at: string
+  verify_info?: {
+    verify_message?: string
+    review_qa_list?: { question: string; answer: string }[]
+  }
+}
+
+export default class PluginWikiJoinVerify {
+  static inject = ['database']
+  static Config: Schema<Config> = Schema.object({
+    sites: Schema.array(Schema.any()).default([]),
+  })
+
+  private logger: Logger
+
+  constructor(
+    private ctx: Context,
+    private config: Config
+  ) {
+    this.logger = ctx.logger('wiki-join-verify')
+    ctx.model.extend(
+      'wiki_join_code',
+      {
+        hash: 'string(64)',
+        wiki: 'string(32)',
+        wikiUserId: 'unsigned(8)',
+        platform: 'string(32)',
+        selfId: 'string(64)',
+        userId: 'string(128)',
+        time: 'timestamp',
+      },
+      { primary: 'hash' }
+    )
+    ctx.model.extend(
+      'wiki_join_binding',
+      {
+        wiki: 'string(32)',
+        platform: 'string(32)',
+        selfId: 'string(64)',
+        userId: 'string(128)',
+        wikiUserId: 'unsigned(8)',
+        wikiUserName: 'string(255)',
+        source: 'string(16)',
+        time: 'timestamp',
+      },
+      { primary: ['wiki', 'platform', 'selfId', 'userId'] }
+    )
+
+    ctx.on('guild-member-request', (session) => {
+      const target = this.lookup(session.channelId)
+      if (!target) return
+      void this.onRequest(session, target).catch((error) =>
+        this.logger.warn('join request', error)
+      )
+    })
+
+    ctx.on('interaction/button' as any, (session: Session) => {
+      const data: string = (session.event as any).button?.data ?? ''
+      const [prefix, action, openid] = data.split(':')
+      if (prefix !== BUTTON_PREFIX || !openid) return
+      const target = this.lookup(session.channelId)
+      if (!target) return
+      void this.review(session, target, openid, action === 'a')
+        .then((text) => this.notify(session, text))
+        .catch((error) => this.logger.warn('button', error))
+    })
+
+    ctx
+      .command('channel.join-request', '查看本群待处理的入群申请')
+      .alias('入群申请')
+      .action(async ({ session }) => {
+        const target = this.lookup(session!.channelId)
+        if (!target) return '本群没有开启入群验证。'
+        return this.list(session!, target)
+      })
+    for (const [name, alias, approve] of [
+      ['approve', '通过', true],
+      ['reject', '拒绝', false],
+    ] as const) {
+      ctx
+        .command(
+          `channel.join-request.${name} <id:string> [reason:text]`,
+          approve ? '同意入群申请' : '拒绝入群申请'
+        )
+        .alias(`入群申请.${alias}`)
+        .action(async ({ session }, id, reason) => {
+          const target = this.lookup(session!.channelId)
+          if (!target) return '本群没有开启入群验证。'
+          if (!this.isReviewer(session!))
+            return '只有群管理员可以审批入群申请。'
+          if (!id) return '请提供申请编号，可以先发送「入群申请」查看。'
+          return h(
+            'markdown',
+            h.text(await this.review(session!, target, id, approve, reason))
+          )
+        })
+    }
+  }
+
+  private lookup(channelId?: string) {
+    if (!channelId) return
+    for (const site of this.config.sites) {
+      const channel = site.channels.find((c) => c.id === channelId)
+      if (channel) return { site, policy: policyOf(site, channel) }
+    }
+  }
+
+  private isReviewer(session: Session) {
+    return getUserRoles(session).some((r) => REVIEWER_ROLES.includes(r.id))
+  }
+
+  /** Lookups for one request; codes and bindings are scoped to bot and wiki. */
+  private sourceFor(session: Session, site: Site): VerifySource {
+    const scope = {
+      wiki: site.key,
+      platform: session.platform,
+      selfId: session.selfId,
+    }
+    return {
+      user: async (id) => {
+        const api = await useApi(site.api)
+        const { data } = await api.get({
+          action: 'query',
+          list: 'users',
+          ususerids: id,
+          usprop: 'groups|blockinfo',
+        })
+        const user = data?.query?.users?.[0]
+        if (!user || user.missing || user.invalid) return
+        return {
+          id: user.userid,
+          name: user.name,
+          groups: user.groups ?? [],
+          blocked: !!user.blockid,
+        } satisfies WikiUser
+      },
+      verifyPage: async (name) => {
+        const api = await useApi(site.api)
+        const { data } = await api.get({
+          action: 'query',
+          prop: 'revisions',
+          rvprop: 'user|content',
+          rvslots: 'main',
+          titles: `User:${name}/${site.verifyPage}`,
+        })
+        const revision = data?.query?.pages?.[0]?.revisions?.[0]
+        if (!revision) return
+        return {
+          content: revision.slots?.main?.content ?? '',
+          editor: revision.user ?? '',
+        }
+      },
+      codeSpentBy: async (hash) => {
+        const [row] = await this.ctx.database.get('wiki_join_code', { hash })
+        if (!row) return
+        // An openid from another bot is a different person to this one.
+        return row.selfId === session.selfId
+          ? row.userId
+          : `${row.selfId}:${row.userId}`
+      },
+      boundTo: async (openid) => {
+        const [row] = await this.ctx.database.get('wiki_join_binding', {
+          ...scope,
+          userId: openid,
+        })
+        return row?.wikiUserId
+      },
+      boundOpenids: async (wikiUserId) =>
+        (
+          await this.ctx.database.get('wiki_join_binding', {
+            ...scope,
+            wikiUserId,
+          })
+        ).map((row) => row.userId),
+    }
+  }
+
+  /**
+   * Spends the code (atomically: the hash is the primary key) and records the
+   * binding. Returns false when the code was spent meanwhile.
+   */
+  private async spend(
+    session: Session,
+    site: Site,
+    openid: string,
+    bind: Bind
+  ) {
+    if (!bind.hash) return true
+    try {
+      await this.ctx.database.create('wiki_join_code', {
+        hash: bind.hash,
+        wiki: site.key,
+        wikiUserId: bind.wikiUserId,
+        platform: session.platform,
+        selfId: session.selfId,
+        userId: openid,
+        time: new Date(),
+      })
+      return true
+    } catch (error) {
+      this.logger.debug('spend code', error)
+      return false
+    }
+  }
+
+  private async saveBinding(
+    session: Session,
+    site: Site,
+    openid: string,
+    bind: Bind,
+    source: WikiJoinBinding['source']
+  ) {
+    await this.ctx.database
+      .upsert('wiki_join_binding', [
+        {
+          wiki: site.key,
+          platform: session.platform,
+          selfId: session.selfId,
+          userId: openid,
+          wikiUserId: bind.wikiUserId,
+          wikiUserName: bind.wikiUserName,
+          source,
+          time: new Date(),
+        },
+      ])
+      .catch((error) => this.logger.warn('save binding', error))
+  }
+
+  private async onRequest(
+    session: Session,
+    { site, policy }: { site: Site; policy: Policy }
+  ) {
+    const raw = (session.event as any)._data?.d ?? {}
+    const request: JoinRequest = {
+      join_request_id: raw.join_request_id ?? session.messageId!,
+      member_openid: session.userId!,
+      username: session.event.user?.name || raw.username || '',
+      apply_at: raw.apply_at ?? '',
+      verify_info: raw.verify_info,
+    }
+    const applicant = applicantLabel(request)
+    const source = this.sourceFor(session, site)
+
+    let lines: string[]
+    try {
+      let decision = await decide(
+        answerOf(request),
+        request.member_openid,
+        source,
+        policy
+      )
+      // A concurrent request spent the code first: decide again with it spent.
+      if (
+        decision.ok &&
+        decision.bind &&
+        !(await this.spend(session, site, request.member_openid, decision.bind))
+      )
+        decision = await decide(
+          answerOf(request),
+          request.member_openid,
+          source,
+          policy
+        )
+
+      if (!('reason' in decision)) {
+        try {
+          await this.handleRequest(session, request, true)
+        } catch (error) {
+          await this.notify(
+            session,
+            this.pending(
+              site,
+              request,
+              `验证已通过，但自动同意失败：${errorText(error)}`,
+              decision.user
+            ).join('\n\n'),
+            [request]
+          )
+          return
+        }
+        if (decision.bind)
+          await this.saveBinding(
+            session,
+            site,
+            request.member_openid,
+            decision.bind,
+            'auto'
+          )
+        lines = [
+          `✅ 已自动同意入群：${applicant}`,
+          `${site.label}账号：${this.userLink(site, decision.user.name)}`,
+        ]
+      } else {
+        const { reason, user } = decision as {
+          reason: string
+          user?: { name: string }
+        }
+        lines = this.pending(site, request, reason, user)
+        await this.notify(session, lines.join('\n\n'), [request])
+        return
+      }
+    } catch (error) {
+      lines = this.pending(
+        site,
+        request,
+        `查询${site.label}失败：${errorText(error)}`
+      )
+      await this.notify(session, lines.join('\n\n'), [request])
+      return
+    }
+    await this.notify(session, lines.join('\n\n'))
+  }
+
+  private pending(
+    site: Site,
+    request: JoinRequest,
+    reason: string,
+    user?: { name: string }
+  ) {
+    return [
+      `⚠️ 入群申请待人工审核：${applicantLabel(request)}（编号 ${shortId(request)}）`,
+      `原因：${markdownText(reason)}`,
+      ...(user
+        ? [
+            markdownLink(
+              `核对「${user.name}」的验证页`,
+              this.pageUrl(site, `User:${user.name}/${site.verifyPage}`)
+            ),
+          ]
+        : []),
+      '按钮 30 分钟内有效，过期后发送「入群申请」重新列出。',
+    ]
+  }
+
+  /** Pending requests of this group, re-verified, with fresh buttons. */
+  private async list(
+    session: Session,
+    { site, policy }: { site: Site; policy: Policy }
+  ) {
+    const requests = await this.fetchRequests(session)
+    if (!requests.length) return '本群没有待处理的入群申请。'
+    const shown = requests.slice(0, LIST_LIMIT)
+    const source = this.sourceFor(session, site)
+    const blocks: string[] = []
+    for (const request of shown) {
+      let verdict: string
+      try {
+        const decision = await decide(
+          answerOf(request),
+          request.member_openid,
+          source,
+          policy
+        )
+        verdict = !('reason' in decision)
+          ? `验证通过（${site.label}账号：${this.userLink(site, decision.user.name)}）`
+          : `待审核：${markdownText((decision as { reason: string }).reason)}`
+      } catch (error) {
+        verdict = `查询${site.label}失败：${markdownText(errorText(error))}`
+      }
+      blocks.push(
+        `**${applicantLabel(request)}**（编号 ${shortId(request)}）\n${verdict}`
+      )
+    }
+    if (requests.length > shown.length)
+      blocks.push(
+        `还有 ${requests.length - shown.length} 条申请未列出，处理完以上申请后再查看。`
+      )
+    blocks.push('按钮仅群管理员可点，30 分钟内有效。')
+    return keyboardMessage(blocks.join('\n\n'), shown)
+  }
+
+  /**
+   * Approves or rejects one pending request picked by openid (full, from a
+   * button) or short id (typed). Returns the markdown reply.
+   */
+  private async review(
+    session: Session,
+    { site, policy }: { site: Site; policy: Policy },
+    key: string,
+    approve: boolean,
+    reason?: string
+  ) {
+    const requests = await this.fetchRequests(session)
+    const matches = requests.filter((r) =>
+      r.member_openid.startsWith(key.toUpperCase())
+    )
+    if (!matches.length) return '没有找到这条申请，可能已被处理。'
+    if (matches.length > 1) return '编号对应多条申请，请多写几位。'
+    const request = matches[0]
+    const applicant = applicantLabel(request)
+    const operator = `<qqbot-at-user id="${session.userId}" />`
+
+    if (!approve) {
+      await this.handleRequest(session, request, false, reason)
+      return `🚫 ${operator} 已拒绝入群：${applicant}`
+    }
+
+    const source = this.sourceFor(session, site)
+    let bind = await bindOnApproval(
+      answerOf(request),
+      request.member_openid,
+      source,
+      policy
+    )
+    if (bind && !(await this.spend(session, site, request.member_openid, bind)))
+      bind = await bindOnApproval(
+        answerOf(request),
+        request.member_openid,
+        source,
+        policy
+      )
+    await this.handleRequest(session, request, true)
+    if (bind)
+      await this.saveBinding(
+        session,
+        site,
+        request.member_openid,
+        bind,
+        'manual'
+      )
+    return [
+      `✅ ${operator} 已同意入群：${applicant}`,
+      bind
+        ? `${site.label}账号：${this.userLink(site, bind.wikiUserName)}`
+        : `未绑定${site.label}账号`,
+    ].join('\n\n')
+  }
+
+  private async fetchRequests(session: Session) {
+    const internal = (session.bot as any).internal
+    const all: JoinRequest[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < 10; page++) {
+      const result = await internal.getJoinRequestList(session.channelId, {
+        limit: 50,
+        ...(cursor ? { cursor } : {}),
+      })
+      all.push(...(result?.list ?? []))
+      if (!result?.next_cursor || !result.list?.length) break
+      cursor = result.next_cursor
+    }
+    return all
+  }
+
+  /**
+   * Calls the API directly: the adapter's handleGuildMemberRequest resolves
+   * ids from an in-memory map that a restart empties.
+   */
+  private async handleRequest(
+    session: Session,
+    request: JoinRequest,
+    approve: boolean,
+    reason?: string
+  ) {
+    await (session.bot as any).internal.approveJoinRequest(
+      session.channelId,
+      request.member_openid,
+      {
+        op: approve ? 'approve' : 'decline',
+        join_request_id: request.join_request_id,
+        ...(!approve && reason ? { reject_reason: reason } : {}),
+      }
+    )
+  }
+
+  private userLink(site: Site, name: string) {
+    return markdownLink(name, this.pageUrl(site, `User:${name}`))
+  }
+
+  private pageUrl(site: Site, title: string) {
+    return site.articleUrl.replace('$1', encodeURI(title.replace(/ /g, '_')))
+  }
+
+  /**
+   * Passive reply by event id first, proactive message otherwise. The source
+   * session must not expose messageId: qq-crack would send the join request id
+   * as msg_id and fail.
+   */
+  private async notify(
+    session: Session,
+    markdown: string,
+    requests: JoinRequest[] = []
+  ) {
+    const content = requests.length
+      ? keyboardMessage(markdown, requests)
+      : h('markdown', h.text(markdown))
+    const source = Object.create(session, {
+      messageId: { value: undefined },
+    }) as Session
+    try {
+      const ids = await session.bot.sendMessage(
+        session.channelId!,
+        content,
+        undefined,
+        {
+          session: source,
+        }
+      )
+      if (ids.length) return
+    } catch (error) {
+      this.logger.debug('passive notice failed, sending proactively', error)
+    }
+    await session.bot.sendMessage(session.channelId!, content)
+  }
+}
+
+function policyOf(site: Site, channel: ChannelPolicy): Policy {
+  return { label: site.label, groups: channel.groups ?? [] }
+}
+
+/**
+ * The applicant's answer text. Not the adapter's session.content: it keeps an
+ * empty `verify_message` and drops the Q&A list QQ sends alongside it.
+ */
+function answerOf(request: JoinRequest) {
+  const info = request.verify_info
+  return [
+    info?.verify_message ?? '',
+    ...(info?.review_qa_list ?? []).map((qa) => qa.answer),
+  ].join('\n')
+}
+
+function applicantLabel(request: JoinRequest) {
+  return markdownText(request.username || '（未知）')
+}
+
+function shortId(request: JoinRequest) {
+  return request.member_openid.slice(0, SHORT_ID_LENGTH)
+}
+
+/** Markdown with an approve/reject button row per request, admins only. */
+function keyboardMessage(markdown: string, requests: JoinRequest[]) {
+  const button = (request: JoinRequest, approve: boolean) => ({
+    id: `${approve ? 'a' : 'r'}${shortId(request)}`,
+    group_id: shortId(request),
+    render_data: {
+      label: approve ? `通过 ${request.username}`.slice(0, 20) : '拒绝',
+      visited_label: approve ? '已通过' : '已拒绝',
+      style: approve ? 4 : 0,
+    },
+    action: {
+      type: 1,
+      permission: { type: 1 },
+      data: `${BUTTON_PREFIX}:${approve ? 'a' : 'r'}:${request.member_openid}`,
+      unsupport_tips: '请升级 QQ 后操作，或发送「入群申请」',
+      ...(approve
+        ? {}
+        : {
+            modal: {
+              content: `确定拒绝 ${request.username} 的入群申请？`.slice(0, 40),
+              confirm_text: '拒绝',
+              cancel_text: '取消',
+            },
+          }),
+    },
+  })
+  return h('qq:rawmarkdown', {
+    content: markdown,
+    keyboard: {
+      content: {
+        rows: requests.map((r) => ({
+          buttons: [button(r, true), button(r, false)],
+        })),
+      },
+    },
+  })
+}
+
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}

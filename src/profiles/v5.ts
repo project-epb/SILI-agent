@@ -42,7 +42,6 @@ import PluginCanIUse from '~/caniuse'
 import PluginComfyUI from '~/comfy-ui'
 import PluginDatabaseAdmin from '~/dbadmin'
 import PluginDice from '~/dice'
-import PluginFandomJoinVerify from '~/fandom-join-verify'
 import PluginGelbooru from '~/gelbooru'
 import PluginGithub from '~/github'
 import PluginHljs from '~/hljs'
@@ -69,6 +68,9 @@ import PluginSticker from '~/sticker'
 import PluginToImage from '~/to-image'
 import PluginWebShot from '~/webshot'
 import PluginWhoAsked from '~/who-asked'
+import PluginWikiJoinVerify, {
+  type Site as JoinVerifySite,
+} from '~/wiki-join-verify'
 
 import AdapterDingtalk from '@koishijs/plugin-adapter-dingtalk'
 import AdapterDiscord from '@koishijs/plugin-adapter-discord'
@@ -95,13 +97,13 @@ import AdapterOnebot from 'koishi-plugin-adapter-onebot'
 import AdapterQQ from 'koishi-plugin-adapter-qq-crack'
 import PluginAssetsS3 from 'koishi-plugin-assets-s3'
 import * as PluginBasedata from 'koishi-plugin-basedata'
+import * as PluginFeedback from 'koishi-plugin-feedback'
 import * as PluginImageSearch from 'koishi-plugin-image-search'
 import * as PluginLlmAdmin from 'koishi-plugin-llm-admin'
 import * as PluginLlmDashboard from 'koishi-plugin-llm-dashboard'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
 import PluginPuppeteer from 'koishi-plugin-puppeteer'
 import * as PluginQQBotAdmin from 'koishi-plugin-qqbot-admin'
-import * as PluginFeedback from 'koishi-plugin-feedback'
 import * as PluginRateLimit from 'koishi-plugin-rate-limit'
 import * as PluginRecall from 'koishi-plugin-recall'
 import * as PluginSchedule from 'koishi-plugin-schedule'
@@ -380,11 +382,7 @@ function install(app: App) {
     ctx.plugin(PluginToImage)
     ctx.plugin(PluginWebShot)
     ctx.plugin(PluginPixiv, pixivConfig(env))
-    // Group openids (per bot) whose join requests are verified against Fandom.
-    ctx.plugin(PluginFandomJoinVerify, {
-      channels:
-        env.FANDOM_VERIFY_CHANNELS?.split(',').map((id) => id.trim()) ?? [],
-    })
+    ctx.plugin(PluginWikiJoinVerify, { sites: joinVerifySites(env) })
   })
 
   servedNotQQ.plugin(PluginCanIUse)
@@ -410,3 +408,56 @@ function install(app: App) {
 const v5: Profile = { appOptions, install }
 
 export default v5
+
+/**
+ * Groups whose join requests SILI verifies, by SILI Official's group openids.
+ * Test groups of other bots (e.g. Noir) come from JOIN_VERIFY_TEST_CHANNELS:
+ * `<site key>:<openid>[:<group>|<group>]`, comma-separated.
+ */
+function joinVerifySites(env: NodeJS.ProcessEnv): JoinVerifySite[] {
+  const sites: JoinVerifySite[] = [
+    {
+      key: 'moegirl',
+      label: '萌娘百科',
+      api: 'https://zh.moegirl.org.cn/api.php',
+      articleUrl: 'https://zh.moegirl.org.cn/$1',
+      verifyPage: 'QQVerify',
+      channels: [
+        // 编辑讨论群 Promax / Pro / Plus
+        { id: 'AC4CF6832AD4E74EDD7B6D6F92CD1256' },
+        { id: '7CD2F5D68549F3545058341B1FD39255' },
+        { id: 'AFFDD654537CD59DB722B17DC4F883D3' },
+        // 限水编辑交流群
+        { id: '9DE06079343B7CE28013D75AC56A6E9A', groups: ['autoconfirmed'] },
+        // 技术编辑群
+        {
+          id: 'AC4CF6832AD4E74E1774C9A236FD87FB',
+          groups: ['techeditor', 'interface-admin', 'staff', 'sysop'],
+        },
+        // 界面管理员群
+        { id: '11EF1FC331916996FB79BD94D450BECC', groups: ['interface-admin'] },
+        // 维护组群
+        {
+          id: 'DEBF09DFCC993859AF37B2146BB30CE3',
+          groups: ['staff', 'sysop', 'patroller'],
+        },
+      ],
+    },
+    {
+      key: 'fandom',
+      label: 'Fandom',
+      api: 'https://community.fandom.com/zh/api.php',
+      articleUrl: 'https://community.fandom.com/zh/wiki/$1',
+      verifyPage: 'qq-hash',
+      // Fandom中文
+      channels: [{ id: 'AC4CF6832AD4E74E2C317F591B7B85A7' }],
+    },
+  ]
+  for (const entry of env.JOIN_VERIFY_TEST_CHANNELS?.split(',') ?? []) {
+    const [key, id, groups] = entry.trim().split(':')
+    const site = sites.find((s) => s.key === key)
+    if (site && id)
+      site.channels.push({ id, groups: groups?.split('|').filter(Boolean) })
+  }
+  return sites
+}
