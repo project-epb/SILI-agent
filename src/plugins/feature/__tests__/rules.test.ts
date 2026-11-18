@@ -8,7 +8,7 @@ const cmd = (name: string, level?: number, parent: CommandNode | null = null): C
   parent,
 })
 
-const none = { enable: [], disable: [] }
+const none = {}
 
 describe('levelOf', () => {
   it('inherits the nearest declared level, defaulting to 1', () => {
@@ -29,12 +29,12 @@ describe('isOn', () => {
 
   it('an enable anywhere on the chain lifts the level check', () => {
     const gen = cmd('comfyui.generate', undefined, cmd('comfyui', 100))
-    expect(isOn(gen, { enable: ['comfyui'], disable: [] }, 1)).toBe(true)
+    expect(isOn(gen, { comfyui: true }, 1)).toBe(true)
   })
 
   it('a disable anywhere on the chain wins over enable and level', () => {
     const root = cmd('wiki', 0)
-    expect(isOn(cmd('wiki.connect', undefined, root), { enable: ['wiki.connect'], disable: ['wiki'] }, 1)).toBe(false)
+    expect(isOn(cmd('wiki.connect', undefined, root), { 'wiki.connect': true, wiki: false }, 1)).toBe(false)
   })
 })
 
@@ -42,7 +42,8 @@ describe('applyOverride', () => {
   it('only records deviations from the level default', () => {
     expect(applyOverride(none, 'chat', true, 'enable')).toEqual(none)
     expect(applyOverride(none, 'comfyui', false, 'disable')).toEqual(none)
-    expect(applyOverride(none, 'comfyui', false, 'enable')).toEqual({ enable: ['comfyui'], disable: [] })
-    expect(applyOverride({ enable: [], disable: ['chat'] }, 'chat', true, 'reset')).toEqual(none)
+    expect(applyOverride(none, 'comfyui', false, 'enable')).toEqual({ comfyui: true })
+    expect(applyOverride({ callme: false }, 'callme', true, 'enable')).toEqual(none)
+    expect(applyOverride({ comfyui: true }, 'comfyui', false, 'disable')).toEqual(none)
   })
 })

@@ -47,8 +47,8 @@ export interface FeatureOverride {
   platform: string
   /** Group channel id, or `private:<user id>` for a DM. */
   id: string
-  enable: string[]
-  disable: string[]
+  /** Command name → forced on (true) or off (false). */
+  override: Record<string, boolean>
 }
 
 export interface Config {
@@ -89,8 +89,7 @@ export default class FeatureService extends Service {
       {
         platform: 'string(32)',
         id: 'string(128)',
-        enable: 'list',
-        disable: 'list',
+        override: 'json',
       },
       { primary: ['platform', 'id'] }
     )
@@ -131,7 +130,7 @@ export default class FeatureService extends Service {
   async reload() {
     const rows = await this.ctx.database.get('feature_override', {})
     this.overrides = new Map(
-      rows.map((r) => [`${r.platform}:${r.id}`, { enable: r.enable, disable: r.disable }])
+      rows.map((r) => [`${r.platform}:${r.id}`, r.override ?? {}])
     )
   }
 
@@ -169,7 +168,7 @@ export default class FeatureService extends Service {
       action
     )
     await this.ctx.database.upsert('feature_override', [
-      { platform, id: chatId, enable: [...next.enable], disable: [...next.disable] },
+      { platform, id: chatId, override: { ...next } },
     ])
     this.overrides.set(`${platform}:${chatId}`, next)
   }
@@ -187,7 +186,7 @@ export default class FeatureService extends Service {
           '',
         level: levelOf(node(c)),
         on: isOn(node(c), overrides, chatLevel),
-        overridden: overrides.enable.includes(c.name) || overrides.disable.includes(c.name),
+        overridden: c.name in overrides,
       }))
       .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
   }
@@ -223,7 +222,7 @@ export default class FeatureService extends Service {
       .command(`${FEATURE_COMMAND} [...names:string]`, '查看和开关本群的功能', {
         authority: 3,
       })
-      .alias('功能')
+      .alias('feat', '功能')
       .userFields(['authority'])
       .option('enable', '-e 强制打开')
       .option('disable', '-d 强制关闭')
@@ -273,8 +272,8 @@ export default class FeatureService extends Service {
             refused.push(`${command.name}（权限不足）`)
             continue
           }
-          if (commandLevel > level && authority < 4) {
-            refused.push(`${command.name}（本群用不了这个功能，只有 op 能开关）`)
+          if (action === 'enable' && commandLevel > level && authority < 4) {
+            refused.push(`${command.name}（本群服务等级不足，只有 op 能打开）`)
             continue
           }
           if (action === 'enable' && commandLevel > 0 && level === 0) {
@@ -298,8 +297,10 @@ export default class FeatureService extends Service {
     const lines = [
       `${session.isDirect ? '本私聊' : '本群'}：${level ? '已激活' : '试用（只有基础功能）'}`,
     ]
-    if (overrides.enable.length) lines.push(`强制打开：${overrides.enable.join('、')}`)
-    if (overrides.disable.length) lines.push(`强制关闭：${overrides.disable.join('、')}`)
+    const on = Object.keys(overrides).filter((n) => overrides[n])
+    const off = Object.keys(overrides).filter((n) => !overrides[n])
+    if (on.length) lines.push(`强制打开：${on.join('、')}`)
+    if (off.length) lines.push(`强制关闭：${off.join('、')}`)
     if (lines.length === 1) lines.push('没有单独开关的功能。')
     return lines.join('\n')
   }

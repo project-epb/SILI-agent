@@ -19,13 +19,13 @@ export interface CommandNode {
   parent: CommandNode | null
 }
 
-/** Per-chat overrides, holding only deviations from the level default. */
-export interface Overrides {
-  enable: readonly string[]
-  disable: readonly string[]
-}
+/**
+ * Per-chat overrides by command name: true forces on, false forces off.
+ * Holds only deviations from the level default.
+ */
+export type Overrides = Readonly<Record<string, boolean>>
 
-export const NO_OVERRIDES: Overrides = { enable: [], disable: [] }
+export const NO_OVERRIDES: Overrides = {}
 
 /** Nodes from the command up to its top-level ancestor. */
 function chain(command: CommandNode | null): CommandNode[] {
@@ -49,8 +49,8 @@ export function isOn(
   chatLevel: number
 ): boolean {
   const nodes = chain(command)
-  if (nodes.some((n) => overrides.disable.includes(n.name))) return false
-  if (nodes.some((n) => overrides.enable.includes(n.name))) return true
+  if (nodes.some((n) => overrides[n.name] === false)) return false
+  if (nodes.some((n) => overrides[n.name] === true)) return true
   return levelOf(command) <= chatLevel
 }
 
@@ -58,7 +58,7 @@ export type OverrideAction = 'enable' | 'disable' | 'reset'
 
 /**
  * New overrides after an action on one command. An action that matches the
- * level default just clears the override, so the lists stay minimal.
+ * level default just drops the override, so the record stays minimal.
  */
 export function applyOverride(
   overrides: Overrides,
@@ -66,9 +66,9 @@ export function applyOverride(
   onByLevel: boolean,
   action: OverrideAction
 ): Overrides {
-  const enable = overrides.enable.filter((n) => n !== name)
-  const disable = overrides.disable.filter((n) => n !== name)
-  if (action === 'enable' && !onByLevel) enable.push(name)
-  if (action === 'disable' && onByLevel) disable.push(name)
-  return { enable, disable }
+  const next: Record<string, boolean> = { ...overrides }
+  delete next[name]
+  if (action === 'enable' && !onByLevel) next[name] = true
+  if (action === 'disable' && onByLevel) next[name] = false
+  return next
 }
