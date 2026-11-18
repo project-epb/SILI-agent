@@ -12,6 +12,7 @@ import {
   type WikiUser,
   bindOnApproval,
   decide,
+  latestPerMember,
 } from './verify'
 
 declare module 'koishi' {
@@ -379,7 +380,8 @@ export default class PluginWikiJoinVerify {
               `验证已通过，但自动同意失败：${errorText(error)}`,
               decision.user
             ).join('\n\n'),
-            [request]
+            [request],
+            { passive: false }
           )
           return
         }
@@ -401,7 +403,9 @@ export default class PluginWikiJoinVerify {
           user?: { name: string }
         }
         lines = this.pending(site, request, reason, user)
-        await this.notify(session, lines.join('\n\n'), [request])
+        await this.notify(session, lines.join('\n\n'), [request], {
+          passive: false,
+        })
         return
       }
     } catch (error) {
@@ -410,10 +414,12 @@ export default class PluginWikiJoinVerify {
         request,
         `查询${site.label}失败：${errorText(error)}`
       )
-      await this.notify(session, lines.join('\n\n'), [request])
+      await this.notify(session, lines.join('\n\n'), [request], {
+        passive: false,
+      })
       return
     }
-    await this.notify(session, lines.join('\n\n'))
+    await this.notify(session, lines.join('\n\n'), [], { passive: false })
   }
 
   private pending(
@@ -544,7 +550,7 @@ export default class PluginWikiJoinVerify {
       if (!result?.next_cursor || !result.list?.length) break
       cursor = result.next_cursor
     }
-    return all
+    return latestPerMember(all)
   }
 
   /**
@@ -577,14 +583,17 @@ export default class PluginWikiJoinVerify {
   }
 
   /**
-   * Passive reply by event id first, proactive message otherwise. The source
-   * session must not expose messageId: qq-crack would send the join request id
-   * as msg_id and fail.
+   * Passive reply by event id first, proactive message otherwise. A join
+   * request event cannot be replied to (40034027), so its notices pass
+   * `passive: false` and go straight out proactively. The source session must
+   * not expose messageId: qq-crack would send the join request id as msg_id
+   * and fail.
    */
   private async notify(
     session: Session,
     markdown: string,
-    requests: JoinRequest[] = []
+    requests: JoinRequest[] = [],
+    { passive = true } = {}
   ) {
     const content = requests.length
       ? keyboardMessage(markdown, requests)
@@ -592,18 +601,18 @@ export default class PluginWikiJoinVerify {
     const source = Object.create(session, {
       messageId: { value: undefined },
     }) as Session
-    try {
-      const ids = await session.bot.sendMessage(
-        session.channelId!,
-        content,
-        undefined,
-        {
-          session: source,
-        }
-      )
-      if (ids.length) return
-    } catch (error) {
-      this.logger.debug('passive notice failed, sending proactively', error)
+    if (passive) {
+      try {
+        const ids = await session.bot.sendMessage(
+          session.channelId!,
+          content,
+          undefined,
+          { session: source }
+        )
+        if (ids.length) return
+      } catch (error) {
+        this.logger.debug('passive notice failed, sending proactively', error)
+      }
     }
     await session.bot.sendMessage(session.channelId!, content)
   }
