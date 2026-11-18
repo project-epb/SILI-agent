@@ -1,5 +1,6 @@
 import { Bot, Command, Context, Logger, Session, Universal } from 'koishi'
 
+import type FeatureService from '../feature'
 import type QQBotService from './index'
 
 export const BIND_ALIAS = '多账号绑定'
@@ -73,14 +74,18 @@ export function migrationNotice(oldSiliIsHere: boolean) {
 
 /** Channel fields carried over by group migration, when the model has them. */
 const COPIED_FIELDS = [
-  'enable',
-  'disable',
   'mwApi',
   'userBlacklist',
   'locales',
   'permissions',
   'github.webhooks',
 ]
+
+/**
+ * koishi-plugin-switch's per-channel lists on old OneBot rows. v5 does not
+ * load switch: migration turns them into feature overrides, never copies them.
+ */
+const SWITCH_FIELDS = ['enable', 'disable'] as const
 
 export class MigrationFeatures {
   private logger: Logger
@@ -91,6 +96,8 @@ export class MigrationFeatures {
     private service: QQBotService
   ) {
     this.logger = ctx.logger('qqbot-migration')
+    // Declared so old rows can be read; nothing in v5 writes them.
+    ctx.model.extend('channel', { enable: 'list', disable: 'list' } as any)
     this.setupBind()
     this.setupMenu()
     this.setupGroupMigrate()
@@ -192,8 +199,18 @@ export class MigrationFeatures {
       fields as any
     )
     if (!old) return `找不到旧群 ${oldGroup} 的记录。`
+    const [legacy] = (await db.get(
+      'channel',
+      { platform: 'onebot', id: oldGroup },
+      SWITCH_FIELDS as any
+    )) as Array<{ enable?: string[]; disable?: string[] }>
+    const toggles = [
+      ...(legacy?.disable ?? []).map((name) => ({ name, on: false })),
+      ...(legacy?.enable ?? []).map((name) => ({ name, on: true })),
+    ]
 
     const present = fields.filter((f) => hasValue(readPath(old, f)))
+    if (toggles.length) present.push('功能开关')
     if (!confirmed) {
       const name = await this.groupName(session)
       return [
@@ -241,6 +258,34 @@ export class MigrationFeatures {
       `迁移完成：已复制 ${present.length ? present.join('、') : '（无）'}，当前群已激活。`
     )
     await this.service.activateGroup('qq', selfId, channelId, session)
+    await this.importToggles(channelId, toggles)
+  }
+
+  /**
+   * Old switch toggles as feature overrides on the now activated (level 1)
+   * group. Names no command answers to any more are skipped.
+   */
+  private async importToggles(
+    channelId: string,
+    toggles: { name: string; on: boolean }[]
+  ) {
+    if (!toggles.length) return
+    // Not injected: the feature service depends on this one.
+    const feature = this.ctx.get('feature') as FeatureService | undefined
+    if (!feature) return this.logger.warn('no feature service, toggles lost')
+    for (const { name, on } of toggles) {
+      try {
+        await feature.override(
+          'qq',
+          channelId,
+          1,
+          name,
+          on ? 'enable' : 'disable'
+        )
+      } catch {
+        this.logger.info('skip old toggle %s for %s', name, channelId)
+      }
+    }
   }
 
   private async groupName(session: Session) {
