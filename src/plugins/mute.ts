@@ -4,45 +4,79 @@
  * @desc 设置群组成员禁言/全员禁言
  * @authority 3
  */
-import { Context } from 'koishi'
+import { Context, Time } from 'koishi'
 
 import BasePlugin from '~/_boilerplate'
+
+import { QQBot } from 'koishi-plugin-adapter-qq-crack'
 
 export default class PluginMute extends BasePlugin {
   constructor(public ctx: Context) {
     super(ctx, {}, 'mute')
 
-    ctx = ctx.platform('red', 'onebot').channel()
     ctx
-      .command('channel.mute <duration:number> 群禁言，duration 为禁言时长（秒）', { authority: 3 })
-      .option('set-user', '-u <user:user> 禁言指定用户')
-      .option(
-        'set-all',
-        '-a 开关全员禁言：duration>0 开启，duration=0 关闭',
-        { type: 'boolean' }
-      )
-      .action(({ session, options }, duration) => {
-        this.logger.info(options, duration)
-        if (options['set-all']) {
-          if (session.platform === 'red') {
-            session.bot.internal?.muteGroup({
-              group: session!.channelId,
-              enable: +duration > 0,
-            })
-          } else {
-            session.bot.muteChannel(
-              session.channelId,
-              session.guildId,
-              +duration > 0
-            )
+      .channel()
+      .command('channel.mute', '群禁言相关 (查看子指令)', { authority: 3 })
+
+    ctx
+      .channel()
+      .command('channel.mute.all', '群全员禁言', { authority: 3 })
+      .option('set', '-s 开启')
+      .option('unset', '-u 关闭')
+      .action(async ({ session, options }) => {
+        if (options.set || options.unset) {
+          const enable = !!options.set
+          await session.bot.muteChannel(
+            session.channelId,
+            session.guildId,
+            enable
+          )
+          if (session.bot instanceof QQBot) {
+            // QQ can return HTTP 200 without applying the global mute rule.
+            const { global_rule } =
+              await session.bot.internal.getRestrictChatSetting(
+                session.guildId ?? session.channelId
+              )
+            if (global_rule?.mode !== (enable ? 'always' : 'none')) {
+              return `平台接口异常，无法确认全员禁言状态，请稍后再试`
+            }
           }
+          return enable ? `已开启全员禁言` : `已关闭全员禁言`
         }
-        if (options['set-user']) {
-          const uid = options['set-user'].includes(':')
-            ? options['set-user'].split(':')[1]
-            : options['set-user']
-          session.bot.muteGuildMember(session.channelId, uid, +duration)
+
+        return session.execute({
+          name: 'help',
+          args: ['channel.mute.all'],
+        })
+      })
+
+    ctx
+      .channel()
+      .command('channel.mute.member', '群成员禁言', { authority: 3 })
+      .option('user', '-u <user:user> 禁言指定用户（@提及或 @用户ID）')
+      .option(
+        'duration',
+        '-d <duration:natural> 禁言时长，单位秒（0 为解除禁言）'
+      )
+      .action(async ({ session, options }) => {
+        if (typeof options.duration !== 'undefined' && options.user) {
+          const uid = options['user'].includes(':')
+            ? options['user'].split(':')[1]
+            : options['user']
+          await session.bot.muteGuildMember(
+            session.guildId ?? session.channelId,
+            uid,
+            options.duration * Time.second
+          )
+          return options.duration > 0
+            ? `已禁言 ${options['user']} ${options.duration} 秒`
+            : `已解除禁言 ${options['user']}`
         }
+
+        return session.execute({
+          name: 'help',
+          args: ['channel.mute.member'],
+        })
       })
   }
 }
