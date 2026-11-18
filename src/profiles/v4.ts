@@ -11,6 +11,7 @@ import { App, Context, h } from 'koishi'
 import process from 'node:process'
 
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
+import CommandPermissions from '@/modules/CommandPermissions'
 import FallbackHandler from '@/modules/FallbackHandler'
 import { FixQQSendLinks } from '@/modules/FixQQSendLinks'
 import { GuildRequestFirewall } from '@/modules/GuildRequestFirewall'
@@ -256,6 +257,8 @@ function install(app: App) {
     // [common]
     ctx.plugin(function PluginCollectionLegacyCommon(ctx) {
       ctx.plugin(PluginAdmin) // channel user auth
+      // `group:admin` 权限、authority 与 permissions 并写时补 authority:n、放开 `channel` 父指令
+      ctx.plugin(CommandPermissions)
       ctx.plugin(PluginBind)
       ctx.plugin(PluginBroadcast)
       ctx.plugin(PluginCallme)

@@ -1,3 +1,5 @@
+import { GROUP_ADMIN_ROLES } from '@/modules/CommandPermissions'
+
 import { MediaWikiApi } from 'wiki-saikou/node'
 
 import type { MWTitleMappings } from './types/MediaWiki'
@@ -124,9 +126,6 @@ export function resolveQueriedTitle(
   return title
 }
 
-/** QQ group roles (`author.member_role`) allowed to bind a wiki to their group. */
-const WIKI_ADMIN_ROLES = ['owner', 'admin']
-
 /**
  * Who may bind a wiki: SILI admins anywhere, plus the group's own owner and
  * admins inside that group.
@@ -136,7 +135,7 @@ export function canConnectWiki(
   minAuthority: number
 ): boolean {
   if (who.authority >= minAuthority) return true
-  return !who.isDirect && who.roles.some((r) => WIKI_ADMIN_ROLES.includes(r))
+  return !who.isDirect && who.roles.some((r) => GROUP_ADMIN_ROLES.includes(r))
 }
 
 export function getUrl(base: string, params = {}, script = 'index'): string {

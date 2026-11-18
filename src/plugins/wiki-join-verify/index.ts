@@ -1,6 +1,6 @@
 import { Context, Logger, Schema, Session, h } from 'koishi'
 
-import { getUserRoles } from '@/utils/formatSession'
+import { isGroupAdmin } from '@/modules/CommandPermissions'
 
 import { markdownLink, markdownText } from '~/mediawiki/qq-reply'
 import { useApi } from '~/mediawiki/utils'
@@ -72,8 +72,6 @@ export interface Config {
   sites: Site[]
 }
 
-/** QQ group roles that may approve or reject join requests. */
-const REVIEWER_ROLES = ['owner', 'admin']
 const BUTTON_PREFIX = 'wjv'
 /** Requests listed per message: QQ allows 5 keyboard rows. */
 const LIST_LIMIT = 5
@@ -205,7 +203,7 @@ export default class PluginWikiJoinVerify {
   }
 
   private isReviewer(session: Session) {
-    return getUserRoles(session).some((r) => REVIEWER_ROLES.includes(r.id))
+    return isGroupAdmin(session)
   }
 
   /** Lookups for one request; codes and bindings are scoped to bot and wiki. */

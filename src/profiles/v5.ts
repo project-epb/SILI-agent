@@ -15,6 +15,7 @@ import process from 'node:process'
 
 import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import { logProcessErrors } from '@/bootstrap'
+import CommandPermissions from '@/modules/CommandPermissions'
 import FallbackHandler from '@/modules/FallbackHandler'
 import PluginFeature from '@/plugins/feature'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
@@ -273,6 +274,8 @@ function install(app: App) {
       featLevels: { help: 0, novelai: 100 },
     })
     ctx.plugin(PluginAdmin) // channel user auth, assign
+    // `group:admin` 权限、authority 与 permissions 并写时补 authority:n、放开 `channel` 父指令
+    ctx.plugin(CommandPermissions)
     ctx.plugin(PluginBind)
   })
 

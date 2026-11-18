@@ -1,6 +1,6 @@
 import type { Session } from 'koishi'
 
-import { getUserRoles } from '@/utils/formatSession'
+import { isGroupAdmin } from '@/modules/CommandPermissions'
 
 /**
  * Which conversation a message belongs to. A QQ group shares one
@@ -63,8 +63,6 @@ export function resolveConversationScope(session: Session): ConversationScope {
   }
 }
 
-/** QQ group roles allowed to reset the conversation their group shares. */
-const GROUP_RESET_ROLES = ['owner', 'admin']
 const GROUP_RESET_AUTHORITY = 2
 
 /**
@@ -72,6 +70,7 @@ const GROUP_RESET_AUTHORITY = 2
  * group owner/admin or a SILI moderator.
  */
 export function canResetGroupConversation(session: Session): boolean {
-  if (((session.user as any)?.authority ?? 0) >= GROUP_RESET_AUTHORITY) return true
-  return getUserRoles(session).some((r) => GROUP_RESET_ROLES.includes(r.id))
+  if (((session.user as any)?.authority ?? 0) >= GROUP_RESET_AUTHORITY)
+    return true
+  return isGroupAdmin(session)
 }
