@@ -148,7 +148,7 @@ export default class PluginGitHub extends BasePlugin<Config> {
       let quoteId = session.quote.id
       if (quoteId.startsWith('REFIDX_'))
         quoteId =
-          (await ctx.channelMessageHistory?.messageIdByRef(session, quoteId)) ?? quoteId
+          (await ctx.channelMessageHistory?.find(session, quoteId))?.messageId ?? quoteId
       const entry = await history.fetch(quoteId)
       if (!entry) return next()
       const body = session.stripped.content.trim()

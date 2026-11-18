@@ -18,6 +18,7 @@ import { PROTOCOL_MARKERS, PROTOCOL_TAGS } from '../utils/protocol'
 import {
   buildQuotedMessageBlock,
   extractQuoteMeta,
+  mergeRecordedQuote,
 } from '../utils/quoted-message'
 import { splitContent } from '../utils/stream-splitter'
 import { clampThinkingBudget, resolveThinkingLevel } from '../utils/thinking'
@@ -356,7 +357,13 @@ export default class ChatCommand extends BasePlugin {
         // accepts as `before_message_id` — free to produce here (it is already on
         // session.quote), and the id → cursor lookup only happens if the agent
         // actually decides it needs the surrounding history.
-        const quoteMeta = extractQuoteMeta(session)
+        let quoteMeta = extractQuoteMeta(session)
+        if (quoteMeta?.messageId) {
+          const recorded = await llm.ctx.channelMessageHistory
+            ?.find(session, quoteMeta.messageId)
+            .catch(() => undefined)
+          if (recorded) quoteMeta = mergeRecordedQuote(quoteMeta, recorded, TZ)
+        }
         const quotedMessageBlock = quoteMeta
           ? buildQuotedMessageBlock(
               quoteMeta,

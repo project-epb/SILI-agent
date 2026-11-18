@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   buildQuotedMessageBlock,
   extractQuoteMeta,
+  mergeRecordedQuote,
 } from '../utils/quoted-message'
 
 const MAX = 1000
@@ -136,6 +137,31 @@ describe('extractQuoteMeta', () => {
       authorId: undefined,
       messageId: undefined,
       self: false,
+    })
+  })
+})
+
+describe('mergeRecordedQuote', () => {
+  it('swaps a QQ REFIDX for the recorded id and fills author and time', () => {
+    const merged = mergeRecordedQuote(
+      { content: '[GitHub] pushed', messageId: 'REFIDX_abc', self: false },
+      {
+        messageId: 'ROBOT1.0_xyz',
+        userId: 'bot',
+        username: 'SILI Official',
+        isSelf: true,
+        content: 'ignored',
+        time: new Date('2026-11-18T02:00:27Z'),
+      },
+      'Asia/Shanghai'
+    )
+    expect(merged).toEqual({
+      content: '[GitHub] pushed',
+      author: 'SILI Official',
+      authorId: 'bot',
+      self: true,
+      messageId: 'ROBOT1.0_xyz',
+      time: '2026-11-18 10:00:27',
     })
   })
 })

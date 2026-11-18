@@ -181,16 +181,16 @@ export default class ChannelMessageHistory extends Service {
   }
 
   /**
-   * The id of the message a QQ reference index (`REFIDX_…`, what a quote
-   * carries) points to in this channel; undefined when not recorded.
+   * A recorded message of this channel by its id, or by its QQ reference index
+   * (`REFIDX_…`, what a QQ official quote carries); undefined when not recorded.
    */
-  async messageIdByRef(session: Session, refIdx: string): Promise<string | undefined> {
+  async find(session: Session, id: string): Promise<ChannelMessage | undefined> {
     const [row] = await this.ctx.database.get(
       'channel_message',
-      { ...scopeOf(session), refIdx },
-      { fields: ['messageId'], limit: 1 }
+      { ...scopeOf(session), ...(id.startsWith('REFIDX_') ? { refIdx: id } : { messageId: id }) },
+      { limit: 1 }
     )
-    return row?.messageId
+    return row
   }
 
   /** Oldest first. An explicit cursor includes its message. */

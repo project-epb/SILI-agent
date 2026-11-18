@@ -63,7 +63,7 @@ ChatCommand.action      ▼
 [5] 构造 user envelope:
                         <turn_context>{...}</turn_context>
                         <interrupt_notice>...</interrupt_notice>   ← 仅 mid-stream 注入，不入库
-                        <quoted_message author=… self=… seq=…>…</quoted_message>
+                        <quoted_message author=… self=… time=… message_id=…>…</quoted_message>
                                                                   ← 仅当本轮有 quote，入库
                         <user_message>用户原话</user_message>
                         │

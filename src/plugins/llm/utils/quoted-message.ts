@@ -13,6 +13,38 @@ export interface QuotedMessageMeta {
   self?: boolean
   /** Platform message id — what `read_channel_history`'s `before_message_id` takes. */
   messageId?: string
+  /** When it was sent, formatted like `read_channel_history`'s timestamps. */
+  time?: string
+}
+
+/** The parts of a recorded channel message that fill in a quote. */
+export interface RecordedQuote {
+  messageId: string
+  userId: string
+  username: string
+  isSelf: boolean
+  content: string
+  time: Date
+}
+
+/**
+ * Fill a quote from the channel's own record of that message. QQ official
+ * quotes carry neither author nor time, and name the message by its `REFIDX_`,
+ * which `read_channel_history` cannot anchor on — the record has the real id.
+ */
+export function mergeRecordedQuote(
+  meta: QuotedMessageMeta,
+  row: RecordedQuote,
+  timeZone: string
+): QuotedMessageMeta {
+  return {
+    content: meta.content || row.content,
+    author: meta.author || row.username || undefined,
+    authorId: meta.authorId || row.userId,
+    self: meta.self || row.isSelf,
+    messageId: row.messageId,
+    time: row.time.toLocaleString('sv', { timeZone }),
+  }
 }
 
 /** Pull what satori knows about the quoted message off the session. */
@@ -62,6 +94,7 @@ export function buildQuotedMessageBlock(
     attr('author', meta.author) +
     attr('author_id', meta.authorId) +
     (meta.self ? ' self="true"' : '') +
+    attr('time', meta.time) +
     attr('message_id', meta.messageId)
   return `<${TAG}${attrs}>\n${body}\n</${TAG}>`
 }
