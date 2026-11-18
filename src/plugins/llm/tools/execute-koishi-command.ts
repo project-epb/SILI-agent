@@ -15,7 +15,7 @@ export const EXECUTE_KOISHI_COMMAND_TOOL: ToolDefinition = {
   description: [
     '以当前用户的身份执行一条 Koishi 指令。系统提示词的「可用指令」列出顶层指令。调用时直接使用帮助或清单返回的完整指令名。',
     '',
-    '- 查找指令：`{name: "help", args: ["关键词"]}`，例如 `"禁言"`，按名称和描述搜索所有层级。',
+    '- 查找指令：`{name: "_find_command_", args: ["关键词"]}`，例如 `"禁言"`，按名称和描述搜索所有层级。',
     '- 首次使用某条指令前查看详情：`{name: "help", args: ["channel.mute.member"]}`。用详情中的参数和选项键构造调用。',
   ].join('\n'),
   parameters: {
@@ -23,7 +23,7 @@ export const EXECUTE_KOISHI_COMMAND_TOOL: ToolDefinition = {
     properties: {
       name: {
         type: 'string',
-        description: "指令的完整路径名，如 'foo' 或 'foo.bar'",
+        description: '指令的完整名称，或用于搜索的 `_find_command_`',
       },
       args: {
         type: 'array',
@@ -63,7 +63,6 @@ export function isForbiddenAgentCommand(name: string): boolean {
  * Render an agent-friendly help payload. Pure — takes the catalog directly.
  * - No args: list top-level commands (one line each).
  * - First arg = command name: render that entry's full detail.
- * - Keyword: search names and descriptions across all levels.
  */
 export function renderAgentHelp(
   catalog: readonly CommandCatalogEntry[],
@@ -79,6 +78,15 @@ export function renderAgentHelp(
   }
   const entry = findCatalogEntry(catalog, query)
   if (entry) return renderCatalogEntryDetail(entry)
+  return `没有名为「${query}」的指令。可用 \`_find_command_\` 按关键词搜索。`
+}
+
+function renderCommandSearch(
+  catalog: readonly CommandCatalogEntry[],
+  keyword?: string
+): string {
+  const query = keyword?.trim()
+  if (!query) return '请在 `args[0]` 提供搜索关键词。'
 
   const matches = Array.from(
     searchCatalogEntries(catalog, query),
@@ -106,12 +114,14 @@ async function runExecuteKoishiCommand(
   // 拦截 help: koishi 原生 help 把 wiki.connect 显示成 "wiki connect"，
   // 把 llm/chat 也显示成 "llm chat"，AI 无法分辨命名空间和分类。我们用
   // 自己的 catalog 数据按真实 name 渲染，避免误导。
-  if (input.name === 'help') {
+  if (input.name === 'help' || input.name === '_find_command_') {
     const llm = (ctx as any).llm as
       | { getCatalog?: () => readonly CommandCatalogEntry[] }
       | undefined
     const catalog = llm?.getCatalog?.() ?? []
-    return renderAgentHelp(catalog, input.args?.[0])
+    return input.name === 'help'
+      ? renderAgentHelp(catalog, input.args?.[0])
+      : renderCommandSearch(catalog, input.args?.[0])
   }
 
   // 部分 koishi 插件违反开发规范，在 action 里直接 session.send 而不是
