@@ -36,7 +36,7 @@ export const PERSONA_STICKERS: Record<string, PersonaSticker[]> = {
     { name: '谢谢', meaning: '谢谢、感谢', url: sili('thanks') },
     { name: '加油', meaning: '加油、打气', url: sili('cheer') },
     { name: '吃瓜', meaning: '吃瓜、围观、看戏', url: sili('popcorn') },
-    { name: '摸鱼躺平', meaning: '摸鱼、躺平、摆烂', url: sili('slacking') },
+    { name: '摸鱼躺平', meaning: '摸鱼、躺平、摆烂', url: sili('slacking-v2') },
     { name: '晚安', meaning: '晚安、困了、去睡了', url: sili('goodnight') },
   ],
   noir: [
@@ -54,7 +54,7 @@ export const PERSONA_STICKERS: Record<string, PersonaSticker[]> = {
     { name: '勉强道谢', meaning: '不情不愿地说谢谢', url: noir('thanks') },
     { name: '加油', meaning: '加油、包在我身上', url: noir('cheer') },
     { name: '吃瓜', meaning: '吃瓜看戏、幸灾乐祸', url: noir('popcorn') },
-    { name: '摸鱼', meaning: '摸鱼偷懒（字面意义：抱着一条大鱼在摸）', url: noir('fish') },
+    { name: '摸鱼', meaning: '摸鱼偷懒（字面意义：抱着一条大鱼在摸）', url: noir('fish-v3') },
     { name: '晚安', meaning: '晚安、困了、去睡了', url: noir('goodnight') },
   ],
 }
