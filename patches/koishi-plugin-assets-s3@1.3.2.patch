@@ -1,0 +1,22 @@
+diff --git a/lib/index.js b/lib/index.js
+index fec4408c2932f56f93b9cc6c3de7b317d9f4ee63..ab8b6f5f8e3366f0e97c05ccf967f9f5a26533fa 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -32,7 +32,7 @@ class S3Assets extends assets_1.default {
+         if (url.startsWith(this.publicUrl)) {
+             return url;
+         }
+-        const { buffer, filename } = await this.analyze(url, file);
++        const { buffer, filename, type } = await this.analyze(url, file);
+         const s3Key = `${this.config.pathPrefix}${filename}`;
+         const finalUrl = `${this.publicUrl}${filename}`;
+         const checkExisting = await this.listObjects(s3Key);
+@@ -42,6 +42,8 @@ class S3Assets extends assets_1.default {
+             Bucket: this.config.bucket,
+             Key: s3Key,
+             Body: buffer,
++            // without it R2 serves application/octet-stream and some clients refuse the image
++            ...(type && { ContentType: type }),
+         }));
+         return finalUrl;
+     }

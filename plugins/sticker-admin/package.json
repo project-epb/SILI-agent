@@ -1,0 +1,10 @@
+{
+  "name": "koishi-plugin-sticker-admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Console page for SILI's sticker pool: upload, browse, tag, disable, harvest limits",
+  "main": "index.ts",
+  "peerDependencies": {
+    "koishi": "^4.18.0"
+  }
+}

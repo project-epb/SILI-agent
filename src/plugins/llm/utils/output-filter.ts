@@ -61,8 +61,22 @@ const PAIRED_TAGS: ReadonlySet<string> = new Set(['a'])
 export function sanitizeAgentOutput(text: string): string {
   if (!text) return text
 
-  const nodes = parseKoishiBBCode(text, { pairedTags: PAIRED_TAGS })
+  const nodes = parseKoishiBBCode(fixAngleMarkers(text), {
+    pairedTags: PAIRED_TAGS,
+  })
   return nodes.map(renderNode).join('')
+}
+
+/**
+ * The model sometimes opens a marker with `<` instead of `[`
+ * (`<koishi:emote tag="x"]`, `<koishi:img src="…"/>`). `<koishi:` never occurs
+ * in prose, so rewriting it to bracket form is safe.
+ */
+function fixAngleMarkers(text: string): string {
+  return text.replace(
+    /<(\/?koishi:[a-z_]+)((?:\s+[a-z_]+="[^"]*")*)\s*\/?[>\]]/gi,
+    '[$1$2]'
+  )
 }
 
 function renderNode(node: BBCodeNode): string {
@@ -81,6 +95,9 @@ function renderElement(el: BBCodeElement): string {
   }
   if (el.tag.toLowerCase() === 'a') {
     return renderA(el)
+  }
+  if (el.tag.toLowerCase() === 'emote') {
+    return renderEmote(el)
   }
   // Unknown tag — escape the raw source so user sees what the agent wrote.
   return h.text(el.raw).toString()
@@ -102,6 +119,19 @@ function renderImg(el: BBCodeElement): string {
   }
   // Placeholder / missing src: surface as literal so user can see what
   // the agent wrote (helps debug agent mistakes).
+  return h.text(el.raw).toString()
+}
+
+/**
+ * `[koishi:emote]` sends a sticker from the pool; it becomes a `<sticker>`
+ * element that chat resolves to an image at send time. Not named `sticker`
+ * on the model side: that is the name of the template meme-generator command.
+ */
+function renderEmote(el: BBCodeElement): string {
+  const id = getAttr(el, 'id')
+  const tag = getAttr(el, 'tag')
+  if (id && /^\d+$/.test(id)) return h('sticker', { id }).toString()
+  if (tag) return h('sticker', { tag }).toString()
   return h.text(el.raw).toString()
 }
 

@@ -17,8 +17,8 @@ import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import { logProcessErrors } from '@/bootstrap'
 import CommandPermissions from '@/modules/CommandPermissions'
 import FallbackHandler from '@/modules/FallbackHandler'
-import PluginFeature from '@/plugins/feature'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
+import PluginFeature from '@/plugins/feature'
 import PluginMute from '@/plugins/mute'
 import { PluginCollectionDialogue } from '@/profiles/shared/dialogue'
 import { installNovelAI } from '@/profiles/shared/novelai'
@@ -32,6 +32,7 @@ import {
   mediawikiConfig,
   pixivConfig,
   puppeteerConfig,
+  stickerPoolConfig,
 } from '@/profiles/shared/plugin-configs'
 import type { Profile } from '@/profiles/types'
 import PiggybackService from '@/services/PiggybackService'
@@ -67,6 +68,7 @@ import PluginReboot from '~/reboot'
 import PluginSensitiveFilter from '~/sensitive-words-filter'
 import PluginSpawn from '~/spawn'
 import PluginSticker from '~/sticker'
+import PluginStickerPool from '~/sticker-pool'
 import PluginToImage from '~/to-image'
 import PluginWebShot from '~/webshot'
 import PluginWhoAsked from '~/who-asked'
@@ -110,6 +112,7 @@ import * as PluginRateLimit from 'koishi-plugin-rate-limit'
 import * as PluginRecall from 'koishi-plugin-recall'
 import * as PluginSchedule from 'koishi-plugin-schedule'
 import PluginSilk from 'koishi-plugin-silk'
+import * as PluginStickerAdmin from 'koishi-plugin-sticker-admin'
 
 import PluginHTTP from '@cordisjs/plugin-http'
 
@@ -328,6 +331,8 @@ function install(app: App) {
     ctx.plugin(PluginLlmAdmin)
     // 频道管理器：查看官方 bot 所在的群和私聊过的人，激活或取消（authority 4）
     ctx.plugin(PluginQQBotAdmin)
+    // 表情库：上传、打标、禁用、自动收集的开关与上限（authority 4）
+    ctx.plugin(PluginStickerAdmin)
     // 用户反馈：只有聊天 LLM 能提交，在控制台查看（authority 4）
     ctx.plugin(PluginFeedback)
   })
@@ -361,6 +366,8 @@ function install(app: App) {
     ctx.plugin(PluginMinecraft)
     // 服务等级 100（见 PluginFeature 配置），按群用 `feature -e novelai` 打开
     installNovelAI(ctx)
+    const stickers = stickerPoolConfig(env)
+    if (stickers) ctx.plugin(PluginStickerPool, stickers)
     ctx.inject(['channelMessageHistory'], (ctx) => {
       ctx.plugin(PluginLLM, llmConfig(env))
       ctx.plugin(PluginWhoAsked)
