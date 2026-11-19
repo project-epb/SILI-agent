@@ -109,6 +109,13 @@
         "koishi": "^4.18.0",
       },
     },
+    "plugins/sticker-admin": {
+      "name": "koishi-plugin-sticker-admin",
+      "version": "0.0.0",
+      "peerDependencies": {
+        "koishi": "^4.18.0",
+      },
+    },
   },
   "patchedDependencies": {
     "koishi-plugin-adapter-qq-crack@1.0.33": "patches/koishi-plugin-adapter-qq-crack@1.0.33.patch",
@@ -1203,6 +1210,8 @@
     "koishi-plugin-schedule": ["koishi-plugin-schedule@5.0.1", "https://registry.npmmirror.com/koishi-plugin-schedule/-/koishi-plugin-schedule-5.0.1.tgz", { "peerDependencies": { "koishi": "4.18.0" } }, "sha512-L3Pha8zS2aRGOXuC92Khu1bEOdS9RNxjr6zEJ/GnWcWAzml4H4D/MrEFrjbno307kLnrFi/dCEe7yZwomvLmjQ=="],
 
     "koishi-plugin-silk": ["koishi-plugin-silk@2.0.1", "https://registry.npmmirror.com/koishi-plugin-silk/-/koishi-plugin-silk-2.0.1.tgz", { "dependencies": { "@shopify/semaphore": "^3.1.0", "silk-wasm": "^3.7.1" }, "peerDependencies": { "koishi": "^4.17.7" } }, "sha512-HtlatVg+mRuE6pswntI6gTEJ4Mfa0hpzuu0smKvNsrLYxUnkjJ56GxkQlfjjaufiqLacp3+8wkxJrr/rPXro5w=="],
+
+    "koishi-plugin-sticker-admin": ["koishi-plugin-sticker-admin@workspace:plugins/sticker-admin"],
 
     "koishi-plugin-switch": ["koishi-plugin-switch@1.10.1", "https://registry.npmmirror.com/koishi-plugin-switch/-/koishi-plugin-switch-1.10.1.tgz", { "peerDependencies": { "koishi": "^4.17.8" } }, "sha512-fN4XC5gZ1VmeNmWnIq+aaL5rXHVePC9VxREhxwitR3tj6X+ijNPytjfmoUAryNZL9US3Y0ytAaRcp+mjHCugPg=="],
 
