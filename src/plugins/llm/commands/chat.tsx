@@ -190,6 +190,9 @@ export default class ChatCommand extends BasePlugin {
       .action(async ({ session, options }, userPrompt) => {
         const llm = ctx.llm
         llm.logger.info('[chat] input', options, userPrompt)
+        // The model reads stickers and QQ faces by name, not as image urls.
+        const stickerPool = llm.ctx.get('stickerPool')
+        if (stickerPool && userPrompt) userPrompt = stickerPool.rewriteInbound(userPrompt)
 
         const startTime = Date.now()
         const scope = resolveConversationScope(session)
@@ -368,6 +371,9 @@ export default class ChatCommand extends BasePlugin {
             ?.find(session, quoteMeta.messageId)
             .catch(() => undefined)
           if (recorded) quoteMeta = mergeRecordedQuote(quoteMeta, recorded, TZ)
+        }
+        if (quoteMeta && stickerPool) {
+          quoteMeta = { ...quoteMeta, content: stickerPool.rewriteInbound(quoteMeta.content) }
         }
         const quotedMessageBlock = quoteMeta
           ? buildQuotedMessageBlock(
@@ -716,13 +722,25 @@ export default class ChatCommand extends BasePlugin {
             const safeText = await llm.imageRefs.resolveRefsToDataUris(
               sanitizeAgentOutput(next.text)
             )
-            const [msgId] = await session.sendQueued(
-              <>
-                {lastMessageId ? <quote id={lastMessageId} /> : ''}
-                <markdown>{h.parse(safeText)}</markdown>
-              </>
-            )
-            if (msgId) lastMessageId = msgId
+            // Stickers go out as their own image messages after the text, the
+            // way a person sends one; a sticker-only reply sends no text at all.
+            const elements = h.parse(safeText)
+            const stickers = elements.filter((e) => e.type === 'sticker')
+            const body = elements.filter((e) => e.type !== 'sticker')
+            if (body.some((e) => e.type !== 'text' || e.attrs.content.trim())) {
+              const [msgId] = await session.sendQueued(
+                <>
+                  {lastMessageId ? <quote id={lastMessageId} /> : ''}
+                  <markdown>{body}</markdown>
+                </>
+              )
+              if (msgId) lastMessageId = msgId
+            }
+            const pool = llm.ctx.get('stickerPool')
+            for (const sticker of stickers) {
+              const img = pool?.resolve(sticker.attrs)
+              if (img) await session.sendQueued(img)
+            }
           }
           sendFromIndex.value = next.nextIndex
         }

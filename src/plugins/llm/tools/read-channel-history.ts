@@ -458,7 +458,9 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
 }
 
 export function buildStoredChannelHistoryHandler(
-  history: ChannelMessageHistory
+  history: ChannelMessageHistory,
+  /** Names stickers and QQ faces in the stored content (sticker pool). */
+  rewrite: (content: string) => string = (c) => c
 ): ToolHandler {
   const parameters = READ_CHANNEL_HISTORY_TOOL.parameters
   return {
@@ -510,7 +512,7 @@ export function buildStoredChannelHistoryHandler(
           const name = (row.username || 'unknown').replace(/[\r\n]+/g, ' ')
           const sender = `${row.userId}${row.isSelf ? ', self' : ''}`
           const quote = row.quoteId ? `<quote${attr('id', row.quoteId)}/>` : ''
-          const body = row.content.replace(
+          const body = rewrite(row.content).replace(
             /(src|url)="(?:base64:|data:)[^"]*"/gi,
             '$1="[inline media]"'
           )

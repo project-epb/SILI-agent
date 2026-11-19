@@ -586,7 +586,10 @@ export default class PluginLLM extends BasePlugin<Config> {
     const channelHistory = this.ctx.channelMessageHistory
     this.tools.register(
       channelHistory
-        ? buildStoredChannelHistoryHandler(channelHistory)
+        ? buildStoredChannelHistoryHandler(
+            channelHistory,
+            (c) => this.ctx.get('stickerPool')?.rewriteInbound(c) ?? c
+          )
         : buildReadChannelHistoryHandler()
     )
 

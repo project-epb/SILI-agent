@@ -58,6 +58,20 @@ export function puppeteerConfig() {
   }
 }
 
+/** Sticker pool vision rides on the `deepseek` provider; none configured → no pool. */
+export function stickerPoolConfig(env: Env) {
+  const deepseek = parseLLMProviders(env).find((p) => p.name === 'deepseek')
+  const apiKey = deepseek?.options?.apiKey as string | undefined
+  if (!apiKey) return
+  return {
+    vision: {
+      baseURL: (deepseek!.options?.baseURL as string) || 'https://api.deepseek.com/v1',
+      apiKey,
+      model: 'deepseek-v4-flash',
+    },
+  }
+}
+
 export function llmConfig(env: Env) {
   const providers = parseLLMProviders(env)
   // DeepSeek Search & Fetch share the chat account, so the `deepseek`

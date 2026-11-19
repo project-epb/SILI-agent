@@ -82,6 +82,9 @@ function renderElement(el: BBCodeElement): string {
   if (el.tag.toLowerCase() === 'a') {
     return renderA(el)
   }
+  if (el.tag.toLowerCase() === 'sticker') {
+    return renderSticker(el)
+  }
   // Unknown tag — escape the raw source so user sees what the agent wrote.
   return h.text(el.raw).toString()
 }
@@ -102,6 +105,15 @@ function renderImg(el: BBCodeElement): string {
   }
   // Placeholder / missing src: surface as literal so user can see what
   // the agent wrote (helps debug agent mistakes).
+  return h.text(el.raw).toString()
+}
+
+/** `<sticker>` is resolved to an image by the sticker pool at send time. */
+function renderSticker(el: BBCodeElement): string {
+  const id = getAttr(el, 'id')
+  const tag = getAttr(el, 'tag')
+  if (id && /^\d+$/.test(id)) return h('sticker', { id }).toString()
+  if (tag) return h('sticker', { tag }).toString()
   return h.text(el.raw).toString()
 }
 

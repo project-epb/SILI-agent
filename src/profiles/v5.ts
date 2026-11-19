@@ -32,6 +32,7 @@ import {
   mediawikiConfig,
   pixivConfig,
   puppeteerConfig,
+  stickerPoolConfig,
 } from '@/profiles/shared/plugin-configs'
 import type { Profile } from '@/profiles/types'
 import PiggybackService from '@/services/PiggybackService'
@@ -56,6 +57,7 @@ import PluginPing from '~/ping'
 import PluginPixiv from '~/pixiv'
 import PluginPowerUser from '~/power-user'
 import PluginProfile from '~/profile'
+import PluginStickerPool from '~/sticker-pool'
 import QQBotService, {
   ServedState,
   accessAppOptions,
@@ -361,6 +363,8 @@ function install(app: App) {
     ctx.plugin(PluginMinecraft)
     // 服务等级 100（见 PluginFeature 配置），按群用 `feature -e novelai` 打开
     installNovelAI(ctx)
+    const stickers = stickerPoolConfig(env)
+    if (stickers) ctx.plugin(PluginStickerPool, stickers)
     ctx.inject(['channelMessageHistory'], (ctx) => {
       ctx.plugin(PluginLLM, llmConfig(env))
       ctx.plugin(PluginWhoAsked)

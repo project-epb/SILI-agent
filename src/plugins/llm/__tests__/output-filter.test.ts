@@ -245,4 +245,16 @@ describe('sanitizeAgentOutput', () => {
       expect(() => sanitizeAgentOutput('[koishi:a href="https://x"]click')).not.toThrow()
     })
   })
+
+  describe('sticker', () => {
+    it('keeps a numeric id', () => {
+      expect(sanitizeAgentOutput('[koishi:sticker id="12"]')).toBe('<sticker id="12"/>')
+    })
+    it('keeps a type', () => {
+      expect(sanitizeAgentOutput('好耶[koishi:sticker tag="开心"]')).toBe('好耶<sticker tag="开心"/>')
+    })
+    it('escapes a sticker with neither', () => {
+      expect(sanitizeAgentOutput('[koishi:sticker id="abc"]')).toBe('[koishi:sticker id="abc"]')
+    })
+  })
 })
