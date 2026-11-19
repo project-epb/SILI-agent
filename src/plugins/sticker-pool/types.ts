@@ -37,7 +37,8 @@ export const stickerTypeLines = () =>
  */
 export type StickerStatus = 'candidate' | 'active' | 'disabled' | 'rejected'
 
-export type StickerSource = 'upload' | 'harvest' | 'qface'
+/** `own`: a persona's own sticker set, sent by name only. */
+export type StickerSource = 'upload' | 'harvest' | 'qface' | 'own'
 
 export interface Sticker {
   id: number
@@ -51,6 +52,10 @@ export interface Sticker {
   desc: string
   /** How the group actually uses it. Written by humans only. */
   usage: string
+  /** Persona key (`sili`, `noir`) for an own sticker; '' otherwise. */
+  owner: string
+  /** Unique within its owner; what the persona calls it. '' otherwise. */
+  name: string
   url: string
   mime: string
   width: number

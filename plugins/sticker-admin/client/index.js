@@ -12,6 +12,7 @@ const SOURCES = [
   ['harvest', '群聊收集'],
   ['upload', '后台上传'],
   ['qface', 'QQ 表情'],
+  ['own', '人设专属'],
 ]
 
 const readAsDataUrl = (file) =>
@@ -60,7 +61,7 @@ const Card = defineComponent({
       return h('div', { class: ['sa-card', r.status !== 'active' ? 'is-off' : ''] }, [
         h('div', { class: 'sa-thumb' }, r.url ? h('img', { src: r.url, loading: 'lazy' }) : h('span', { class: 'sa-dim' }, '未下载')),
         h('div', { class: 'sa-meta' }, [
-          h('span', `#${r.id}`),
+          h('span', r.name ? `#${r.id} · ${r.owner}「${r.name}」` : `#${r.id}`),
           h('span', `收到 ${r.seenCount} 次 · ${r.seenUsers} 人`),
           h('span', `发过 ${r.sentCount} 次`),
         ]),

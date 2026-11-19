@@ -31,6 +31,8 @@ interface StickerView {
   tags: string[]
   desc: string
   usage: string
+  owner: string
+  name: string
   animated: boolean
   seenCount: number
   seenUsers: number
@@ -76,6 +78,8 @@ const view = (s: Sticker): StickerView => ({
   tags: s.tags,
   desc: s.desc,
   usage: s.usage,
+  owner: s.owner ?? '',
+  name: s.name ?? '',
   animated: s.animated,
   seenCount: s.seenCount,
   seenUsers: s.seenUsers.length,
