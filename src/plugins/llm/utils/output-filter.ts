@@ -61,8 +61,22 @@ const PAIRED_TAGS: ReadonlySet<string> = new Set(['a'])
 export function sanitizeAgentOutput(text: string): string {
   if (!text) return text
 
-  const nodes = parseKoishiBBCode(text, { pairedTags: PAIRED_TAGS })
+  const nodes = parseKoishiBBCode(fixAngleMarkers(text), {
+    pairedTags: PAIRED_TAGS,
+  })
   return nodes.map(renderNode).join('')
+}
+
+/**
+ * The model sometimes opens a marker with `<` instead of `[`
+ * (`<koishi:emote tag="x"]`, `<koishi:img src="…"/>`). `<koishi:` never occurs
+ * in prose, so rewriting it to bracket form is safe.
+ */
+function fixAngleMarkers(text: string): string {
+  return text.replace(
+    /<(\/?koishi:[a-z_]+)((?:\s+[a-z_]+="[^"]*")*)\s*\/?[>\]]/gi,
+    '[$1$2]'
+  )
 }
 
 function renderNode(node: BBCodeNode): string {

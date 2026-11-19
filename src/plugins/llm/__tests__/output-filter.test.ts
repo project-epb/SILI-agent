@@ -253,6 +253,10 @@ describe('sanitizeAgentOutput', () => {
     it('keeps a type', () => {
       expect(sanitizeAgentOutput('好耶[koishi:emote tag="开心"]')).toBe('好耶<sticker tag="开心"/>')
     })
+    it('accepts a marker opened with an angle bracket', () => {
+      expect(sanitizeAgentOutput('<koishi:emote tag="阴阳怪气"]够了')).toBe('<sticker tag="阴阳怪气"/>够了')
+      expect(sanitizeAgentOutput('<koishi:emote id="3"/>')).toBe('<sticker id="3"/>')
+    })
     it('escapes a sticker with neither', () => {
       expect(sanitizeAgentOutput('[koishi:emote id="abc"]')).toBe('[koishi:emote id="abc"]')
     })
