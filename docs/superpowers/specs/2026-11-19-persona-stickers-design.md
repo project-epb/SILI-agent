@@ -23,8 +23,8 @@
 2. **装哪一套由运行的人设决定**：开发环境装 `noir` 的清单，否则装 `sili` 的。这条规则和 LLM 插件选人设提示词的规则一致。
    Why: 开发环境跑 Noir 人设、生产跑 SILI，两套不能串用。
 
-3. **文件放在 CDN 上**，路径为 `artworks/<人设>/stickers/<英文名>.png`，比如 `https://r2.epb.wiki/artworks/SILI/stickers/heart.png`。上传时显式设置 `Content-Type: image/png`。
-   Why: 人设的立绘本来就放在 R2 的 `artworks/<人设>/` 下；贴纸放在同一处，换图只需要覆盖文件。
+3. **文件放在 CDN 上**，路径为 `artworks/<人设>/stickers/<英文名>.png`，比如 `https://r2.epb.wiki/artworks/SILI/stickers/heart.png`。上传时显式设置 `Content-Type: image/png`。发送时走 Cloudflare 图片缩放：`/cdn-cgi/image/width=200,format=png/<路径>`。
+   Why: 人设的立绘本来就放在 R2 的 `artworks/<人设>/` 下；贴纸放在同一处，换图只需要覆盖文件。512px 的原图在 QQ 里显示太大；缩到 200px 后体积从约 230 KB 降到约 20 KB，透明背景也保留。
 
 4. **出站标记 `[koishi:emote name="…"]` 发送当前人设清单里同名的那张。** 名字不存在时丢弃这个标记并写日志，处理方式和 id、tag 两种写法一致。
    Why: 名字本身就带语义，不需要记 id。
