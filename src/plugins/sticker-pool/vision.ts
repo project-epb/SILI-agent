@@ -37,31 +37,51 @@ export async function classifySticker(
   mime: string,
   options: { forceSticker?: boolean; signal?: AbortSignal } = {}
 ): Promise<VisionVerdict> {
-  const res = await fetch(`${config.baseURL.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: config.model,
-      max_tokens: 200,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      thinking: { type: 'disabled' },
-      messages: [
-        { role: 'system', content: SYSTEM },
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: `data:${mime};base64,${image.toString('base64')}` } },
-            { type: 'text', text: options.forceSticker ? '这是一张表情包，描述它并标出类型。' : '判断这张图。' },
-          ],
-        },
-      ],
-    }),
-    signal: options.signal ?? AbortSignal.timeout(60_000),
-  })
+  const res = await fetch(
+    `${config.baseURL.replace(/\/$/, '')}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${config.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_tokens: 200,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        thinking: { type: 'disabled' },
+        messages: [
+          { role: 'system', content: SYSTEM },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mime};base64,${image.toString('base64')}`,
+                },
+              },
+              {
+                type: 'text',
+                text: options.forceSticker
+                  ? '这是一张表情包，描述它并标出类型。'
+                  : '判断这张图。',
+              },
+            ],
+          },
+        ],
+      }),
+      signal: options.signal ?? AbortSignal.timeout(60_000),
+    }
+  )
   const json: any = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(`vision ${res.status}: ${JSON.stringify(json?.error ?? json).slice(0, 200)}`)
-  const tokens = (json.usage?.prompt_tokens ?? 0) + (json.usage?.completion_tokens ?? 0)
+  if (!res.ok)
+    throw new Error(
+      `vision ${res.status}: ${JSON.stringify(json?.error ?? json).slice(0, 200)}`
+    )
+  const tokens =
+    (json.usage?.prompt_tokens ?? 0) + (json.usage?.completion_tokens ?? 0)
   const out = parseVerdict(json.choices?.[0]?.message?.content ?? '')
   return { ...out, isSticker: options.forceSticker || out.isSticker, tokens }
 }
@@ -74,7 +94,9 @@ export function parseVerdict(text: string): Omit<VisionVerdict, 'tokens'> {
     throw new Error(`vision returned non-JSON: ${text.slice(0, 120)}`)
   }
   const known = new Set<string>(STICKER_TYPES)
-  const tags = (Array.isArray(raw.tags) ? raw.tags : []).filter((t: unknown) => typeof t === 'string' && known.has(t)).slice(0, 3)
+  const tags = (Array.isArray(raw.tags) ? raw.tags : [])
+    .filter((t: unknown) => typeof t === 'string' && known.has(t))
+    .slice(0, 3)
   return {
     isSticker: raw.is_sticker === true,
     tags: tags.length ? tags : ['其他'],

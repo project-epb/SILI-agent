@@ -11,14 +11,21 @@
  * inside the core container after `docker compose cp`-ing the files in.
  */
 import { App } from 'koishi'
+
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, resolve } from 'node:path'
 
 import { loadEnv } from '@/bootstrap'
-import { assetsS3Config, stickerPoolConfig } from '@/profiles/shared/plugin-configs'
-import PluginHTTP from '@cordisjs/plugin-http'
+import {
+  assetsS3Config,
+  stickerPoolConfig,
+} from '@/profiles/shared/plugin-configs'
+
 import PluginMongo from '@koishijs/plugin-database-mongo'
+
 import PluginAssetsS3 from 'koishi-plugin-assets-s3'
+
+import PluginHTTP from '@cordisjs/plugin-http'
 
 import StickerPool, { StickerSource } from '..'
 
@@ -30,7 +37,13 @@ interface Entry {
   usage?: string
 }
 
-const MIME: Record<string, string> = { '.gif': 'image/gif', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' }
+const MIME: Record<string, string> = {
+  '.gif': 'image/gif',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+}
 
 const manifestPath = resolve(process.argv[2] ?? '')
 const entries: Entry[] = JSON.parse(await readFile(manifestPath, 'utf8'))
@@ -40,7 +53,11 @@ const config = stickerPoolConfig(env)
 if (!config) throw new Error('no deepseek provider configured')
 
 const app = new App()
-app.plugin(PluginMongo, { host: env.DB_MONGO_HOST, port: Number(env.DB_MONGO_PORT), database: env.DB_MONGO_DATABASE })
+app.plugin(PluginMongo, {
+  host: env.DB_MONGO_HOST,
+  port: Number(env.DB_MONGO_PORT),
+  database: env.DB_MONGO_DATABASE,
+})
 app.plugin(PluginHTTP)
 app.plugin(PluginAssetsS3, assetsS3Config(env))
 app.plugin(StickerPool, config)
@@ -58,7 +75,9 @@ app.inject(['stickerPool'], async (ctx) => {
     try {
       const row = await ctx.stickerPool.add(await readFile(path), mime, entry)
       ok++
-      console.log(`#${row.id} [${row.tags.join('/')}] ${row.desc}${row.usage ? ` | ${row.usage}` : ''}`)
+      console.log(
+        `#${row.id} [${row.tags.join('/')}] ${row.desc}${row.usage ? ` | ${row.usage}` : ''}`
+      )
     } catch (e) {
       console.log('failed:', entry.file, e)
     }

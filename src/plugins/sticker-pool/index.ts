@@ -1,18 +1,24 @@
 import { Context, Schema, Service, Session, h } from 'koishi'
+
 import { createHash } from 'node:crypto'
 
 import { imageSize } from 'image-size'
 
-import { StickerLabel, rewriteInbound, scanImages, sha1FromQQImageUrl } from './parse'
+import {
+  StickerLabel,
+  rewriteInbound,
+  scanImages,
+  sha1FromQQImageUrl,
+} from './parse'
 import {
   DEFAULT_HARVEST_SETTINGS,
   DailyUsage,
   HarvestSettings,
   STICKER_TYPES,
-  stickerTypeLines,
   Sticker,
   StickerSource,
   StickerStatus,
+  stickerTypeLines,
 } from './types'
 import { VisionConfig, classifySticker } from './vision'
 
@@ -40,7 +46,12 @@ ${stickerTypeLines()}
 - 表情都是你自己发的。有人问为什么发这张，按自己的语气答，不要说是系统发的
 - \`sticker\` 指令是用模板生成文字表情包的，和发表情是两回事；想发表情就用上面的标记`
 const today = () => new Date().toLocaleDateString('sv', { timeZone: TZ })
-const EXT: Record<string, string> = { 'image/gif': 'gif', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }
+const EXT: Record<string, string> = {
+  'image/gif': 'gif',
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+}
 
 export interface AddOptions {
   source: StickerSource
@@ -98,7 +109,11 @@ export default class StickerPool extends Service {
       },
       { autoInc: true, unique: ['sha1'] }
     )
-    ctx.model.extend('sticker_setting', { key: 'string(32)', value: 'json' }, { primary: 'key' })
+    ctx.model.extend(
+      'sticker_setting',
+      { key: 'string(32)', value: 'json' },
+      { primary: 'key' }
+    )
     ctx.model.extend(
       'sticker_usage',
       { date: 'string(10)', stickers: 'unsigned', tokens: 'unsigned' },
@@ -116,7 +131,9 @@ export default class StickerPool extends Service {
   }
 
   protected async start() {
-    const rows = await this.ctx.database.get('sticker', { status: { $ne: 'candidate' } })
+    const rows = await this.ctx.database.get('sticker', {
+      status: { $ne: 'candidate' },
+    })
     for (const row of rows) this.known.set(row.sha1, row)
     this.log.info('loaded %d stickers', rows.length)
   }
@@ -139,24 +156,31 @@ export default class StickerPool extends Service {
    * never send it as text.
    */
   resolve(attrs: { id?: string | number; tag?: string }): h | undefined {
-    const row = attrs.id ? this.byId(Number(attrs.id)) : this.pick(String(attrs.tag ?? ''))
+    const row = attrs.id
+      ? this.byId(Number(attrs.id))
+      : this.pick(String(attrs.tag ?? ''))
     if (!row) {
       this.log.info('sticker not found: id=%s tag=%s', attrs.id, attrs.tag)
       return
     }
     row.sentCount++
-    this.ctx.database.set('sticker', row.id, { sentCount: row.sentCount }).catch(() => {})
+    this.ctx.database
+      .set('sticker', row.id, { sentCount: row.sentCount })
+      .catch(() => {})
     return h('img', { src: row.url })
   }
 
   /** Random active sticker whose primary tag is `tag`. */
   pick(tag: string): Sticker | undefined {
-    const pool = [...this.known.values()].filter((s) => s.status === 'active' && s.tags[0] === tag)
+    const pool = [...this.known.values()].filter(
+      (s) => s.status === 'active' && s.tags[0] === tag
+    )
     return pool[Math.floor(Math.random() * pool.length)]
   }
 
   private byId(id: number): Sticker | undefined {
-    for (const row of this.known.values()) if (row.id === id && row.status === 'active') return row
+    for (const row of this.known.values())
+      if (row.id === id && row.status === 'active') return row
   }
 
   // ---- harvesting ----------------------------------------------------------
@@ -164,13 +188,25 @@ export default class StickerPool extends Service {
   private async observe(session: Session) {
     for (const img of scanImages(session.content ?? '')) {
       if (!img.stickerFlag || !img.sha1 || this.known.has(img.sha1)) continue
-      const row = await this.recordSighting(img.sha1, session.userId!, session.channelId!)
-      if (row.seenCount < this.config.harvestMinSeen && row.seenUsers.length < this.config.harvestMinUsers) continue
+      const row = await this.recordSighting(
+        img.sha1,
+        session.userId!,
+        session.channelId!
+      )
+      if (
+        row.seenCount < this.config.harvestMinSeen &&
+        row.seenUsers.length < this.config.harvestMinUsers
+      )
+        continue
       if (this.inFlight.has(img.sha1)) continue
       const settings = await this.getSettings()
       if (!settings.enabled) continue
       const usage = await this.getUsage()
-      if (usage.stickers >= settings.dailyMaxStickers || usage.tokens >= settings.dailyMaxTokens) continue
+      if (
+        usage.stickers >= settings.dailyMaxStickers ||
+        usage.tokens >= settings.dailyMaxTokens
+      )
+        continue
       this.inFlight.add(img.sha1)
       // the url expires within hours: download now, from this message
       this.harvest(img.sha1, img.url)
@@ -179,7 +215,11 @@ export default class StickerPool extends Service {
     }
   }
 
-  private async recordSighting(sha1: string, userId: string, channelId: string) {
+  private async recordSighting(
+    sha1: string,
+    userId: string,
+    channelId: string
+  ) {
     const [row] = await this.ctx.database.get('sticker', { sha1 })
     const now = new Date()
     if (!row) {
@@ -201,9 +241,18 @@ export default class StickerPool extends Service {
       })
       return created
     }
-    const seenUsers = row.seenUsers.includes(userId) ? row.seenUsers : [...row.seenUsers, userId].slice(-20)
-    const seenGroups = row.seenGroups.includes(channelId) ? row.seenGroups : [...row.seenGroups, channelId].slice(-20)
-    const patch = { seenCount: row.seenCount + 1, seenUsers, seenGroups, updatedAt: now }
+    const seenUsers = row.seenUsers.includes(userId)
+      ? row.seenUsers
+      : [...row.seenUsers, userId].slice(-20)
+    const seenGroups = row.seenGroups.includes(channelId)
+      ? row.seenGroups
+      : [...row.seenGroups, channelId].slice(-20)
+    const patch = {
+      seenCount: row.seenCount + 1,
+      seenUsers,
+      seenGroups,
+      updatedAt: now,
+    }
     await this.ctx.database.set('sticker', row.id, patch)
     return { ...row, ...patch }
   }
@@ -211,7 +260,10 @@ export default class StickerPool extends Service {
   private async harvest(sha1: string, url: string) {
     const { buffer, mime } = await this.download(url)
     const verdict = await classifySticker(this.visionConfig, buffer, mime)
-    await this.addUsage({ tokens: verdict.tokens, stickers: verdict.isSticker ? 1 : 0 })
+    await this.addUsage({
+      tokens: verdict.tokens,
+      stickers: verdict.isSticker ? 1 : 0,
+    })
     const [row] = await this.ctx.database.get('sticker', { sha1 })
     if (!verdict.isSticker) {
       await this.save(row.id, { status: 'rejected' })
@@ -219,16 +271,30 @@ export default class StickerPool extends Service {
       return
     }
     const file = await this.store(buffer, mime, sha1)
-    await this.save(row.id, { status: 'active', tags: verdict.tags, desc: verdict.desc, ...file })
-    this.log.info('harvested %s: [%s] %s', sha1, verdict.tags.join('/'), verdict.desc)
+    await this.save(row.id, {
+      status: 'active',
+      tags: verdict.tags,
+      desc: verdict.desc,
+      ...file,
+    })
+    this.log.info(
+      'harvested %s: [%s] %s',
+      sha1,
+      verdict.tags.join('/'),
+      verdict.desc
+    )
   }
 
   private async download(url: string) {
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
     if (!res.ok) throw new Error(`download ${res.status}`)
     const buffer = Buffer.from(await res.arrayBuffer())
-    if (buffer.length > this.config.maxFileBytes) throw new Error(`file too large: ${buffer.length}`)
-    return { buffer, mime: res.headers.get('content-type')?.split(';')[0] || 'image/png' }
+    if (buffer.length > this.config.maxFileBytes)
+      throw new Error(`file too large: ${buffer.length}`)
+    return {
+      buffer,
+      mime: res.headers.get('content-type')?.split(';')[0] || 'image/png',
+    }
   }
 
   // ---- writing -------------------------------------------------------------
@@ -237,13 +303,19 @@ export default class StickerPool extends Service {
    * Add a picture by hand (admin upload, import scripts). An existing SHA1 is
    * returned as is. Without tags/desc the vision model fills them in.
    */
-  async add(buffer: Buffer, mime: string, options: AddOptions): Promise<Sticker> {
+  async add(
+    buffer: Buffer,
+    mime: string,
+    options: AddOptions
+  ): Promise<Sticker> {
     const sha1 = createHash('sha1').update(buffer).digest('hex')
     const [existing] = await this.ctx.database.get('sticker', { sha1 })
     if (existing && existing.status !== 'candidate') return existing
     let { tags, desc } = options
     if (!tags?.length || !desc) {
-      const verdict = await classifySticker(this.visionConfig, buffer, mime, { forceSticker: true })
+      const verdict = await classifySticker(this.visionConfig, buffer, mime, {
+        forceSticker: true,
+      })
       await this.addUsage({ tokens: verdict.tokens, stickers: 0 })
       tags = tags?.length ? tags : verdict.tags
       desc = desc || verdict.desc
@@ -276,9 +348,17 @@ export default class StickerPool extends Service {
     return row
   }
 
-  async update(id: number, patch: Partial<Pick<Sticker, 'tags' | 'desc' | 'usage' | 'status'>>) {
-    if (patch.status && !['active', 'disabled'].includes(patch.status)) throw new Error('status must be active or disabled')
-    if (patch.tags && patch.tags.some((t) => !(STICKER_TYPES as readonly string[]).includes(t))) throw new Error('unknown tag')
+  async update(
+    id: number,
+    patch: Partial<Pick<Sticker, 'tags' | 'desc' | 'usage' | 'status'>>
+  ) {
+    if (patch.status && !['active', 'disabled'].includes(patch.status))
+      throw new Error('status must be active or disabled')
+    if (
+      patch.tags &&
+      patch.tags.some((t) => !(STICKER_TYPES as readonly string[]).includes(t))
+    )
+      throw new Error('unknown tag')
     await this.save(id, { ...patch, updatedAt: new Date() })
   }
 
@@ -290,13 +370,22 @@ export default class StickerPool extends Service {
 
   private async store(buffer: Buffer, mime: string, sha1: string) {
     const ext = EXT[mime] ?? 'png'
-    const url = await this.ctx.assets.upload(`data:${mime};base64,${buffer.toString('base64')}`, `sticker.${ext}`)
+    const url = await this.ctx.assets.upload(
+      `data:${mime};base64,${buffer.toString('base64')}`,
+      `sticker.${ext}`
+    )
     let width = 0
     let height = 0
     try {
       ;({ width = 0, height = 0 } = imageSize(buffer))
     } catch {}
-    return { url, mime, width, height, animated: mime === 'image/gif' && isAnimatedGif(buffer) }
+    return {
+      url,
+      mime,
+      width,
+      height,
+      animated: mime === 'image/gif' && isAnimatedGif(buffer),
+    }
   }
 
   private get visionConfig(): VisionConfig {
@@ -312,7 +401,9 @@ export default class StickerPool extends Service {
 
   async setSettings(patch: Partial<HarvestSettings>) {
     const value = { ...(await this.getSettings()), ...patch }
-    await this.ctx.database.upsert('sticker_setting', [{ key: 'harvest', value }])
+    await this.ctx.database.upsert('sticker_setting', [
+      { key: 'harvest', value },
+    ])
     return value
   }
 
@@ -325,7 +416,11 @@ export default class StickerPool extends Service {
     const date = today()
     const current = await this.getUsage(date)
     await this.ctx.database.upsert('sticker_usage', [
-      { date, stickers: current.stickers + delta.stickers, tokens: current.tokens + delta.tokens },
+      {
+        date,
+        stickers: current.stickers + delta.stickers,
+        tokens: current.tokens + delta.tokens,
+      },
     ])
   }
 

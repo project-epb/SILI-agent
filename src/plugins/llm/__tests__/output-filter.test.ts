@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
 import h from '@satorijs/element'
+import { describe, expect, it } from 'vitest'
+
 import { sanitizeAgentOutput } from '../utils/output-filter'
 
 /**
@@ -40,7 +41,9 @@ describe('sanitizeAgentOutput', () => {
       // koishi-element parser ate everything in between. With h.text by
       // default, those are just characters.
       expect(
-        userVisible(sanitizeAgentOutput('前面有一个<，中间一堆内容，后面有一个>'))
+        userVisible(
+          sanitizeAgentOutput('前面有一个<，中间一堆内容，后面有一个>')
+        )
       ).toBe('前面有一个<，中间一堆内容，后面有一个>')
     })
 
@@ -59,17 +62,17 @@ describe('sanitizeAgentOutput', () => {
 
   describe('XML/HTML tags in prose — all become literal text', () => {
     it('<div>foo</div> renders as literal characters', () => {
-      expect(
-        userVisible(sanitizeAgentOutput('讲解 <div>foo</div> 标签'))
-      ).toBe('讲解 <div>foo</div> 标签')
+      expect(userVisible(sanitizeAgentOutput('讲解 <div>foo</div> 标签'))).toBe(
+        '讲解 <div>foo</div> 标签'
+      )
     })
 
     it('orphan <br> does not corrupt the rest of the message', () => {
       // Critical regression from earlier sanitizer: bare `<br>` used to
       // swallow the tail via h.parse's auto-nest. Now everything is text.
-      expect(
-        userVisible(sanitizeAgentOutput('前 <br> 这段必须保留'))
-      ).toBe('前 <br> 这段必须保留')
+      expect(userVisible(sanitizeAgentOutput('前 <br> 这段必须保留'))).toBe(
+        '前 <br> 这段必须保留'
+      )
     })
 
     it('XML-style koishi elements are NOT recognized (only bracket form is)', () => {
@@ -79,9 +82,9 @@ describe('sanitizeAgentOutput', () => {
     })
 
     it('<at>, <sharp>, <face> are literal text (no spam-mention risk)', () => {
-      expect(userVisible(sanitizeAgentOutput('Hi <at id="123">小鱼</at>!'))).toBe(
-        'Hi <at id="123">小鱼</at>!'
-      )
+      expect(
+        userVisible(sanitizeAgentOutput('Hi <at id="123">小鱼</at>!'))
+      ).toBe('Hi <at id="123">小鱼</at>!')
     })
   })
 
@@ -192,7 +195,9 @@ describe('sanitizeAgentOutput', () => {
       const safe = sanitizeAgentOutput(
         '[koishi:a href="#anchor"]section[/koishi:a]'
       )
-      expect(userVisible(safe)).toBe('[koishi:a href="#anchor"]section[/koishi:a]')
+      expect(userVisible(safe)).toBe(
+        '[koishi:a href="#anchor"]section[/koishi:a]'
+      )
     })
   })
 
@@ -240,25 +245,39 @@ describe('sanitizeAgentOutput', () => {
     })
 
     it('streaming-cut tags do not throw', () => {
-      expect(() => sanitizeAgentOutput('text [koishi:img src="https://x')).not.toThrow()
+      expect(() =>
+        sanitizeAgentOutput('text [koishi:img src="https://x')
+      ).not.toThrow()
       expect(() => sanitizeAgentOutput('text [koishi:msg_brea')).not.toThrow()
-      expect(() => sanitizeAgentOutput('[koishi:a href="https://x"]click')).not.toThrow()
+      expect(() =>
+        sanitizeAgentOutput('[koishi:a href="https://x"]click')
+      ).not.toThrow()
     })
   })
 
   describe('emote', () => {
     it('keeps a numeric id', () => {
-      expect(sanitizeAgentOutput('[koishi:emote id="12"]')).toBe('<sticker id="12"/>')
+      expect(sanitizeAgentOutput('[koishi:emote id="12"]')).toBe(
+        '<sticker id="12"/>'
+      )
     })
     it('keeps a type', () => {
-      expect(sanitizeAgentOutput('好耶[koishi:emote tag="开心"]')).toBe('好耶<sticker tag="开心"/>')
+      expect(sanitizeAgentOutput('好耶[koishi:emote tag="开心"]')).toBe(
+        '好耶<sticker tag="开心"/>'
+      )
     })
     it('accepts a marker opened with an angle bracket', () => {
-      expect(sanitizeAgentOutput('<koishi:emote tag="阴阳怪气"]够了')).toBe('<sticker tag="阴阳怪气"/>够了')
-      expect(sanitizeAgentOutput('<koishi:emote id="3"/>')).toBe('<sticker id="3"/>')
+      expect(sanitizeAgentOutput('<koishi:emote tag="阴阳怪气"]够了')).toBe(
+        '<sticker tag="阴阳怪气"/>够了'
+      )
+      expect(sanitizeAgentOutput('<koishi:emote id="3"/>')).toBe(
+        '<sticker id="3"/>'
+      )
     })
     it('escapes a sticker with neither', () => {
-      expect(sanitizeAgentOutput('[koishi:emote id="abc"]')).toBe('[koishi:emote id="abc"]')
+      expect(sanitizeAgentOutput('[koishi:emote id="abc"]')).toBe(
+        '[koishi:emote id="abc"]'
+      )
     })
   })
 })

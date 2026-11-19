@@ -65,7 +65,8 @@ export function stickerPoolConfig(env: Env) {
   if (!apiKey) return
   return {
     vision: {
-      baseURL: (deepseek!.options?.baseURL as string) || 'https://api.deepseek.com/v1',
+      baseURL:
+        (deepseek!.options?.baseURL as string) || 'https://api.deepseek.com/v1',
       apiKey,
       model: 'deepseek-v4-flash',
     },

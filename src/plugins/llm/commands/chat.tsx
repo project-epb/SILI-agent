@@ -112,7 +112,9 @@ export default class ChatCommand extends BasePlugin {
     if (leftovers.length) this.ctx.llm.activeChats.putBacklog(key, leftovers)
     trigger.session
       .execute({ name: 'chat', args: [trigger.prompt] })
-      .catch((e) => this.ctx.llm.logger.warn('[chat] steer leftover run failed:', e))
+      .catch((e) =>
+        this.ctx.llm.logger.warn('[chat] steer leftover run failed:', e)
+      )
   }
 
   /** Null when the conversation has no reply yet or history is unavailable. */
@@ -192,7 +194,8 @@ export default class ChatCommand extends BasePlugin {
         llm.logger.info('[chat] input', options, userPrompt)
         // The model reads stickers and QQ faces by name, not as image urls.
         const stickerPool = llm.ctx.get('stickerPool')
-        if (stickerPool && userPrompt) userPrompt = stickerPool.rewriteInbound(userPrompt)
+        if (stickerPool && userPrompt)
+          userPrompt = stickerPool.rewriteInbound(userPrompt)
 
         const startTime = Date.now()
         const scope = resolveConversationScope(session)
@@ -279,9 +282,10 @@ export default class ChatCommand extends BasePlugin {
         // last message: command replies (dice, wiki links) are the bot
         // speaking too, but the conversation never saw what came before them.
         const messagesSinceLastReply = scope.shared
-          ? await this.#countSinceLastReply(session, scope.conversationId).catch(
-              () => null
-            )
+          ? await this.#countSinceLastReply(
+              session,
+              scope.conversationId
+            ).catch(() => null)
           : null
         const chatInfo = {
           koishi: {
@@ -373,7 +377,10 @@ export default class ChatCommand extends BasePlugin {
           if (recorded) quoteMeta = mergeRecordedQuote(quoteMeta, recorded, TZ)
         }
         if (quoteMeta && stickerPool) {
-          quoteMeta = { ...quoteMeta, content: stickerPool.rewriteInbound(quoteMeta.content) }
+          quoteMeta = {
+            ...quoteMeta,
+            content: stickerPool.rewriteInbound(quoteMeta.content),
+          }
         }
         const quotedMessageBlock = quoteMeta
           ? buildQuotedMessageBlock(
@@ -423,13 +430,17 @@ export default class ChatCommand extends BasePlugin {
               prompt: userPrompt ?? '',
               envelope: persistableEnvelopeBase,
             })
-            llm.logger.info('[chat] steered into the running turn of %s', scope.key)
+            llm.logger.info(
+              '[chat] steered into the running turn of %s',
+              scope.key
+            )
             return
           }
           // Messages steered into the previous turn too late for it to see.
           const backlog = llm.activeChats.takeBacklog(scope.key)
           if (backlog.length) {
-            if (fromOthers(backlog)) getMemoryToolState(turnState).othersSpoke = true
+            if (fromOthers(backlog))
+              getMemoryToolState(turnState).othersSpoke = true
             const earlier = backlog.map((item) => item.envelope).join('\n\n')
             persistableEnvelopeBase = `${earlier}\n\n${persistableEnvelopeBase}`
             userMessageEnvelopeBase = `${earlier}\n\n${userMessageEnvelopeBase}`
@@ -692,7 +703,9 @@ export default class ChatCommand extends BasePlugin {
               { ...thisTurn, intra_turn_seq: 0, role: 'user' },
               { turn_status, ...(turn_error && { turn_error }) }
             )
-            .catch((e) => llm.logger.warn('[chat] turn status update failed:', e))
+            .catch((e) =>
+              llm.logger.warn('[chat] turn status update failed:', e)
+            )
         const dropTurn = () =>
           llm.ctx.database
             .remove('openai_chat', thisTurn)
@@ -812,7 +825,8 @@ export default class ChatCommand extends BasePlugin {
             turnState,
             drainSteer: () => {
               const items = activeEntry.inbox.splice(0)
-              if (fromOthers(items)) getMemoryToolState(turnState).othersSpoke = true
+              if (fromOthers(items))
+                getMemoryToolState(turnState).othersSpoke = true
               return wrapSteer(items)
             },
             onTurnEnd: async () => {

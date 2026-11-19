@@ -22,24 +22,26 @@ import { CopilotProvider } from './providers/copilot'
 import { OpenAIProvider } from './providers/openai'
 import { ActiveChatRegistry } from './services/active-chats'
 import { ChatHistoryService } from './services/chat-history'
-import { resolveConversationScope } from './services/conversation-scope'
-import { IdleCompactor } from './services/idle-compactor'
 import { CommandCatalogService } from './services/command-catalog'
+import { resolveConversationScope } from './services/conversation-scope'
 import { DeepSeekSearchClient } from './services/deepseek-search-client'
+import type { TurnStatus } from './services/history-filter'
+import { IdleCompactor } from './services/idle-compactor'
 import { ImageReferenceCache } from './services/image-cache'
 import { MemoryStore } from './services/memory'
-import type { MemorySnapshotSource } from './services/memory-snapshot'
-import { MemoryRecordStore } from './services/shared-memory'
 import { MemoryForkScheduler } from './services/memory-fork-scheduler'
+import type { MemorySnapshotSource } from './services/memory-snapshot'
 import { SessionManager } from './services/session-manager'
+import { MemoryRecordStore } from './services/shared-memory'
 import { SummaryCompactor } from './services/summary-compactor'
 import { SystemPromptBuilder } from './services/system-prompt'
 import { TavilySearchClient } from './services/tavily-client'
 import { TurnAllocator } from './services/turn-allocator'
 import { migrateTurnNumbers } from './services/turn-migration'
-import type { TurnStatus } from './services/history-filter'
 import {
   EXTRACT_WEBPAGES_TOOL,
+  type MemoryOwner,
+  type MemoryTier,
   READ_USER_MEMORY_TOOL,
   ToolRegistry,
   WEB_SEARCH_TOOL,
@@ -48,8 +50,6 @@ import {
   buildSaveUserMemoryTool,
   buildStoredChannelHistoryHandler,
   executeKoishiCommandHandler,
-  type MemoryOwner,
-  type MemoryTier,
   getMemoryToolState,
   getWebToolsState,
   readableTiers,
@@ -305,7 +305,10 @@ export default class PluginLLM extends BasePlugin<Config> {
   /** Private records: read and written in DMs only. */
   readonly memory: MemoryStore = new MemoryStore(this.ctx)
   /** Shared records: a user's public facts, read and written in any group. */
-  readonly sharedMemory = new MemoryRecordStore(this.ctx, 'openai_user_shared_memory')
+  readonly sharedMemory = new MemoryRecordStore(
+    this.ctx,
+    'openai_user_shared_memory'
+  )
   /** Group memories: one per group, read and written in that group only. */
   readonly groupMemory = new MemoryRecordStore(this.ctx, 'openai_group_memory')
   readonly sessions: SessionManager = new SessionManager(this.ctx)
@@ -505,7 +508,8 @@ export default class PluginLLM extends BasePlugin<Config> {
           write: async (tier, content) => {
             const key = owners[tier].uid
             if (tier !== 'private') {
-              const store = tier === 'shared' ? this.sharedMemory : this.groupMemory
+              const store =
+                tier === 'shared' ? this.sharedMemory : this.groupMemory
               return store.set(platform, key, content)
             }
             await this.memory.set(
@@ -755,9 +759,11 @@ export default class PluginLLM extends BasePlugin<Config> {
   }
 
   memoryStore(tier: MemoryTier): MemoryStore | MemoryRecordStore {
-    return { private: this.memory, shared: this.sharedMemory, group: this.groupMemory }[
-      tier
-    ]
+    return {
+      private: this.memory,
+      shared: this.sharedMemory,
+      group: this.groupMemory,
+    }[tier]
   }
 
   /**

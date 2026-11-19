@@ -55,7 +55,12 @@ export function scanImages(content: string): InboundImage[] {
   for (const m of content.matchAll(ITEM)) {
     if (!m[4]) continue
     const url = m[5].replace(/&amp;/g, '&')
-    out.push({ raw: m[0], url, sha1: sha1FromQQImageUrl(url), stickerFlag: m[1] === '6' })
+    out.push({
+      raw: m[0],
+      url,
+      sha1: sha1FromQQImageUrl(url),
+      stickerFlag: m[1] === '6',
+    })
   }
   return out
 }
@@ -82,7 +87,8 @@ export function rewriteInbound(
   content: string,
   lookup: (sha1: string) => StickerLabel | undefined
 ): string {
-  if (!content.includes('&lt;faceType=') && !content.includes('<img')) return content
+  if (!content.includes('&lt;faceType=') && !content.includes('<img'))
+    return content
   return content.replace(ITEM, (raw, faceType, _faceId, ext, img, src) => {
     if (!raw) return raw
     if (img) {
