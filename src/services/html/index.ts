@@ -3,13 +3,13 @@ import { Context, Service, h } from 'koishi'
 import type { ScreenshotOptions, WaitForOptions } from 'puppeteer-core'
 import type { BundledLanguage } from 'shiki'
 
+import { serveLocalFiles, toLocalOriginUrl } from './local-files'
 import { type MarkdownRenderOptions, renderMarkdownDocument } from './markdown'
 import { renderShikiDocument } from './shiki'
 
 declare module 'koishi' {
   export interface Context {
     html: HTMLService
-    puppeteer: import('koishi-plugin-puppeteer').default
   }
 }
 
@@ -64,7 +64,8 @@ export default class HTMLService extends Service {
         timeout: 15 * 1000,
       })
       const $el = await page.$(selector)
-      file = await $el?.screenshot(opts)
+      const shot = await $el?.screenshot(opts)
+      file = shot && Buffer.from(shot)
     } finally {
       await page?.close()
     }
@@ -89,6 +90,17 @@ export default class HTMLService extends Service {
     })
 
     const page = await this.ctx.puppeteer.page()
+
+    // The browser runs in another container and cannot read core's files:
+    // local templates are served from here through request interception.
+    const localUrl = toLocalOriginUrl(url)
+    if (localUrl) {
+      url = localUrl
+      await serveLocalFiles(page).catch(async (e) => {
+        await page.close()
+        throw e
+      })
+    }
 
     let isInitialized = false
     page.on('load', () => {
@@ -137,6 +149,8 @@ export default class HTMLService extends Service {
           throw e
         }
       })
+      // puppeteer 24 returns Uint8Array; callers expect a Buffer.
+      .then((shot) => Buffer.from(shot))
       .finally(() => page.close())
   }
 

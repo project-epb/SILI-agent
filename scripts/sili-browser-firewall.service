@@ -1,0 +1,15 @@
+# Install: cp to /etc/systemd/system/, then
+#   systemctl daemon-reload && systemctl enable --now sili-browser-firewall
+# Re-runs whenever docker (re)starts, so the rules survive reboots and docker restarts.
+[Unit]
+Description=Firewall for the SILI shared browser network
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/data/chatbot-sili/scripts/browser-firewall.sh
+
+[Install]
+WantedBy=docker.service

@@ -37,6 +37,7 @@ import type { Profile } from '@/profiles/types'
 import PiggybackService from '@/services/PiggybackService'
 import ChannelMessageHistory from '@/services/channel-message-history'
 import HTMLService from '@/services/html'
+import PuppeteerService from '@/services/puppeteer'
 
 import PluginAbout from '~/about'
 import PatchCallme from '~/callme'
@@ -104,7 +105,6 @@ import * as PluginImageSearch from 'koishi-plugin-image-search'
 import * as PluginLlmAdmin from 'koishi-plugin-llm-admin'
 import * as PluginLlmDashboard from 'koishi-plugin-llm-dashboard'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
-import PluginPuppeteer from 'koishi-plugin-puppeteer'
 import * as PluginQQBotAdmin from 'koishi-plugin-qqbot-admin'
 import * as PluginRateLimit from 'koishi-plugin-rate-limit'
 import * as PluginRecall from 'koishi-plugin-recall'
@@ -295,7 +295,7 @@ function install(app: App) {
     ctx.plugin(PluginHTTP)
     // HTMLService 依赖 puppeteer，md、hljs、webshot、reboot、dbadmin、sticker 又依赖 HTMLService；
     // Koishi 对缺失依赖不报错、只静默不加载，所以必须显式装上
-    ctx.plugin(PluginPuppeteer, puppeteerConfig())
+    ctx.plugin(PuppeteerService, puppeteerConfig(env))
     // 适配器发送语音需要
     ctx.plugin(PluginSilk)
     ctx.plugin(PluginBroadcast)

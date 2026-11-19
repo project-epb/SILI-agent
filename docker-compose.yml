@@ -15,6 +15,9 @@ services:
       sili-network:
         aliases:
           - core.sili.local
+      sili-browser:
+        aliases:
+          - core.sili.local
     # 生产环境使用 caddy 反代，并带有路径拦截
     # 勿暴露此端口到公网，否则攻击者可伪造消息或控制 bot 发言
     # ports:
@@ -34,13 +37,33 @@ services:
       - ./.git:/app/.git:ro
       # koishi自带的data文件夹（comfyui workflows/guides 放 .volumns/core/comfyui/）
       - ./.volumns/core:/app/data
-      # node_modules 与 Chrome 本体都不在镜像里，由 entrypoint 按 bun.lock /
-      # puppeteer 版本填充到这两个卷。必须是 named 卷：匿名卷每次容器重建都会
-      # 遗留一份几百 MB 的孤儿，且复用旧卷时会遮蔽镜像/依赖的更新。
+      # node_modules 不在镜像里，由 entrypoint 按 bun.lock 填充到这个卷。必须是
+      # named 卷：匿名卷每次容器重建都会遗留一份几百 MB 的孤儿，且复用旧卷时会
+      # 遮蔽依赖的更新。
       - sili_node_modules:/app/node_modules
-      - sili_puppeteer_cache:/root/.cache/puppeteer
     depends_on:
       - mongo
+      - browser
+
+  # 共享浏览器：Chrome + 守护进程（docker/browser/supervisor.ts），core 经 CDP
+  # 连接。只在 sili-browser 网络里，访问不到 mongo、napcat 等内部服务；宿主上
+  # 再由 scripts/browser-firewall.sh 封掉内网地址和元数据地址。
+  browser:
+    container_name: sili-browser
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: ./docker/browser.dockerfile
+    # Chrome forks helpers that bun would leave as zombies as PID 1.
+    init: true
+    mem_limit: 1g
+    restart: unless-stopped
+    environment:
+      BROWSER_TOKEN: ${BROWSER_TOKEN:?BROWSER_TOKEN must be set in .env}
+    networks:
+      sili-browser:
+        aliases:
+          - browser.sili.local
 
   mongo:
     container_name: sili-mongo
@@ -88,12 +111,16 @@ networks:
   sili-network:
     name: sili-network
     external: true
+  # Fixed subnet: scripts/browser-firewall.sh matches on it.
+  sili-browser:
+    name: sili-browser
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   sili_node_modules:
     name: sili_node_modules
-  sili_puppeteer_cache:
-    name: sili_puppeteer_cache
   mongo_data:
     name: sili_mongo_data
   qqnt_data:

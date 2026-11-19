@@ -38,6 +38,7 @@ import type { Profile } from '@/profiles/types'
 import PiggybackService from '@/services/PiggybackService'
 import { QQNTEmojiReactionService } from '@/services/QQNTEmojiReaction'
 import HTMLService from '@/services/html'
+import PuppeteerService from '@/services/puppeteer'
 
 import PluginAbout from '~/about'
 import PatchCallme from '~/callme'
@@ -103,7 +104,6 @@ import * as PluginImageSearch from 'koishi-plugin-image-search'
 import * as PluginLlmAdmin from 'koishi-plugin-llm-admin'
 import * as PluginLlmDashboard from 'koishi-plugin-llm-dashboard'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
-import PluginPuppeteer from 'koishi-plugin-puppeteer'
 import * as PluginRateLimit from 'koishi-plugin-rate-limit'
 import * as PluginRecall from 'koishi-plugin-recall'
 import * as PluginSchedule from 'koishi-plugin-schedule'
@@ -289,7 +289,7 @@ function install(app: App) {
     ctx.plugin(PluginImageSearch, {
       saucenaoApiKey: env.TOKEN_SAUCENAO_APIKEY,
     })
-    ctx.plugin(PluginPuppeteer, puppeteerConfig())
+    ctx.plugin(PuppeteerService, puppeteerConfig(env))
     ctx.plugin(PluginSchedule)
     ctx.plugin(PluginSilk)
 

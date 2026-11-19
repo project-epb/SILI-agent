@@ -32,7 +32,7 @@ SILI 服务是基于 Docker 容器的，因此需要安装 Docker 以及 Docker 
 
 基于 Ubuntu 22.04 镜像，安装了 Node.js LTS 和 pnpm。
 
-额外安装了一个 chromium 浏览器，用于 Puppeteer 的运行。
+HTML 渲染用的 Chrome 在独立的 `browser` 容器里（`docker/browser.dockerfile`），core 经 CDP 连接。
 
 ### sili-caddy
 

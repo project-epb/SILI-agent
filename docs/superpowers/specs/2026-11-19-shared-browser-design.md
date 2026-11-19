@@ -29,8 +29,8 @@ sili-core 现在用 koishi-plugin-puppeteer 在自己容器里常驻一个 Chrom
    - 已经没有 page、且已存在超过 30 秒的 browser context 直接销毁。
    Why：调用方漏关页面（插件自带的 `render()` 就没把 `close()` 放进 `finally`）在浏览器常驻之后会一直累积；之前靠 core 重启顺带清掉，拆出去以后这条路没了。
 
-5. **守护进程定期回收 Chrome**：没有打开的 page，并且「Chrome 已运行超过 6 小时」或「Chrome 进程总 RSS 超过 600 MB」时重启 Chrome。容器 `mem_limit` 1g。
-   Why：长跑的 Chromium 内存只涨不跌；只在空闲时重启，不会打断正在截的图；失控时被 OOM 的只有浏览器容器。
+5. **守护进程定期回收 Chrome**：没有打开的 page，并且「Chrome 已运行超过 6 小时」或「容器匿名内存（cgroup `memory.stat` 的 `anon`）超过 600 MB」时重启 Chrome。容器 `mem_limit` 1g。
+   Why：长跑的 Chromium 内存只涨不跌；只在空闲时重启，不会打断正在截的图；OOM 看的是整个容器，所以按容器而不是逐个进程统计，排除页缓存；失控时被 OOM 的只有浏览器容器。
 
 6. **core 的 `puppeteer` 服务换成自己写的**，服务名和 `page()` 接口不变，现有调用方（HTMLService、mediawiki、sticker）不用改：
    - 启动时 `puppeteer.connect` 到 `BROWSER_ENDPOINT`（`ws://browser.sili.local:3000/?token=…`），断开后标记失联，下一次 `page()` 时重连；重连失败就抛错给调用方。

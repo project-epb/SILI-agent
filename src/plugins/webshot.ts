@@ -12,7 +12,7 @@ export default class PluginWebShot extends BasePlugin {
       .command('screenshot <url>', '截图', { authority: 2 })
       .alias('shot', '截图')
       .option('full', '-f 截取整个页面', { type: 'boolean' })
-      .option('timeout', '-t <timeout> 超时时间', {
+      .option('timeout', '-t <timeout> 超时时间（最长 90 秒）', {
         fallback: 30 * Time.second,
       })
       .option('selector', '-s <selector> CSS选择器')
@@ -47,7 +47,8 @@ export default class PluginWebShot extends BasePlugin {
 
     try {
       const img = await this.ctx.html.shotByUrl(url, options.selector, {
-        timeout: options.timeout || 30 * Time.second,
+        // The browser closes pages older than 120s; finish well before that.
+        timeout: Math.min(options.timeout || 30 * Time.second, 90 * Time.second),
       })
       console.info('!shot', img)
       return h.image(img, 'image/jpeg')

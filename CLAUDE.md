@@ -77,31 +77,38 @@ Claude Code 进入该目录工作时会自动叠加加载那份 CLAUDE.md。
 
 ## Docker 镜像是纯运行时基座
 
-`docker/sili-core.dockerfile` 产出的镜像**只含 OS、字体、Chrome 的系统依赖库和 bun**。三样东西不在镜像里：
+`docker/sili-core.dockerfile` 产出的镜像**只含 OS、git 和 bun**。两样东西不在镜像里：
 
 | | 在哪 | 谁负责填充 |
 | --- | --- | --- |
 | 源码 | compose 挂载宿主目录 | 宿主 `git pull` |
 | `node_modules` | named volume `sili_node_modules` | `scripts/docker-entrypoint.sh` |
-| Chrome 本体 | named volume `sili_puppeteer_cache` | 同上 |
 
-所以**改依赖、升 puppeteer 都只需要 restart，不必重新构建镜像**；只有动字体、系统库、bun 版本时才需要 rebuild。
+所以**改依赖只需要 restart，不必重新构建镜像**；只有动系统库、bun 版本时才需要 rebuild。
 
 改 Dockerfile 前先读文件头的注释，几条硬约束：
 
-- **别把 `node_modules` 或 Chrome 装回镜像**——会被 volume 遮蔽，纯属浪费层。
-- **别加 `VOLUME /root/.cache/puppeteer`**——匿名卷每次容器重建都遗留一份约 370 MB 的孤儿，且复用旧卷会遮蔽新版 Chrome。
-- **`libgbm1` 拉进来的 mesa + libllvm20（约 178 MB）是镜像最大的单块，不要动**——那是 headless Chrome 的软件渲染栈，删了 HTML 渲染直接废。
+- **别把 `node_modules` 装回镜像**——会被 volume 遮蔽，纯属浪费层。
+- **别把浏览器、字体或 Chrome 依赖加回 core**——它们在 browser 镜像里。
 - **`git` 是运行时依赖**，`version` 命令要跑 `git rev-parse --short HEAD`。
-- **`bun install` 必须带 `PUPPETEER_SKIP_DOWNLOAD=true`**——puppeteer 在 bun 的默认信任列表里，postinstall 会照跑，直连被墙的 `storage.googleapis.com` 且不认 `PUPPETEER_DOWNLOAD_BASE_URL`，整个 install 会挂在 DNS 超时上。浏览器一律由 `puppeteer browsers install chrome --base-url` 走国内镜像装。
 
-首次部署 / 换机器时两个 volume 是空的，要下约 400 MB 依赖 + 375 MB Chrome。生产切换时先用一次性容器预热，避免服务空窗：
+首次部署 / 换机器时 volume 是空的，要下约 400 MB 依赖。生产切换时先用一次性容器预热，避免服务空窗：
 
 ```bash
-docker compose run --rm --no-deps --entrypoint bash core -c \
-  'PUPPETEER_SKIP_DOWNLOAD=true bun install --frozen-lockfile && bun puppeteer browsers install chrome --base-url "$PUPPETEER_DOWNLOAD_BASE_URL"'
+docker compose run --rm --no-deps --entrypoint bash core -c 'bun install --frozen-lockfile'
 docker compose up -d --force-recreate core
 ```
+
+## 共享浏览器（browser 容器）
+
+HTML 渲染和截图用的 Chrome 在独立容器 `sili-browser`（`docker/browser.dockerfile`），设计见 `docs/superpowers/specs/2026-11-19-shared-browser-design.md`。core 的 `puppeteer` 服务（`src/services/puppeteer.ts`）经 CDP 连接它，调用方只用 `ctx.puppeteer.page()`。
+
+- **字体在 browser 镜像里**，改字体 / 升 Chrome 要 `docker compose build browser`。
+- **Chrome 版本跟 core 锁定的 `puppeteer-core` 一起升**：`docker/browser.dockerfile` 的 `CHROME_VERSION` 要等于 `node_modules/puppeteer-core/lib/esm/puppeteer/revisions.js` 里的 `chrome-headless-shell`。
+- **页面 120 秒后会被浏览器强制关掉**，单次截图要在这之前结束。
+- **浏览器读不到 core 的文件**。`src/` 下的 `file:` 模板交给 `ctx.html.shotByUrl`，它会改写到 `http://sili-local.invalid/` 并由 core 响应；直接拿 `page.goto('file://…')` 打不开。
+- `.env` 必须有 `BROWSER_TOKEN`（compose 同时传给两个容器）。
+- 生产宿主要装 `scripts/sili-browser-firewall.service`，它在 docker 启动后跑 `scripts/browser-firewall.sh`，封掉浏览器到内网、元数据地址和宿主的访问。
 
 `.dockerignore` 用的是「全部排除 + 显式放行」的白名单写法，新增需要进构建上下文的文件时记得加进去。
 

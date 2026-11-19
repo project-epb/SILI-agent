@@ -7,11 +7,11 @@ import { Time } from 'koishi'
 
 import { resolve } from 'node:path'
 
+import type { PuppeteerConfig } from '@/services/puppeteer'
 import { parseLLMProviders } from '@/utils/parseLLMProviders'
 
 import PluginComfyUI from '~/comfy-ui'
 
-import { executablePath } from 'puppeteer'
 
 type Env = NodeJS.ProcessEnv
 
@@ -51,11 +51,12 @@ export function githubConfig(env: Env) {
   }
 }
 
-export function puppeteerConfig() {
-  return {
-    // headless: 'new',
-    executablePath: executablePath(),
-  }
+export function puppeteerConfig(env: Env): PuppeteerConfig {
+  const token = env.BROWSER_TOKEN
+  if (!token) throw new Error('BROWSER_TOKEN is not set')
+  const endpoint = new URL(env.BROWSER_ENDPOINT || 'ws://browser.sili.local:3000')
+  endpoint.searchParams.set('token', token)
+  return { endpoint: endpoint.toString() }
 }
 
 export function llmConfig(env: Env) {
