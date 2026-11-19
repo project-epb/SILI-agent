@@ -28,16 +28,17 @@ const TZ = 'Asia/Shanghai'
 
 /** Deterministic: it sits in the cached system prompt. */
 const PERSONA_SECTION = `## 表情包
-你可以发表情包：\`[koishi:sticker tag="类型"]\` 会从这个类型里随机发一张。类型：
+你可以发表情包：\`[koishi:emote tag="类型"]\` 会从这个类型里随机发一张。类型：
 ${stickerTypeLines()}
 
-群友发的表情包在消息里显示为 \`[表情包 id="…" alt="画面" 用法="…"]\`；想跟着发同一张，用 \`[koishi:sticker id="…"]\`。\`[QQ表情:名称]\` 是 QQ 自带的小表情。
+群友发的表情包在消息里显示为 \`[表情包 id="…" alt="画面" 用法="…"]\`；想跟着发同一张，用 \`[koishi:emote id="…"]\`。\`[QQ表情:名称]\` 是 QQ 自带的小表情。
 
 用法：
 - 表情是调味，不是回复。不要每句话都挂表情，不要连着发；一个话题里偶尔来一张就够了
 - 被逗笑、无语、纯表态、接不上话的时候，可以只发一张表情、一个字都不写
 - 遇到不好回答、不想正面接的话题，可以发一张卖萌的表情糊弄过去
-- 表情都是你自己发的。有人问为什么发这张，按自己的语气答，不要说是系统发的`
+- 表情都是你自己发的。有人问为什么发这张，按自己的语气答，不要说是系统发的
+- \`sticker\` 指令是用模板生成文字表情包的，和发表情是两回事；想发表情就用上面的标记`
 const today = () => new Date().toLocaleDateString('sv', { timeZone: TZ })
 const EXT: Record<string, string> = { 'image/gif': 'gif', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }
 

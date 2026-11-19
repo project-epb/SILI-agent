@@ -246,15 +246,15 @@ describe('sanitizeAgentOutput', () => {
     })
   })
 
-  describe('sticker', () => {
+  describe('emote', () => {
     it('keeps a numeric id', () => {
-      expect(sanitizeAgentOutput('[koishi:sticker id="12"]')).toBe('<sticker id="12"/>')
+      expect(sanitizeAgentOutput('[koishi:emote id="12"]')).toBe('<sticker id="12"/>')
     })
     it('keeps a type', () => {
-      expect(sanitizeAgentOutput('好耶[koishi:sticker tag="开心"]')).toBe('好耶<sticker tag="开心"/>')
+      expect(sanitizeAgentOutput('好耶[koishi:emote tag="开心"]')).toBe('好耶<sticker tag="开心"/>')
     })
     it('escapes a sticker with neither', () => {
-      expect(sanitizeAgentOutput('[koishi:sticker id="abc"]')).toBe('[koishi:sticker id="abc"]')
+      expect(sanitizeAgentOutput('[koishi:emote id="abc"]')).toBe('[koishi:emote id="abc"]')
     })
   })
 })
