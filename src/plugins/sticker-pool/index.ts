@@ -33,7 +33,7 @@ declare module 'koishi' {
 const TZ = 'Asia/Shanghai'
 
 /** Deterministic: it sits in the cached system prompt. */
-const STICKER_SECTION = `## 表情包
+const PERSONA_SECTION = `## 表情包
 你可以发表情包：\`[koishi:emote tag="类型"]\` 会从这个类型里随机发一张。类型：
 ${stickerTypeLines()}
 
@@ -58,8 +58,6 @@ export interface AddOptions {
   tags?: string[]
   desc?: string
   usage?: string
-  owner?: string
-  name?: string
 }
 
 export default class StickerPool extends Service {
@@ -71,7 +69,6 @@ export default class StickerPool extends Service {
       apiKey: Schema.string().role('secret').required(),
       model: Schema.string().default('deepseek-v4-flash'),
     }),
-    persona: Schema.string().default('sili'),
     maxFileBytes: Schema.natural().default(2 * 1024 * 1024),
     harvestMinSeen: Schema.natural().default(3),
     harvestMinUsers: Schema.natural().default(2),
@@ -98,8 +95,6 @@ export default class StickerPool extends Service {
         tags: 'list',
         desc: 'string(255)',
         usage: 'string(255)',
-        owner: 'string(16)',
-        name: 'string(32)',
         url: 'string(255)',
         mime: 'string(32)',
         width: 'unsigned',
@@ -126,7 +121,7 @@ export default class StickerPool extends Service {
     )
 
     ctx.on('llm/build-system-prompt', (registry) => {
-      registry.add('sticker', this.promptSection())
+      registry.add('sticker', PERSONA_SECTION)
     })
 
     ctx.on('message', (session) => {
@@ -156,27 +151,16 @@ export default class StickerPool extends Service {
   }
 
   /**
-   * The image for a `<sticker id|name|tag>` element (produced by the LLM
-   * output filter). Undefined for an unknown id/name or an empty type —
-   * callers drop it, never send it as text.
+   * The image for a `<sticker id|tag>` element (produced by the LLM output
+   * filter). Undefined for an unknown id or an empty type — callers drop it,
+   * never send it as text.
    */
-  resolve(attrs: {
-    id?: string | number
-    name?: string
-    tag?: string
-  }): h | undefined {
+  resolve(attrs: { id?: string | number; tag?: string }): h | undefined {
     const row = attrs.id
       ? this.byId(Number(attrs.id))
-      : attrs.name
-        ? this.ownStickers().find((s) => s.name === attrs.name)
-        : this.pick(String(attrs.tag ?? ''))
+      : this.pick(String(attrs.tag ?? ''))
     if (!row) {
-      this.log.info(
-        'sticker not found: id=%s name=%s tag=%s',
-        attrs.id,
-        attrs.name,
-        attrs.tag
-      )
+      this.log.info('sticker not found: id=%s tag=%s', attrs.id, attrs.tag)
       return
     }
     row.sentCount++
@@ -186,35 +170,12 @@ export default class StickerPool extends Service {
     return h('img', { src: row.url })
   }
 
-  /** Random active sticker whose primary tag is `tag`. Own stickers are never picked: they go out by name. */
+  /** Random active sticker whose primary tag is `tag`. */
   pick(tag: string): Sticker | undefined {
     const pool = [...this.known.values()].filter(
-      (s) => s.status === 'active' && s.source !== 'own' && s.tags[0] === tag
+      (s) => s.status === 'active' && s.tags[0] === tag
     )
     return pool[Math.floor(Math.random() * pool.length)]
-  }
-
-  /** The current persona's active own stickers, in id order. */
-  ownStickers(): Sticker[] {
-    return [...this.known.values()]
-      .filter(
-        (s) =>
-          s.status === 'active' &&
-          s.source === 'own' &&
-          s.owner === this.config.persona
-      )
-      .sort((a, b) => a.id - b.id)
-  }
-
-  /** Changes only when the own set changes, so the prompt cache survives. */
-  private promptSection(): string {
-    const own = this.ownStickers()
-    if (!own.length) return STICKER_SECTION
-    const lines = own.map((s) => `- ${s.name}：${s.usage || s.desc}`)
-    return `${STICKER_SECTION}
-
-你自己的专属贴纸（你的形象），按名字指定发送：\`[koishi:emote name="名字"]\`。含义明确时优先用它们：
-${lines.join('\n')}`
   }
 
   private byId(id: number): Sticker | undefined {
@@ -269,8 +230,6 @@ ${lines.join('\n')}`
         tags: [],
         desc: '',
         usage: '',
-        owner: '',
-        name: '',
         url: '',
         mime: '',
         seenCount: 1,
@@ -369,8 +328,6 @@ ${lines.join('\n')}`
       tags,
       desc,
       usage: options.usage ?? '',
-      owner: options.owner ?? '',
-      name: options.name ?? '',
       ...file,
       updatedAt: now,
     }
@@ -488,8 +445,6 @@ function isAnimatedGif(buffer: Buffer) {
 namespace StickerPool {
   export interface Config {
     vision: VisionConfig
-    /** Whose own stickers this bot may send by name. */
-    persona: string
     maxFileBytes: number
     harvestMinSeen: number
     harvestMinUsers: number

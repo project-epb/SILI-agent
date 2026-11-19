@@ -261,11 +261,6 @@ describe('sanitizeAgentOutput', () => {
         '<sticker id="12"/>'
       )
     })
-    it('keeps a name', () => {
-      expect(sanitizeAgentOutput('[koishi:emote name="比心"]')).toBe(
-        '<sticker name="比心"/>'
-      )
-    })
     it('keeps a type', () => {
       expect(sanitizeAgentOutput('好耶[koishi:emote tag="开心"]')).toBe(
         '好耶<sticker tag="开心"/>'

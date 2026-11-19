@@ -5,7 +5,6 @@
  *
  * The manifest is a JSON array; file paths are relative to the manifest:
  *   [{ "file": "gif/424.gif", "source": "qface", "tags": ["拒绝"], "desc": "…", "usage": "…" }]
- * Own stickers also carry "owner" (persona key) and "name".
  * Entries without tags/desc are described by the vision model.
  *
  * Run it where the bot's .env and database are reachable — in production,
@@ -36,8 +35,6 @@ interface Entry {
   tags?: string[]
   desc?: string
   usage?: string
-  owner?: string
-  name?: string
 }
 
 const MIME: Record<string, string> = {

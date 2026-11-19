@@ -70,8 +70,6 @@ export function stickerPoolConfig(env: Env) {
       apiKey,
       model: 'deepseek-v4-flash',
     },
-    // same rule as the LLM plugin's persona prompt: Noir in dev, SILI otherwise
-    persona: env.KOISHI_ENV === 'dev' ? 'noir' : 'sili',
   }
 }
 
