@@ -10,8 +10,14 @@ export interface PersonaSticker {
   url: string
 }
 
-const sili = (file: string) =>
-  `https://r2.epb.wiki/artworks/SILI/stickers/${file}.png`
+/**
+ * The 512px originals render too large in QQ, so they go out through
+ * Cloudflare image resizing (enabled on r2.epb.wiki), keeping PNG + alpha.
+ */
+const sized = (path: string) =>
+  `https://r2.epb.wiki/cdn-cgi/image/width=200,format=png/${path}`
+
+const sili = (file: string) => sized(`artworks/SILI/stickers/${file}.png`)
 
 export const PERSONA_STICKERS: Record<string, PersonaSticker[]> = {
   sili: [
