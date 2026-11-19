@@ -131,6 +131,8 @@ function renderEmote(el: BBCodeElement): string {
   const id = getAttr(el, 'id')
   const tag = getAttr(el, 'tag')
   if (id && /^\d+$/.test(id)) return h('sticker', { id }).toString()
+  const name = getAttr(el, 'name')
+  if (name) return h('sticker', { name }).toString()
   if (tag) return h('sticker', { tag }).toString()
   return h.text(el.raw).toString()
 }

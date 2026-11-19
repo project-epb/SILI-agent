@@ -10,6 +10,7 @@ import {
   scanImages,
   sha1FromQQImageUrl,
 } from './parse'
+import { PersonaSticker } from './persona-stickers'
 import {
   DEFAULT_HARVEST_SETTINGS,
   DailyUsage,
@@ -23,6 +24,7 @@ import {
 import { VisionConfig, classifySticker } from './vision'
 
 export * from './types'
+export * from './persona-stickers'
 
 declare module 'koishi' {
   interface Context {
@@ -33,7 +35,7 @@ declare module 'koishi' {
 const TZ = 'Asia/Shanghai'
 
 /** Deterministic: it sits in the cached system prompt. */
-const PERSONA_SECTION = `## 表情包
+const STICKER_SECTION = `## 表情包
 你可以发表情包：\`[koishi:emote tag="类型"]\` 会从这个类型里随机发一张。类型：
 ${stickerTypeLines()}
 
@@ -69,6 +71,13 @@ export default class StickerPool extends Service {
       apiKey: Schema.string().role('secret').required(),
       model: Schema.string().default('deepseek-v4-flash'),
     }),
+    personaStickers: Schema.array(
+      Schema.object({
+        name: Schema.string().required(),
+        meaning: Schema.string().required(),
+        url: Schema.string().required(),
+      })
+    ).default([]),
     maxFileBytes: Schema.natural().default(2 * 1024 * 1024),
     harvestMinSeen: Schema.natural().default(3),
     harvestMinUsers: Schema.natural().default(2),
@@ -121,7 +130,7 @@ export default class StickerPool extends Service {
     )
 
     ctx.on('llm/build-system-prompt', (registry) => {
-      registry.add('sticker', PERSONA_SECTION)
+      registry.add('sticker', this.promptSection())
     })
 
     ctx.on('message', (session) => {
@@ -151,11 +160,20 @@ export default class StickerPool extends Service {
   }
 
   /**
-   * The image for a `<sticker id|tag>` element (produced by the LLM output
-   * filter). Undefined for an unknown id or an empty type — callers drop it,
-   * never send it as text.
+   * The image for a `<sticker id|name|tag>` element (produced by the LLM
+   * output filter). Undefined for an unknown id/name or an empty type —
+   * callers drop it, never send it as text.
    */
-  resolve(attrs: { id?: string | number; tag?: string }): h | undefined {
+  resolve(attrs: {
+    id?: string | number
+    name?: string
+    tag?: string
+  }): h | undefined {
+    if (attrs.name) {
+      const own = this.config.personaStickers.find((s) => s.name === attrs.name)
+      if (!own) this.log.info('persona sticker not found: %s', attrs.name)
+      return own ? h('img', { src: own.url }) : undefined
+    }
     const row = attrs.id
       ? this.byId(Number(attrs.id))
       : this.pick(String(attrs.tag ?? ''))
@@ -168,6 +186,16 @@ export default class StickerPool extends Service {
       .set('sticker', row.id, { sentCount: row.sentCount })
       .catch(() => {})
     return h('img', { src: row.url })
+  }
+
+  /** Static per persona config, so it never breaks the prompt cache. */
+  private promptSection(): string {
+    const own = this.config.personaStickers
+    if (!own.length) return STICKER_SECTION
+    return `${STICKER_SECTION}
+
+你还有一套自己形象的专属贴纸，按名字发送：\`[koishi:emote name="名字"]\`。它们就是你本人，含义明确时优先用它们，其次才是按类型随机：
+${own.map((s) => `- ${s.name}：${s.meaning}`).join('\n')}`
   }
 
   /** Random active sticker whose primary tag is `tag`. */
@@ -445,6 +473,8 @@ function isAnimatedGif(buffer: Buffer) {
 namespace StickerPool {
   export interface Config {
     vision: VisionConfig
+    /** The running persona's own stickers, sent by name. */
+    personaStickers: PersonaSticker[]
     maxFileBytes: number
     harvestMinSeen: number
     harvestMinUsers: number

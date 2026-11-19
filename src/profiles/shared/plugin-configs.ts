@@ -10,6 +10,7 @@ import { resolve } from 'node:path'
 import { parseLLMProviders } from '@/utils/parseLLMProviders'
 
 import PluginComfyUI from '~/comfy-ui'
+import { PERSONA_STICKERS } from '~/sticker-pool/persona-stickers'
 
 import { executablePath } from 'puppeteer'
 
@@ -70,6 +71,9 @@ export function stickerPoolConfig(env: Env) {
       apiKey,
       model: 'deepseek-v4-flash',
     },
+    // same rule as the LLM plugin's persona prompt: Noir in dev, SILI otherwise
+    personaStickers:
+      PERSONA_STICKERS[env.KOISHI_ENV === 'dev' ? 'noir' : 'sili'] ?? [],
   }
 }
 
