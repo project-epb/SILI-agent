@@ -193,6 +193,52 @@ export default class ChannelMessageHistory extends Service {
     return row
   }
 
+  /**
+   * The recorded message this session quotes. A quote of one of the bot's own
+   * QQ messages often carries a REFIDX other than the `ext_info.ref_idx` its
+   * send returned (measured), so on a miss fall back to the quoted text among
+   * the bot's own messages: exact first, then the newest one sharing its
+   * opening.
+   *
+   * Measured, within one bot (REFIDX differs per bot, never compare across):
+   * - REFIDX = 16 opaque (encrypted-looking) bytes + a per-bot suffix.
+   * - The value a quote carries is stable: the same message quoted twice,
+   *   26 minutes apart, gave the same REFIDX.
+   * - The send-time `ext_info.ref_idx` matched for replies to a user message
+   *   (LLM replies; one passive + one proactive send right after a message)
+   *   and missed for GitHub pushes and for three proactive sends in a row.
+   *
+   * TODO(refidx): find when the send-time value is wrong. Lead: maybe only the
+   * first send after a received message gets a usable one. Test one proactive
+   * send with no recent message, then two in a row. If confirmed, consider
+   * dropping the text fallback.
+   * TODO(refidx): about 1 in 8 of the bot's own messages are recorded with
+   * empty `content` (likely markdown / image sends), so a quote of one can't
+   * hit the text fallback. Check this before moving pushes to markdown.
+   */
+  async findQuote(session: Session): Promise<ChannelMessage | undefined> {
+    const quote = session.quote
+    if (!quote?.id) return
+    const byId = await this.find(session, quote.id)
+    if (byId) return byId
+    const text = quote.content?.trim()
+    if (!text) return
+    const own = { ...scopeOf(session), isSelf: true }
+    const [exact] = await this.ctx.database.get(
+      'channel_message',
+      { ...own, content: text },
+      { limit: 1, sort: newestFirst }
+    )
+    if (exact) return exact
+    const head = text.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const [prefix] = await this.ctx.database.get(
+      'channel_message',
+      { ...own, content: { $regex: new RegExp(`^${head}`) } },
+      { limit: 1, sort: newestFirst }
+    )
+    return prefix
+  }
+
   /** Oldest first. An explicit cursor includes its message. */
   async read(session: Session, count: number, beforeMessageId?: string) {
     if (!this.options.isServed(session, false))

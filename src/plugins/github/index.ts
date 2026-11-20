@@ -141,14 +141,11 @@ export default class PluginGitHub extends BasePlugin<Config> {
 
     ctx.middleware(async (session, next) => {
       if (!session.quote?.id) return next()
-      // A QQ official quote names the pushed message by its reference index
-      // (`REFIDX_…`); the adapter only maps it back to a message id from a
-      // 2-minute in-memory cache (patched to pass `REFIDX_` through on a miss),
-      // while history is keyed by the id the push got when sent.
-      let quoteId = session.quote.id
-      if (quoteId.startsWith('REFIDX_'))
-        quoteId =
-          (await ctx.channelMessageHistory?.find(session, quoteId))?.messageId ?? quoteId
+      // A QQ official quote names the pushed message by a reference index
+      // (`REFIDX_…`), not by the id history is keyed by; channelMessageHistory
+      // maps it back (by index, else by the quoted text).
+      const quoteId =
+        (await ctx.channelMessageHistory?.findQuote(session))?.messageId ?? session.quote.id
       const entry = await history.fetch(quoteId)
       if (!entry) return next()
       const body = session.stripped.content.trim()
