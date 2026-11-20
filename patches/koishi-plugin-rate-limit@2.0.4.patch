@@ -1,0 +1,45 @@
+diff --git a/node_modules/koishi-plugin-rate-limit/.bun-tag-89cfa3c8fc79bb9e b/.bun-tag-89cfa3c8fc79bb9e
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/lib/index.js b/lib/index.js
+index 5744c3e4faf246970a04c7a9a1579bb7fe867387..128cbc57fba5bb8ddd496540b31c736c1ebb2123 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -52,8 +52,16 @@ function apply(ctx) {
+       user.usage[name3] = count;
+       return session.text(".updated");
+     }
+-    if (name3)
+-      return session.text(".present", [name3, user.usage[name3] || 0]);
++    if (name3) {
++      // SILI patch: never echo an unknown key; it is user input and renders
++      // as elements (an <at>, an image...).
++      const command = ctx.$commander.get(name3);
++      const key = command ? getUsageName(command) : name3;
++      const known = command || key in user.usage || ctx.$commander._commandList.some((c) => getUsageName(c) === key);
++      if (!known)
++        return session.text(".unknown");
++      return session.text(".present", [key, user.usage[key] || 0]);
++    }
+     const output = [];
+     for (const name4 of Object.keys(user.usage).sort()) {
+       if (name4.startsWith("_"))
+@@ -79,6 +87,9 @@ function apply(ctx) {
+     }
+     const now = Date.now();
+     if (name3) {
++      // SILI patch: same as usage, never echo a key the user has no timer for.
++      if (!(name3 in user.timers))
++        return session.text(".unknown");
+       const delta = user.timers[name3] - now;
+       if (delta > 0)
+         return session.text(".present", [name3, delta]);
+@@ -102,7 +113,7 @@ function apply(ctx) {
+ __name(apply, "apply");
+ 
+ // src/locales/zh-CN.yml
+-var zh_CN_default = { internal: { "usage-exhausted": "调用次数已达上限。", "too-frequent": "调用过于频繁，请稍后再试。", "option-not-usage": " (不计入调用)", "command-max-usage": "已调用次数：{0}/{1}。", "command-min-interval": "距离下次调用还需：{0}/{1} 秒。" }, commands: { usage: { description: "调用次数信息", options: { set: "设置调用次数", clear: "清空调用次数" }, messages: { present: "今日 {0} 功能的调用次数为：{1}", list: "今日各功能的调用次数为：", none: "今日没有调用过消耗次数的功能。", updated: "设置成功。" } }, timer: { description: "定时器信息", options: { set: "设置定时器", clear: "清空定时器" }, messages: { present: "定时器 {0} 的生效时间为：剩余 <i18n:time value={1}/>", absent: "定时器 {0} 当前并未生效。", list: "各定时器的生效时间为：", item: "<p>{0}：剩余 <i18n:time value={1}/></p>", none: "当前没有生效的定时器。", updated: "设置成功。" } } } };
++var zh_CN_default = { internal: { "usage-exhausted": "调用次数已达上限。", "too-frequent": "调用过于频繁，请稍后再试。", "option-not-usage": " (不计入调用)", "command-max-usage": "已调用次数：{0}/{1}。", "command-min-interval": "距离下次调用还需：{0}/{1} 秒。" }, commands: { usage: { description: "调用次数信息", options: { set: "设置调用次数", clear: "清空调用次数" }, messages: { present: "今日 {0} 功能的调用次数为：{1}", unknown: "没有这个功能。", list: "今日各功能的调用次数为：", none: "今日没有调用过消耗次数的功能。", updated: "设置成功。" } }, timer: { description: "定时器信息", options: { set: "设置定时器", clear: "清空定时器" }, messages: { present: "定时器 {0} 的生效时间为：剩余 <i18n:time value={1}/>", absent: "定时器 {0} 当前并未生效。", unknown: "没有这个定时器。", list: "各定时器的生效时间为：", item: "<p>{0}：剩余 <i18n:time value={1}/></p>", none: "当前没有生效的定时器。", updated: "设置成功。" } } } };
+ 
+ // src/index.ts
+ var name2 = "rate-limit";
