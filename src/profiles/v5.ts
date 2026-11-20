@@ -18,7 +18,7 @@ import { logProcessErrors } from '@/bootstrap'
 import CommandPermissions from '@/modules/CommandPermissions'
 import FallbackHandler from '@/modules/FallbackHandler'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
-import PlatformNameAppel from '@/modules/PlatformNameAppel'
+import PlainTextAt from '@/modules/PlainTextAt'
 import PluginFeature from '@/plugins/feature'
 import PluginMute from '@/plugins/mute'
 import { PluginCollectionDialogue } from '@/profiles/shared/dialogue'
@@ -135,8 +135,8 @@ function appOptions(env: NodeJS.ProcessEnv): Partial<Context.Config> {
       // 官方 QQ：常规前缀（迁移过来的用户沿用原来的 `!`）始终有效；slash 只在
       // 私聊、@ 了 SILI 或以昵称呼叫 SILI 时有效。群里可能有其他开了全量消息的
       // bot，裸发的 `/help` 会让它们一起响应，而 QQ 指令面板发出的是 `@bot /cmd`。
-      // 昵称呼叫也算：复制粘贴的纯文本「@SILI Official /cmd」由 PlatformNameAppel
-      // 认作昵称呼叫，开头喊名字再跟斜杠指令，意图是明确的。
+      // 昵称呼叫也算：开头喊名字再跟斜杠指令，意图是明确的。纯文本「@名字」
+      // 只按平台名称算呼叫（见 PlainTextAt）。
       // 私聊里 Koishi 本就不要求前缀。
       if (['qq', 'qqguild'].includes(session.platform)) {
         const prefixes = env.KOISHI_PREFIX?.split('|') || []
@@ -164,7 +164,7 @@ function install(app: App) {
   logProcessErrors(app)
   // At the root, outside `served`: it must fix `session.stripped` before
   // anything reads it, access control included.
-  app.plugin(PlatformNameAppel)
+  app.plugin(PlainTextAt)
 
   /** 安装适配器 */
   app.plugin(function PluginCollectionAdapters(ctx) {

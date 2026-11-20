@@ -19,7 +19,7 @@ import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
 import MessagesLogger from '@/modules/MessagesLogger'
 import { MinecraftConnect } from '@/modules/MinecraftConnect'
 import MgpGroupUtils from '@/modules/MoegirlGroupUtils'
-import PlatformNameAppel from '@/modules/PlatformNameAppel'
+import PlainTextAt from '@/modules/PlainTextAt'
 import ProcessErrorHandler from '@/modules/ProcessErrorHandler'
 import SilentSwitch from '@/modules/SilentSwitch'
 import { PluginCollectionDialogue } from '@/profiles/shared/dialogue'
@@ -356,7 +356,7 @@ function install(app: App) {
     ctx.command('tools', '实用工具集')
     ctx.plugin(HTMLService)
     ctx.plugin(FallbackHandler)
-    ctx.plugin(PlatformNameAppel)
+    ctx.plugin(PlainTextAt)
     ctx.plugin(SilentSwitch)
     ctx.plugin(HelpAuthorityHint)
     ctx.plugin(GuildRequestFirewall)
