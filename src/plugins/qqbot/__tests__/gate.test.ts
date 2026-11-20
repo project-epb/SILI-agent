@@ -110,7 +110,7 @@ describe('decideGate', () => {
     expect(decideGate(dm(), 'help', 'help', lookup(), rules)).toBe('pass')
     expect(decideGate(dm(), 'pixiv 1', 'pixiv', lookup(), rules)).toBe('drop')
     expect(decideGate(dm(), '[[萌娘百科]]', '[[萌娘百科]]', lookup(), rules)).toBe('drop')
-    expect(autoAuthorizeFor(dm('qq'), 'help', lookup(), rules)).toBe(1)
+    expect(autoAuthorizeFor(dm('qq'), 'help', 'help', lookup(), rules)).toBe(1)
   })
   it('drops stranger DMs except bind and its alias', () => {
     expect(decideGate(dm(), 'hi', 'hi', lookup(), rules)).toBe('drop')
@@ -162,23 +162,28 @@ describe('extractCommandName', () => {
 
 describe('autoAuthorizeFor / autoAssignFor', () => {
   it('never creates users for OneBot or unserved guarded sessions', () => {
-    expect(autoAuthorizeFor(group('onebot'), null, lookup(), rules)).toBe(0)
-    expect(autoAuthorizeFor(group('qq'), 'hello', lookup(), rules)).toBe(0)
-    expect(autoAuthorizeFor(dm('qq'), 'hi', lookup(), rules)).toBe(0)
+    expect(autoAuthorizeFor(group('onebot'), '', null, lookup(), rules)).toBe(0)
+    expect(autoAuthorizeFor(group('qq'), 'hello', 'hello', lookup(), rules)).toBe(0)
+    expect(autoAuthorizeFor(dm('qq'), 'hi', 'hi', lookup(), rules)).toBe(0)
   })
   it('creates the user for a public command in an unactivated group', () => {
     // Without a user row its authority is 0 and Koishi answers "权限不足".
-    expect(autoAuthorizeFor(group('qq'), 'help', lookup(), rules)).toBe(1)
-    expect(autoAuthorizeFor(group('qq'), 'chat', lookup(), rules)).toBe(0)
+    expect(autoAuthorizeFor(group('qq'), 'help', 'help', lookup(), rules)).toBe(1)
+    expect(autoAuthorizeFor(group('qq'), 'chat', 'chat', lookup(), rules)).toBe(0)
+  })
+  it('creates the user for a wiki link in an unactivated group', () => {
+    const text = '[[Oo很萌的，你们不要黑她]]'
+    expect(autoAuthorizeFor(group('qq'), text, text, lookup(), rules)).toBe(1)
+    expect(autoAuthorizeFor(dm('qq'), text, text, lookup(), rules)).toBe(0)
   })
   it('creates the user for a stranger DM running bind (plugin-bind needs the row)', () => {
-    expect(autoAuthorizeFor(dm('qq'), 'bind', lookup(), rules)).toBe(1)
+    expect(autoAuthorizeFor(dm('qq'), 'bind', 'bind', lookup(), rules)).toBe(1)
   })
   it('creates users normally when served or on unguarded platforms', () => {
     expect(
-      autoAuthorizeFor(group('qq'), 'x', lookup({ groups: ['G1'] }), rules)
+      autoAuthorizeFor(group('qq'), 'x', 'x', lookup({ groups: ['G1'] }), rules)
     ).toBe(1)
-    expect(autoAuthorizeFor(group('discord'), null, lookup(), rules)).toBe(1)
+    expect(autoAuthorizeFor(group('discord'), '', null, lookup(), rules)).toBe(1)
   })
   it('auto-assigns everywhere except OneBot (assignee is routing only)', () => {
     expect(autoAssignFor('qq')).toBe(true)

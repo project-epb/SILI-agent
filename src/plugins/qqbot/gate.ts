@@ -119,6 +119,7 @@ export function extractCommandName(
  */
 export function autoAuthorizeFor(
   facts: SessionFacts,
+  content: string,
   commandName: string | null,
   served: ServedLookup,
   rules: GateRules
@@ -132,10 +133,11 @@ export function autoAuthorizeFor(
     (rules.dmCommands.has(commandName) || rules.publicCommands.has(commandName))
   )
     return 1
-  // A public command needs the caller's user row: without one its authority
-  // is 0 and Koishi answers "权限不足".
+  // Public commands and wiki links (which run `wiki`) need the caller's user
+  // row: without one its authority is 0 and Koishi answers "权限不足".
   if (!facts.isDirect && commandName && rules.publicCommands.has(commandName))
     return 1
+  if (!facts.isDirect && rules.publicGroupContent.test(content)) return 1
   return 0
 }
 

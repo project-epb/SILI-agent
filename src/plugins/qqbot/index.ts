@@ -119,13 +119,16 @@ function commandOf(session: Session) {
 export function accessAppOptions(state: ServedState) {
   return {
     autoAssign: (session: Session) => autoAssignFor(session.platform),
-    autoAuthorize: (session: Session) =>
-      autoAuthorizeFor(
+    autoAuthorize: (session: Session) => {
+      const { content, command } = commandOf(session)
+      return autoAuthorizeFor(
         factsOf(session),
-        commandOf(session).command,
+        content,
+        command,
         state,
         rulesOf(session.app)
-      ),
+      )
+    },
   }
 }
 
