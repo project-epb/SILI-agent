@@ -389,6 +389,9 @@ export default class PluginMediawiki extends BasePlugin<Config> {
       // Post-processing middleware: run downstream first, then maybe expand [[wiki links]].
       // Forward the downstream result so a returned Fragment isn't swallowed.
       const result = await next()
+      // QQ merged-forward records (raw message_type 102) arrive as one text
+      // quoting every forwarded message; links in them were not asked of us.
+      if (session.event._data?.d?.message_type === 102) return result
       const titles = parseTitlesFromText(session.content || '')
       if (titles.length) {
         session.execute(`wiki -q ${titles.join('|')}`)
