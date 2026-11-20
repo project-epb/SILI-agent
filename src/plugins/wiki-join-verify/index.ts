@@ -72,7 +72,6 @@ export interface Config {
   sites: Site[]
 }
 
-const BUTTON_PREFIX = 'wjv'
 /** Requests listed per message: QQ allows 5 keyboard rows. */
 const LIST_LIMIT = 5
 /** Short request id shown to admins: the openid's first characters. */
@@ -146,22 +145,6 @@ export default class PluginWikiJoinVerify {
       )
     })
 
-    ctx.on('interaction/button' as any, (session: Session) => {
-      const data: string = (session.event as any).button?.data ?? ''
-      const [prefix, action, openid] = data.split(':')
-      if (prefix !== BUTTON_PREFIX || !openid) return
-      const target = this.lookup(session.channelId)
-      if (!target) return
-      void this.review(session, target, openid, action === 'a', {
-        quiet: true,
-      })
-        .then((text) => {
-          if (text) return this.notify(session, text)
-          this.logger.info('button on a handled request %s', openid)
-        })
-        .catch((error) => this.logger.warn('button', error))
-    })
-
     ctx
       .command('channel.join-request', '查看本群待处理的入群申请')
       .alias('入群申请')
@@ -179,7 +162,9 @@ export default class PluginWikiJoinVerify {
           `channel.join-request.${name} <id:string> [reason:text]`,
           approve ? '同意入群申请' : '拒绝入群申请'
         )
-        .alias(`入群申请.${alias}`)
+        // Not `入群申请.通过`: Koishi resolves a dotted name segment by
+        // segment, so `入群申请` becomes the parent and the alias is never hit.
+        .alias(`${alias}入群申请`)
         .action(async ({ session }, id, reason) => {
           const target = this.lookup(session!.channelId)
           if (!target) return '本群没有开启入群验证。'
@@ -189,7 +174,7 @@ export default class PluginWikiJoinVerify {
           const text = await this.review(session!, target, id, approve, {
             reason,
           })
-          return h('markdown', h.text(text ?? ''))
+          return h('markdown', h.text(text))
         })
     }
   }
@@ -491,21 +476,17 @@ export default class PluginWikiJoinVerify {
   }
 
   /**
-   * Approves or rejects one pending request picked by openid (full, from a
-   * button) or short id (typed). Returns the markdown reply, or null when a
-   * `quiet` caller (a button) has nothing to say: the request is gone — handled
-   * already, perhaps from another device — or is being handled right now.
-   * Repeated presses stay out of the group that way; buttons cannot be
-   * disabled, QQ only marks them as visited on the device that pressed them.
+   * Approves or rejects one pending request picked by an openid prefix (the
+   * short id). Returns the markdown reply.
    */
   private async review(
     session: Session,
     target: { site: Site; policy: Policy },
     key: string,
     approve: boolean,
-    { reason, quiet = false }: { reason?: string; quiet?: boolean } = {}
-  ): Promise<string | null> {
-    const gone = quiet ? null : '没有找到这条申请，可能已被处理。'
+    { reason }: { reason?: string } = {}
+  ): Promise<string> {
+    const gone = '没有找到这条申请，可能已被处理。'
     const matches = (await this.fetchRequests(session)).filter((r) =>
       r.member_openid.startsWith(key.toUpperCase())
     )
@@ -513,7 +494,7 @@ export default class PluginWikiJoinVerify {
     if (matches.length > 1) return '编号对应多条申请，请多写几位。'
     const openid = matches[0].member_openid
     const lock = `${session.channelId}:${openid}`
-    if (this.reviewing.has(lock)) return quiet ? null : '这条申请正在处理中。'
+    if (this.reviewing.has(lock)) return '这条申请正在处理中。'
     this.reviewing.add(lock)
     try {
       // The list above may predate a review that just finished: confirm under
@@ -683,7 +664,14 @@ function shortId(request: JoinRequest) {
   return request.member_openid.slice(0, SHORT_ID_LENGTH)
 }
 
-/** Markdown with an approve/reject button row per request, admins only. */
+/**
+ * Markdown with an approve/reject button row per request. The buttons are
+ * command buttons: a press sends `@bot /通过入群申请 <id>` as the presser, so
+ * the review runs through the command and its admin check, using the role QQ
+ * attaches to that message. Do not turn them back into callback buttons: a
+ * callback press carries no role, and the admins-only `permission` is not
+ * enforced on every client.
+ */
 function keyboardMessage(markdown: string, requests: JoinRequest[]) {
   const button = (request: JoinRequest, approve: boolean) => {
     const label = approve ? `通过 ${request.username}`.slice(0, 20) : '拒绝'
@@ -691,18 +679,19 @@ function keyboardMessage(markdown: string, requests: JoinRequest[]) {
       id: `${approve ? 'a' : 'r'}${shortId(request)}`,
       group_id: shortId(request),
       // visited_label shows on the pressing device the moment it is pressed,
-      // whatever came of it (a repeat, a race, a press QQ never delivered), so it
-      // must not claim an outcome: keep the label. QQ greys pressed buttons out
-      // anyway; the reply in the group is the result.
+      // whatever came of it, so it must not claim an outcome: keep the label.
+      // The reply in the group is the result.
       render_data: {
         label,
         visited_label: label,
         style: approve ? 4 : 0,
       },
       action: {
-        type: 1,
+        type: 2,
         permission: { type: 1 },
-        data: `${BUTTON_PREFIX}:${approve ? 'a' : 'r'}:${request.member_openid}`,
+        data: `/${approve ? '通过' : '拒绝'}入群申请 ${shortId(request)}`,
+        // Clients without `enter` support insert the command for a manual send.
+        enter: true,
         unsupport_tips: '请升级 QQ 后操作，或发送「入群申请」',
         ...(approve
           ? {}
