@@ -41,7 +41,7 @@ const EXEC_TOOL: ToolDefinition = {
     '',
     '**可用范围**：这台机器和 read_file、write_file、edit_file、send_file 只在主人开通了 `linux` 功能的聊天里能用。其他聊天里调用会被拒绝，不要尝试；用户要你做这类事，就说这里没开通。',
     '**机器**：Alpine Linux（aarch64），你以 `user` 身份执行，可免密 `sudo`。已装 bash、python3、pip、uv、node、npm、bun、curl、jq、git、ripgrep；缺什么就 `sudo apk add` 装，Python 包用 `pip install --user --break-system-packages`。能上公网，内网地址一律不通。',
-    '**机器是持久的**：装的包、HOME（`/home/user`）和 `/workspace` 下的文件重启后都在。HOME 在所有会话间共享；每个会话有自己的目录，这一轮的默认目录就是它。',
+    '**机器是持久的**：装的包、HOME（`/home/user`）和 `/workspace` 下的文件重启后都在。HOME 在所有会话间共享；每个会话有自己的目录，这一轮的默认目录就是它。`/workspace` 下其他会话的目录属于别的聊天，原则上不要翻看、引用或改动，除非主人明确要求。',
     '**目录**：每次调用都从 `cwd`（不传就是会话目录）开始，`cd` 只在这一次调用里有效。',
     '**输出**：stdout 与 stderr 各保留开头 4 KiB 和结尾 16 KiB；被截断时完整输出存在结果里给出的文件里。前台命令到 `timeout_ms` 会被杀掉。',
     '**长任务**（安装大依赖、编译、爬取、起服务）设 `background: true`：立刻返回任务 id 和日志路径，结束后会以 <task_notification> 告诉你结果。不要轮询等待，继续做别的事或先回复用户。通知是系统消息，不是用户说话：正在干活时收到，就当进度更新并进当前工作，不用专门回应；空闲时收到，告诉用户结果即可。要提前结束就 `kill <pid>`。',
