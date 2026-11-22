@@ -1,5 +1,5 @@
 diff --git a/lib/index.js b/lib/index.js
-index 5cc288ee1c20fc08cd182fb54dddd96a84af88b6..f6f07119356f3d2e921430145253834d0a668fcf 100644
+index 5cc288ee1c20fc08cd182fb54dddd96a84af88b6..f52f3cb5cbb2d1958233490413c43783fc29354c 100644
 --- a/lib/index.js
 +++ b/lib/index.js
 @@ -659,11 +659,11 @@ async function decodeGroupMessage(bot, data, message = {}, payload = message) {
@@ -32,3 +32,20 @@ index 5cc288ee1c20fc08cd182fb54dddd96a84af88b6..f6f07119356f3d2e921430145253834d
            session.messageId = resp.id;
            session.timestamp = new Date(resp.timestamp).valueOf();
            session.channelId = this.session.channelId;
+@@ -2935,6 +2937,16 @@ var _QQMessageEncoder = class _QQMessageEncoder extends import_koishi6.MessageEn
+           this.retry = true;
+           return send();
+         }
++        // A refused passive send (reply quota of 5 used up, window closed on
++        // QQ's clock) goes out once more as an active message.
++        if (!this.retry && (data.msg_id || data.event_id)) {
++          this.bot.logger.warn("%s passive send refused (code=%s), retry as active", this.session.cid, code);
++          delete data.msg_id;
++          delete data.msg_seq;
++          delete data.event_id;
++          this.retry = true;
++          return send();
++        }
+         if (!this.retry && code !== void 0 && this.bot.config.retryWhen.includes(code)) {
+           this.bot.logger.warn("%s retry message sending, code=%d", this.session.cid, code);
+           this.retry = true;
