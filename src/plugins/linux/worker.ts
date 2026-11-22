@@ -106,6 +106,11 @@ port.on('message', (msg: HostMessage) => {
     case 'abort':
       running.get(msg.id)?.abort('aborted')
       return
+    case 'sync':
+      void (vm?.sync() ?? Promise.resolve())
+        .catch(() => {})
+        .then(() => send({ type: 'synced', id: msg.id }))
+      return
     case 'shutdown':
       void (async () => {
         clearTimeout(syncTimer)

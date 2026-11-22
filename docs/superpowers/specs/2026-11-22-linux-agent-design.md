@@ -19,6 +19,8 @@ SILI 只能在 QuickJS 里跑纯 JS，做不了真正的 agent 工作（装包�
 
 2. 持久化靠 unkernel 数据盘（4 GiB 稀疏 ext4 镜像），放在 `data/linux/`（宿主卷）里，distro 镜像缓存也在这里。根文件系统的改动（`apk add`、HOME、`/workspace`）都在数据盘上。每条命令结束 1 秒后、以及关机和重启前，都会 `sync` 一次。
    Why：数据盘本身持久，用不着 only-chat 那套单元备份/恢复。访客写入先停在页缓存里，进程不 sync 就退出会丢数据（实测）。
+   本地备份：每小时检查一次（启动 5 分钟后先检查一次），最新备份超过 24 小时就 sync、稀疏复制 `data.img`、`gzip -1` 压缩为 `data/linux/backups/data-<UTC时间>.img.gz`，保留 7 份；`linux.backup` 立即备份，`linux` 显示上次结果。备份后宿主盘剩余预计低于 15% 时跳过并记 warn。还原：停 core，`gunzip -c 备份 | cp --sparse=always /dev/stdin data.img`。
+   Why：主人要求先做本地备份，宿主机磁盘不能因备份被写满。复制在运行中进行，结果与断电时的盘一致，ext4 日志可恢复（已实测还原后开机、文件完好）。
 
 3. VM 退出（panic、wasm trap、OOM）后，正在执行的工具返回错误；下一次调用自动重启 VM。
    Why：README 写明内核 wasm trap 会结束整个会话，只能重启。

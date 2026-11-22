@@ -102,7 +102,8 @@ export class LinuxMachine {
           this.logger.warn('[linux] machine exited: %s', msg.reason)
           return down(new MachineDownError(`the machine went down (${msg.reason})`))
         }
-        if (msg.type === 'result' || msg.type === 'error') this.#pending.get(msg.id)?.(msg)
+        if (msg.type === 'result' || msg.type === 'error' || msg.type === 'synced')
+          this.#pending.get(msg.id)?.(msg)
       })
       worker.on('error', (e) => {
         this.logger.warn('[linux] worker error:', e)
@@ -269,6 +270,19 @@ export class LinuxMachine {
         durationMs: Date.now() - started,
       }))
     return { id, pid, logPath, done }
+  }
+
+  /**
+   * Flush the guest's writes into the data disk file. What is on the file
+   * then matches a machine that lost power at that moment. No-op when off.
+   */
+  async sync(): Promise<void> {
+    if (!this.#bootedAt) return
+    const id = this.#nextId++
+    const reply = new Promise<WorkerMessage>((resolve) => this.#pending.set(id, resolve))
+    this.#post({ type: 'sync', id })
+    const msg = await reply.finally(() => this.#pending.delete(id))
+    if (msg.type === 'error') throw new MachineDownError(msg.message)
   }
 
   async restart() {

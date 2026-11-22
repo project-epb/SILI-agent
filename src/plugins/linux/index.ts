@@ -5,6 +5,7 @@ import path from 'node:path'
 import { resolveConversationScope } from '~/llm/services/conversation-scope'
 import { PROTOCOL_TAGS, escapeProtocolTags } from '~/llm/utils/protocol'
 
+import { type BackupOptions, type BackupResult, backupDisk, lastBackupAt } from './backup'
 import { type Job, LinuxMachine, WORKSPACE } from './machine'
 import type { ProxyAddress } from './net-backend'
 import { conversationDirName } from './output'
@@ -24,7 +25,14 @@ export interface Config {
   proxy?: string
   /** Tool iterations a turn may take where the machine is available. */
   iterationBudget?: number
+  /** Local backups of the data disk; see backup.ts. */
+  backup?: Partial<BackupOptions> & {
+    /** Back up when the newest backup is older than this. 0 disables. */
+    intervalMs?: number
+  }
 }
+
+const BACKUP_CHECK_MS = 60 * 60 * 1000
 
 /** The command whose feature level gates the machine; see FeatureService. */
 const COMMAND = 'linux'
@@ -46,10 +54,13 @@ export default class LinuxService extends Service {
   static inject = ['llm', 'feature', 'http']
 
   readonly machine: LinuxMachine
+  #backup: BackupOptions & { intervalMs: number }
+  #backingUp = false
+  #lastBackup?: { at: Date; result: BackupResult | { status: 'failed'; reason: string } }
 
   constructor(
     ctx: Context,
-    options: Config
+    private readonly options: Config
   ) {
     super(ctx, 'linux')
     const logger = ctx.logger('linux')
@@ -62,12 +73,31 @@ export default class LinuxService extends Service {
       logger
     )
 
+    this.#backup = {
+      dir: options.backup?.dir ?? `${options.dataDir}/backups`,
+      keep: options.backup?.keep ?? 7,
+      minFreeRatio: options.backup?.minFreeRatio ?? 0.15,
+      intervalMs: options.backup?.intervalMs ?? 24 * 60 * 60 * 1000,
+    }
+
     const command = ctx
       .command(`${COMMAND}`, 'SILI 的 Linux 机器', { featLevel: 100, authority: 4 })
       .action(() => {
         const at = this.machine.bootedAt
-        return at ? `运行中，启动于 ${at.toLocaleString('sv', { timeZone: 'Asia/Shanghai' })}` : '未启动（用到时自动启动）'
+        const state = at ? `运行中，启动于 ${fmt(at)}` : '未启动（用到时自动启动）'
+        const b = this.#lastBackup
+        const backup = !b
+          ? '本次进程还没有备份过'
+          : b.result.status === 'done'
+            ? `上次备份 ${fmt(b.at)}，${(b.result.bytes / 2 ** 20).toFixed(0)} MiB`
+            : `上次备份 ${fmt(b.at)} ${b.result.status === 'skipped' ? '跳过' : '失败'}：${b.result.reason}`
+        return `${state}\n${backup}`
       })
+    command.subcommand('.backup', '立即备份 Linux 机器的硬盘', { authority: 4 }).action(async () => {
+      const r = await this.backup()
+      if (r.status === 'done') return `备份好了：${path.basename(r.file)}（${(r.bytes / 2 ** 20).toFixed(0)} MiB）`
+      return `没有备份：${r.reason}`
+    })
     command.subcommand('.restart', '重启 Linux 机器', { authority: 4 }).action(async () => {
       await this.machine.restart()
       return '重启好了。'
@@ -85,10 +115,40 @@ export default class LinuxService extends Service {
     // The same in every chat, like the tool list: availability is stated, not varied.
     ctx.on('llm/build-system-prompt', (registry) => registry.add('linux', MACHINE_PROMPT))
 
+    if (this.#backup.intervalMs > 0) {
+      ctx.setTimeout(() => void this.backupIfDue(), 5 * 60 * 1000)
+      ctx.setInterval(() => void this.backupIfDue(), BACKUP_CHECK_MS)
+    }
+
     ctx.on('dispose', () => {
       for (const tool of tools) ctx.llm.tools.unregister(tool.definition.name)
       this.machine.dispose()
     })
+  }
+
+  async backupIfDue() {
+    const last = await lastBackupAt(this.#backup.dir)
+    if (last && Date.now() - last.getTime() < this.#backup.intervalMs) return
+    await this.backup()
+  }
+
+  /** One backup now; a second call while one runs is skipped. */
+  async backup(): Promise<BackupResult | { status: 'failed'; reason: string }> {
+    const logger = this.ctx.logger('linux')
+    if (this.#backingUp) return { status: 'skipped', reason: 'a backup is already running' }
+    this.#backingUp = true
+    let result: BackupResult | { status: 'failed'; reason: string }
+    try {
+      result = await backupDisk(this.machine, this.options.dataDir, this.#backup)
+    } catch (e: any) {
+      result = { status: 'failed', reason: String(e?.message ?? e) }
+    } finally {
+      this.#backingUp = false
+    }
+    this.#lastBackup = { at: new Date(), result }
+    if (result.status === 'done') logger.info('[linux] backup %s (%d bytes)', result.file, result.bytes)
+    else logger.warn('[linux] backup %s: %s', result.status, result.reason)
+    return result
   }
 
   available(session: Session): boolean {
@@ -208,4 +268,8 @@ function safeName(raw: string, type: string, mime: string, index: number): strin
   if (base && base !== 'file') return base.slice(0, 100)
   const ext = EXT_OF_MIME[mime] ?? (type === 'img' || type === 'image' ? 'png' : 'bin')
   return `${type}-${index + 1}.${ext}`
+}
+
+function fmt(d: Date) {
+  return d.toLocaleString('sv', { timeZone: 'Asia/Shanghai' })
 }

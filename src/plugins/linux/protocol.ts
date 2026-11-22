@@ -22,10 +22,13 @@ export type HostMessage =
       maxBuffer?: number
     }
   | { type: 'abort'; id: number }
+  /** Flush the guest's page cache onto the data disk file. */
+  | { type: 'sync'; id: number }
   | { type: 'shutdown' }
 
 export type WorkerMessage =
   | { type: 'ready' }
+  | { type: 'synced'; id: number }
   | { type: 'boot-error'; message: string }
   | { type: 'exited'; reason: string }
   | {
