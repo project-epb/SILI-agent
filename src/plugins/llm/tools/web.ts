@@ -2,17 +2,7 @@ import type { ToolDefinition } from '../providers/_base'
 
 export const WEB_SEARCH_TOOL: ToolDefinition = {
   name: 'web_search',
-  description: [
-    '联网搜索（**收费**，按需用）。返回标题/URL/摘要片段。',
-    '',
-    '**何时调**：时效信息（今天/最近的新闻、价格、赛事、版本）、训练截止后的事实、小众专业话题、用户明确"搜一下"。',
-    '',
-    '**何时别调**：事实性常识（地理/历史/稳定人物作品）、闲聊/RP、上下文与记忆能答的、能用 `execute_koishi_command` 调专门指令（wiki/pixiv 等）解决的——专门指令更精准。',
-    '',
-    '**多轮策略**（一 turn 上限 3 次，超额拒绝）：结果不对就换关键词重搜（加年份/换语言/换平台名）。连搜 2-3 次还不行就停手，老实告诉用户"SILI 没查到"——不要拆 query 绕配额。',
-    '',
-    '**摘要不够？** 挑 1-3 个最相关 URL **一次性**调 `extract_webpages`（一批多 URL，不要每个单独抓）。',
-  ].join('\n'),
+  description: '联网搜索，返回标题、URL 和摘要片段。每轮最多 3 次，超出会被拒绝。',
   parameters: {
     type: 'object',
     properties: {
@@ -34,16 +24,7 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
 
 export const EXTRACT_WEBPAGES_TOOL: ToolDefinition = {
   name: 'extract_webpages',
-  description: [
-    '抓取 1-5 个网页正文（markdown）。**比 web_search 更贵**，只在摘要不够时用。',
-    '',
-    '**典型流程**：`web_search` → 挑 1-3 个最相关 URL → **一次性**传给本工具（不要每个 URL 单独调）。',
-    '',
-    '**何时调**：search 摘要不足以回答（缺具体数字/步骤/完整说明），或用户明说要看某篇文章。',
-    '**何时别调**：摘要够答的、URL 来源不可信（非 search 结果/非用户提供）、闲聊场景。',
-    '',
-    '**约束**：urls 1-5（优先 1-3）；一 turn 上限 2 次。失败 URL 会单独标注，不要因一个失败放弃整批。',
-  ].join('\n'),
+  description: '抓取 1～5 个网页的正文（markdown），一次调用传一批 URL。每轮最多 2 次；失败的 URL 单独标注。',
   parameters: {
     type: 'object',
     properties: {

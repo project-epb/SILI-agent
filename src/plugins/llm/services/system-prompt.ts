@@ -6,7 +6,7 @@
  * prompt-cache hits).
  *
  * Memory is **not** included here — the agent fetches it on demand via the
- * `read_user_memory` tool. See the "关于这个用户的长期记忆" section below.
+ * `read_user_memory` tool; its rules are the `memory` plugin section.
  */
 import type { Context } from 'koishi'
 
@@ -112,19 +112,6 @@ function koishiSystemText(commandCatalog: string): string {
       ].join('\n')
     )
   }
-  parts.push(
-    [
-      '## 长期记忆',
-      '共三份记录，调用方式见 `read_user_memory` / `save_user_memory` 工具描述：',
-      '- **私密记录**：每位用户一份，只在私聊里读写，后台也会定期从私聊里整理。内容不转述给第三方。',
-      '- **共享记录**：每位用户一份，本人愿意公开的信息，所有群都可能看到。',
-      '- **群记忆**：每个群一份，群梗、群规、成员关系，只在本群用。',
-      '',
-      '每份记录都标着主人。群里多人说话时，看清是谁的记录再用，别张冠李戴。',
-      '',
-      '**不要主动**提起从记忆里才知道的私密细节，除非用户自己先提起。',
-    ].join('\n')
-  )
   parts.push(
     [
       '## 输出格式',
@@ -251,9 +238,7 @@ export class SystemPromptBuilder {
     const text = buildSystemPromptText(basePrompt, catalog, extensions, this.voice)
     this.cache = { basePrompt, catalog, extensions, text }
     // Compare across restarts: the same hash means the cached prefix survives.
-    this.ctx
-      ?.logger('llm')
-      .info('[llm] system prompt rebuilt: %d chars, sha256 %s', text.length, sha256(text).slice(0, 16))
+    this.ctx?.logger?.('llm').info('[llm] system prompt rebuilt: %d chars, sha256 %s', text.length, sha256(text).slice(0, 16))
     return text
   }
 

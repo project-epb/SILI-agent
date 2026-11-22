@@ -7,23 +7,7 @@ import type { ToolHandler } from './types'
 
 export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
   name: 'read_channel_history',
-  description: [
-    '查看**当前群聊** channel 的最近消息历史（只在群聊 / channel 里可用，私聊会拒绝）。',
-    '',
-    '**何时调**：',
-    '- 用户在群里 @ 你问「你怎么看 / 大家刚才在聊啥」之类，但你的对话历史里没有上下文',
-    '- 需要 catch up 一段刚才错过的群讨论',
-    '- 群聊环境，用户问的与你看到的上下文不沾边，可能在讨论群内事宜',
-    '',
-    '**何时别调**：',
-    '- 私聊场景（会报错）—— 你和当前用户的完整对话历史已经在 prompt 里',
-    '- 闲聊/已经能直接回答的问题',
-    '- 凑上下文 / 例行扫一遍（浪费 token）',
-    '',
-    '- 用户引用了一条较早的消息，你需要知道那条消息前后发生了什么（传 `before_message_id`）',
-    '',
-    '**约束**：仅能查当前 channel，不能跨群；NapCat 端单次最多约 30 条；分页用上次返回里的 `before_seq` 字段继续往前拉。',
-  ].join('\n'),
+  description: '查看当前群聊最近的消息，私聊不可用。只能查当前群，单次最多约 30 条；分页用上次返回里的 `before_seq` 继续往前拉。',
   parameters: {
     type: 'object',
     properties: {
@@ -467,7 +451,7 @@ export function buildStoredChannelHistoryHandler(
     definition: {
       ...READ_CHANNEL_HISTORY_TOOL,
       description:
-        '查看当前群聊或频道中机器人实际记录到的消息，私聊不可用。需要群聊上下文时使用。可传被引用消息的 ID 作为锚点，或用上次结果给出的 before_message_id 向前翻页。',
+        '查看当前群聊或频道中机器人实际记录到的消息，私聊不可用。可传被引用消息的 ID 作为锚点，或用上次结果给出的 before_message_id 向前翻页。',
       parameters: {
         type: 'object',
         properties: {

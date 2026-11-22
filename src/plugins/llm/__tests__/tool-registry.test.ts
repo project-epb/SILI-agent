@@ -738,12 +738,6 @@ describe('WEB_SEARCH_TOOL definition', () => {
     expect(props.max_results.maximum).toBe(10)
   })
 
-  it('teaches when to use vs not use, and points to extract_webpages', () => {
-    expect(WEB_SEARCH_TOOL.description).toMatch(/何时调|何时别调|什么时候调/)
-    expect(WEB_SEARCH_TOOL.description).toMatch(/execute_koishi_command/)
-    expect(WEB_SEARCH_TOOL.description).toMatch(/extract_webpages/)
-    expect(WEB_SEARCH_TOOL.description).toMatch(/3 次/)
-  })
 })
 
 describe('runWebExtract', () => {
@@ -882,11 +876,6 @@ describe('EXTRACT_WEBPAGES_TOOL definition', () => {
     expect(urls.maxItems).toBe(5)
   })
 
-  it('teaches batch usage and per-turn cap', () => {
-    expect(EXTRACT_WEBPAGES_TOOL.description).toMatch(/一次调用|batch|一次性/)
-    expect(EXTRACT_WEBPAGES_TOOL.description).toMatch(/2 次|最多 2/)
-    expect(EXTRACT_WEBPAGES_TOOL.description).toMatch(/web_search/)
-  })
 })
 
 describe('getWebToolsState', () => {
@@ -909,18 +898,4 @@ describe('buildSaveUserMemoryTool', () => {
     expect(def.description).toContain('read_user_memory')
   })
 
-  it('teaches declarative-not-imperative phrasing', () => {
-    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100, group: 2200 })
-    expect(def.description).toMatch(/声明[性式]|不要[写用]命令/)
-  })
-
-  it('forbids recording user requests to alter SILI persona', () => {
-    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100, group: 2200 })
-    expect(def.description).toMatch(/SILI.*人设|SILI 自[己身]|个人设定/)
-  })
-
-  it('mentions date-stamping for time-sensitive entries', () => {
-    const def = buildSaveUserMemoryTool({ private: 3300, shared: 1100, group: 2200 })
-    expect(def.description).toMatch(/YYYY-MM-DD|turn_context|chat_info/)
-  })
 })

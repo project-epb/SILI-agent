@@ -438,6 +438,13 @@ export default class PluginLLM extends BasePlugin<Config> {
 
     // 注册内建工具
     this.tools.register(executeKoishiCommandHandler)
+    // Each capability's standing rules as its own `<plugin>` section,
+    // registered with its tools so a section never outlives them.
+    const promptSection = (id: string, file: string) => {
+      const text = PluginLLM.readPromptFile(file)
+      this.ctx.on('llm/build-system-prompt', (registry) => registry.add(id, text))
+    }
+    promptSection('memory', 'memory.prompt.md')
     const hardLimits = () => ({
       private: this.getMemoryHardLimit('private'),
       shared: this.getMemoryHardLimit('shared'),
@@ -543,6 +550,7 @@ export default class PluginLLM extends BasePlugin<Config> {
     }
     if (webSearch && webClient) {
       this.logger.info(`web search backend: ${webSearch.backend}`)
+      promptSection('web-search', 'web-search.prompt.md')
       this.tools.register({
         definition: WEB_SEARCH_TOOL,
         execute: async (args, { turnState }) =>
@@ -563,6 +571,7 @@ export default class PluginLLM extends BasePlugin<Config> {
     }
 
     const channelHistory = this.ctx.channelMessageHistory
+    promptSection('channel-history', 'channel-history.prompt.md')
     this.tools.register(
       channelHistory
         ? buildStoredChannelHistoryHandler(

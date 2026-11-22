@@ -13,19 +13,8 @@ export const MEMORY_TIERS: readonly MemoryTier[] = ['private', 'shared', 'group'
 
 export const READ_USER_MEMORY_TOOL: ToolDefinition = {
   name: 'read_user_memory',
-  description: [
-    '读取长期记忆。共三份记录：',
-    '- **私密记录**（private）：触发这一轮的用户的，只在私聊里读写，内容不转述给第三方。',
-    '- **共享记录**（shared）：触发这一轮的用户的，可公开的信息，所有群都可能看到。',
-    '- **群记忆**（group）：当前这个群的，群梗、群规、成员关系等，只在本群用。',
-    '',
-    '私聊里返回私密 + 共享，群里返回共享 + 群记忆。每份用 `<user_memory>` 包着，标明主人和档位。',
-    '',
-    '**何时调**：话题涉及该用户的偏好、过往互动、个人化判断时。',
-    '**何时不调**：闲聊、常识问答、无需个人化的请求——浪费 turn。',
-    '',
-    '如果接下来打算调 `save_user_memory` 更新某份记录，必须先调本工具（save 会校验 read-before-write）。',
-  ].join('\n'),
+  description:
+    '读取长期记忆：私聊里返回私密 + 共享记录，群里返回共享记录 + 群记忆，每份用 `<user_memory>` 包着，标明主人和档位。打算用 `save_user_memory` 更新某份记录前必须先读（写入会校验）。',
   parameters: {
     type: 'object',
     properties: {},
