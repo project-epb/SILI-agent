@@ -115,6 +115,7 @@ import * as PluginRecall from 'koishi-plugin-recall'
 import * as PluginSchedule from 'koishi-plugin-schedule'
 import PluginSilk from 'koishi-plugin-silk'
 import * as PluginStickerAdmin from 'koishi-plugin-sticker-admin'
+import * as PluginLinuxAdmin from 'koishi-plugin-linux-admin'
 
 import PluginHTTP from '@cordisjs/plugin-http'
 
@@ -344,6 +345,8 @@ function install(app: App) {
     ctx.plugin(PluginStickerAdmin)
     // 用户反馈：只有聊天 LLM 能提交，在控制台查看（authority 4）
     ctx.plugin(PluginFeedback)
+    // SILI 的 Linux 机器：终端、文件、状态（authority 4）；等 linux 服务就绪
+    ctx.plugin(PluginLinuxAdmin)
   })
 
   // 第三方

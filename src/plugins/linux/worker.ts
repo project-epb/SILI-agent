@@ -15,6 +15,7 @@ import {
   createKernel,
   fetchDistro,
   openDisk,
+  type Pty,
 } from 'unkernel/node'
 
 import { filteredBackend } from './net-backend'
@@ -92,6 +93,34 @@ async function exec(msg: Extract<HostMessage, { type: 'exec' }>) {
   }
 }
 
+const ptys = new Map<number, Pty>()
+
+async function openPty(msg: Extract<HostMessage, { type: 'pty-open' }>) {
+  if (!vm) return send({ type: 'pty-ended', id: msg.id, exitCode: null, error: 'not booted' })
+  let pty: Pty
+  try {
+    pty = await vm.spawn(undefined, undefined, { user: msg.user, cols: msg.cols, rows: msg.rows })
+  } catch (e: any) {
+    return send({ type: 'pty-ended', id: msg.id, exitCode: null, error: String(e?.message ?? e) })
+  }
+  ptys.set(msg.id, pty)
+  send({ type: 'pty-opened', id: msg.id, pid: pty.pid })
+  // Keep reading: the guest program blocks once the vsock window is full.
+  const reader = pty.output.getReader()
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const data = new Uint8Array(value)
+      send({ type: 'pty-output', id: msg.id, data }, [data.buffer])
+    }
+  } catch {}
+  const end = await pty.ended.catch(() => null)
+  ptys.delete(msg.id)
+  scheduleSync()
+  send({ type: 'pty-ended', id: msg.id, exitCode: end?.type === 'exit' ? end.code : null })
+}
+
 port.on('message', (msg: HostMessage) => {
   switch (msg.type) {
     case 'boot':
@@ -105,6 +134,18 @@ port.on('message', (msg: HostMessage) => {
       return
     case 'abort':
       running.get(msg.id)?.abort('aborted')
+      return
+    case 'pty-open':
+      void openPty(msg)
+      return
+    case 'pty-input':
+      void ptys.get(msg.id)?.write(msg.data).catch(() => {})
+      return
+    case 'pty-resize':
+      ptys.get(msg.id)?.resize(msg.cols, msg.rows)
+      return
+    case 'pty-close':
+      void ptys.get(msg.id)?.close().catch(() => {})
       return
     case 'sync':
       void (vm?.sync() ?? Promise.resolve())

@@ -5,7 +5,7 @@ import { Worker } from 'node:worker_threads'
 import type { BootOptions, HostMessage, WorkerMessage } from './protocol'
 
 export const WORKSPACE = '/workspace'
-const JOBS_DIR = `${WORKSPACE}/.jobs`
+export const JOBS_DIR = `${WORKSPACE}/.jobs`
 const PROVISIONED_MARK = '/var/lib/sili/provisioned'
 const PACKAGES = ['bash', 'python3', 'py3-pip', 'curl', 'jq', 'git', 'ripgrep', 'file']
 const PROVISION_TIMEOUT_MS = 10 * 60_000
@@ -63,6 +63,7 @@ export class LinuxMachine {
   #nextId = 1
   #cwdSeq = 1
   #pending = new Map<number, (msg: WorkerMessage) => void>()
+  #ptys = new Map<number, (msg: WorkerMessage) => void>()
   #bootedAt?: Date
 
   constructor(
@@ -104,6 +105,8 @@ export class LinuxMachine {
         }
         if (msg.type === 'result' || msg.type === 'error' || msg.type === 'synced')
           this.#pending.get(msg.id)?.(msg)
+        if (msg.type === 'pty-opened' || msg.type === 'pty-output' || msg.type === 'pty-ended')
+          this.#ptys.get(msg.id)?.(msg)
       })
       worker.on('error', (e) => {
         this.logger.warn('[linux] worker error:', e)
@@ -154,6 +157,9 @@ export class LinuxMachine {
     this.#worker = undefined
     this.#booting = undefined
     this.#bootedAt = undefined
+    for (const settle of this.#ptys.values())
+      settle({ type: 'pty-ended', id: -1, exitCode: null, error: 'the machine went down' })
+    this.#ptys.clear()
     for (const settle of this.#pending.values())
       settle({ type: 'error', id: 0, code: 'DOWN', message: error.message })
     this.#pending.clear()
@@ -218,22 +224,22 @@ export class LinuxMachine {
   }
 
   /** The file's bytes, or an error message when it cannot be read whole. */
-  async readFile(file: string, maxBytes: number): Promise<Uint8Array | string> {
-    const stat = await this.run(['stat', '-L', '-c', '%F %s', '--', file])
+  async readFile(file: string, maxBytes: number, user?: string): Promise<Uint8Array | string> {
+    const stat = await this.run(['stat', '-L', '-c', '%F %s', '--', file], { user })
     if (stat.exitCode !== 0) return decode(stat.stderr).trim() || `cannot stat ${file}`
     const [kind, size] = decode(stat.stdout).trim().split(/ (?=\d+$)/)
     if (kind !== 'regular file' && kind !== 'regular empty file') return `${file} is a ${kind}, not a regular file`
     if (Number(size) > maxBytes) return `${file} is ${size} bytes, over the ${maxBytes}-byte limit`
-    const r = await this.run(['cat', '--', file], { maxBuffer: maxBytes + 1 })
+    const r = await this.run(['cat', '--', file], { maxBuffer: maxBytes + 1, user })
     if (r.exitCode !== 0) return decode(r.stderr).trim() || `cannot read ${file}`
     return r.stdout
   }
 
   /** Write bytes to a file, creating its directory. Returns an error message or ''. */
-  async writeFile(file: string, bytes: Uint8Array | string): Promise<string> {
+  async writeFile(file: string, bytes: Uint8Array | string, user?: string): Promise<string> {
     const r = await this.run(
       ['sh', '-c', 'mkdir -p "$(dirname "$1")" && cat > "$1"', 'sh', file],
-      { input: bytes }
+      { input: bytes, user }
     )
     return r.exitCode === 0 ? '' : decode(r.stderr).trim() || `cannot write ${file}`
   }
@@ -247,7 +253,8 @@ export class LinuxMachine {
       'mkdir -p "$3" && cd "$1" || exit 1',
       // A subshell, so an `exit` in the command still gets its status recorded.
       `setsid sh -c '(eval "$1"); echo $? > "$2/exit"' sh "$2" "$3" > "$3/log" 2>&1 < /dev/null &`,
-      'echo $!',
+      // pid (the session and process group leader) and command, for the admin page.
+      'echo $! > "$3/pid"; printf %s "$2" > "$3/cmd"; echo $!',
     ].join('\n')
     const r = await this.run(['sh', '-c', start, 'sh', cwd, command, dir], { timeoutMs: 30_000 })
     const pid = Number(decode(r.stdout).trim())
@@ -285,6 +292,42 @@ export class LinuxMachine {
     if (msg.type === 'error') throw new MachineDownError(msg.message)
   }
 
+  /**
+   * An interactive login shell on a pty, for the admin page. Output and the
+   * end are pushed to the callbacks; the shell is hung up by close().
+   */
+  async openPty(
+    opts: { user: string; cols: number; rows: number },
+    on: { output(data: Uint8Array): void; end(exitCode: number | null, error?: string): void }
+  ): Promise<PtyHandle> {
+    if (!this.#bootedAt) await this.ensure()
+    const id = this.#nextId++
+    let started = false
+    const opened = new Promise<number>((resolve, reject) => {
+      this.#ptys.set(id, (msg) => {
+        if (msg.type === 'pty-opened') {
+          started = true
+          resolve(msg.pid)
+        } else if (msg.type === 'pty-output') on.output(msg.data)
+        else if (msg.type === 'pty-ended') {
+          this.#ptys.delete(id)
+          // A shell that never started is the caller's error, not an end.
+          if (started) on.end(msg.exitCode, msg.error)
+          else reject(new Error(msg.error ?? 'the shell did not start'))
+        }
+      })
+    })
+    this.#post({ type: 'pty-open', id, ...opts })
+    const pid = await opened
+    return {
+      pid,
+      write: (data) =>
+        this.#post({ type: 'pty-input', id, data: typeof data === 'string' ? new TextEncoder().encode(data) : data }),
+      resize: (cols, rows) => this.#post({ type: 'pty-resize', id, cols, rows }),
+      close: () => this.#post({ type: 'pty-close', id }),
+    }
+  }
+
   async restart() {
     if (this.#bootedAt)
       await this.run(['sync'], { user: 'root', timeoutMs: 10_000 }).catch(() => {})
@@ -296,6 +339,13 @@ export class LinuxMachine {
     this.#post({ type: 'shutdown' })
     setTimeout(() => this.#teardown(new MachineDownError('the machine was shut down')), 5000).unref?.()
   }
+}
+
+export interface PtyHandle {
+  pid: number
+  write(data: Uint8Array | string): void
+  resize(cols: number, rows: number): void
+  close(): void
 }
 
 export function decode(bytes: Uint8Array): string {

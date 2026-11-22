@@ -1,0 +1,10 @@
+{
+  "name": "koishi-plugin-linux-admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Console page for SILI's Linux machine: terminal, file manager, status",
+  "main": "index.ts",
+  "peerDependencies": {
+    "koishi": "^4.18.0"
+  }
+}

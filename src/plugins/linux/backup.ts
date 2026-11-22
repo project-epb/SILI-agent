@@ -65,7 +65,10 @@ export async function backupDisk(
   const file = path.join(opts.dir, `data-${stamp}.img.gz`)
   try {
     await machine.sync()
-    await run('cp', ['--sparse=always', disk, copy])
+    // auto, not always: always punches holes with fallocate, which some
+    // mounts refuse (virtiofs: "error deallocating"); auto keeps the
+    // disk's own holes without it.
+    await run('cp', ['--sparse=auto', disk, copy])
     await run('gzip', ['-1', '-c', copy], part)
     await rename(part, file)
   } finally {

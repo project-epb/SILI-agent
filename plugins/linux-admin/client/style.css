@@ -1,0 +1,47 @@
+.lx-root { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 1rem 1.25rem; gap: 0.75rem; }
+.lx-tabs { display: flex; gap: 0.4rem; align-items: center; }
+.lx-tab {
+  padding: 0.4rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+  border: 1px solid var(--k-color-border, #ddd); background: transparent; color: inherit;
+}
+.lx-tab.lx-active { background: var(--k-color-primary, #6a5acd); border-color: transparent; color: #fff; }
+.lx-rootsw { margin-left: auto; font-size: 0.85rem; cursor: pointer; }
+.lx-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.lx-scroll { overflow-y: auto; }
+
+.lx-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.6rem; }
+.lx-btn {
+  padding: 0.35rem 0.9rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+  border: 1px solid transparent; background: var(--k-color-primary, #6a5acd); color: #fff;
+}
+.lx-btn.lx-small { padding: 0.15rem 0.6rem; font-size: 0.8rem; }
+.lx-btn.lx-danger { background: var(--k-color-danger, #e0533d); }
+.lx-btn.lx-ghost { background: transparent; border-color: var(--k-color-border, #ddd); color: inherit; }
+.lx-input {
+  flex: 1; min-width: 12rem; padding: 0.35rem 0.7rem; border-radius: 6px; font-size: 0.85rem; font-family: ui-monospace, Menlo, monospace;
+  border: 1px solid var(--k-color-border, #d0d0d0); background: var(--k-card-bg, #fff); color: inherit;
+}
+.lx-input.lx-narrow { flex: 0 0 9rem; min-width: 0; }
+.lx-dim { color: var(--k-text-light, #999); }
+.lx-err { color: var(--k-color-danger, #e0533d); margin: 0.3rem 0; }
+.lx-link { cursor: pointer; color: var(--k-color-primary, #6a5acd); }
+
+.lx-term-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.lx-term { flex: 1; min-height: 20rem; background: #000; border-radius: 6px; padding: 4px; overflow: hidden; }
+
+.lx-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.lx-table th, .lx-table td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--k-color-border, #eee); }
+.lx-table td:first-child { word-break: break-all; }
+.lx-actions { white-space: nowrap; display: flex; gap: 0.3rem; }
+.lx-cmd { display: inline-block; max-width: 32rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+
+.lx-editor { margin-bottom: 0.8rem; }
+.lx-textarea {
+  width: 100%; height: 50vh; box-sizing: border-box; padding: 0.6rem; border-radius: 6px; font-size: 0.85rem;
+  font-family: ui-monospace, Menlo, Consolas, monospace; tab-size: 4;
+  border: 1px solid var(--k-color-border, #d0d0d0); background: var(--k-card-bg, #fff); color: inherit;
+}
+
+.lx-dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin: 0 0 1rem; font-size: 0.9rem; }
+.lx-dl dt { color: var(--k-text-light, #999); }
+.lx-dl dd { margin: 0; }

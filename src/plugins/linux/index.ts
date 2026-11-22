@@ -54,9 +54,11 @@ export default class LinuxService extends Service {
   static inject = ['llm', 'feature', 'http']
 
   readonly machine: LinuxMachine
-  #backup: BackupOptions & { intervalMs: number }
-  #backingUp = false
-  #lastBackup?: { at: Date; result: BackupResult | { status: 'failed'; reason: string } }
+  // TS `private`, not `#`: Koishi reaches services through a Proxy, and a
+  // `#` field read with the proxy as `this` throws.
+  private backupOptions: BackupOptions & { intervalMs: number }
+  private backingUp = false
+  private _lastBackup?: { at: Date; result: BackupResult | { status: 'failed'; reason: string } }
 
   constructor(
     ctx: Context,
@@ -73,7 +75,7 @@ export default class LinuxService extends Service {
       logger
     )
 
-    this.#backup = {
+    this.backupOptions = {
       dir: options.backup?.dir ?? `${options.dataDir}/backups`,
       keep: options.backup?.keep ?? 7,
       minFreeRatio: options.backup?.minFreeRatio ?? 0.15,
@@ -85,7 +87,7 @@ export default class LinuxService extends Service {
       .action(() => {
         const at = this.machine.bootedAt
         const state = at ? `运行中，启动于 ${fmt(at)}` : '未启动（用到时自动启动）'
-        const b = this.#lastBackup
+        const b = this._lastBackup
         const backup = !b
           ? '本次进程还没有备份过'
           : b.result.status === 'done'
@@ -115,7 +117,7 @@ export default class LinuxService extends Service {
     // The same in every chat, like the tool list: availability is stated, not varied.
     ctx.on('llm/build-system-prompt', (registry) => registry.add('linux', MACHINE_PROMPT))
 
-    if (this.#backup.intervalMs > 0) {
+    if (this.backupOptions.intervalMs > 0) {
       ctx.setTimeout(() => void this.backupIfDue(), 5 * 60 * 1000)
       ctx.setInterval(() => void this.backupIfDue(), BACKUP_CHECK_MS)
     }
@@ -126,26 +128,30 @@ export default class LinuxService extends Service {
     })
   }
 
+  get lastBackup() {
+    return this._lastBackup
+  }
+
   async backupIfDue() {
-    const last = await lastBackupAt(this.#backup.dir)
-    if (last && Date.now() - last.getTime() < this.#backup.intervalMs) return
+    const last = await lastBackupAt(this.backupOptions.dir)
+    if (last && Date.now() - last.getTime() < this.backupOptions.intervalMs) return
     await this.backup()
   }
 
   /** One backup now; a second call while one runs is skipped. */
   async backup(): Promise<BackupResult | { status: 'failed'; reason: string }> {
     const logger = this.ctx.logger('linux')
-    if (this.#backingUp) return { status: 'skipped', reason: 'a backup is already running' }
-    this.#backingUp = true
+    if (this.backingUp) return { status: 'skipped', reason: 'a backup is already running' }
+    this.backingUp = true
     let result: BackupResult | { status: 'failed'; reason: string }
     try {
-      result = await backupDisk(this.machine, this.options.dataDir, this.#backup)
+      result = await backupDisk(this.machine, this.options.dataDir, this.backupOptions)
     } catch (e: any) {
       result = { status: 'failed', reason: String(e?.message ?? e) }
     } finally {
-      this.#backingUp = false
+      this.backingUp = false
     }
-    this.#lastBackup = { at: new Date(), result }
+    this._lastBackup = { at: new Date(), result }
     if (result.status === 'done') logger.info('[linux] backup %s (%d bytes)', result.file, result.bytes)
     else logger.warn('[linux] backup %s: %s', result.status, result.reason)
     return result

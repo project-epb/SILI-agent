@@ -24,11 +24,20 @@ export type HostMessage =
   | { type: 'abort'; id: number }
   /** Flush the guest's page cache onto the data disk file. */
   | { type: 'sync'; id: number }
+  /** An interactive login shell on a pty (the admin page's terminal). */
+  | { type: 'pty-open'; id: number; user: string; cols: number; rows: number }
+  | { type: 'pty-input'; id: number; data: Uint8Array }
+  | { type: 'pty-resize'; id: number; cols: number; rows: number }
+  | { type: 'pty-close'; id: number }
   | { type: 'shutdown' }
 
 export type WorkerMessage =
   | { type: 'ready' }
   | { type: 'synced'; id: number }
+  | { type: 'pty-opened'; id: number; pid: number }
+  | { type: 'pty-output'; id: number; data: Uint8Array }
+  /** The shell ended, or failed to start (`error`). */
+  | { type: 'pty-ended'; id: number; exitCode: number | null; error?: string }
   | { type: 'boot-error'; message: string }
   | { type: 'exited'; reason: string }
   | {
