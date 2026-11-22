@@ -19,11 +19,23 @@ export interface ToolContext {
    * pick a stable key (see e.g. `MEMORY_TOOL_STATE_KEY`).
    */
   turnState: Record<string, unknown>
+  /** Aborts when the turn is stopped; long-running tools should honour it. */
+  signal?: AbortSignal
 }
 
 export interface ToolHandler {
   definition: ToolDefinition
   execute(args: Record<string, any>, toolCtx: ToolContext): Promise<string>
+  /**
+   * Offered only in conversations where this returns true. A gated tool is
+   * never offered without a session to check (e.g. the memory fork).
+   */
+  available?(session: Session): boolean
+  /**
+   * Tool iterations a turn may take while this tool is offered, when more
+   * than the configured default (agent work runs many commands in a row).
+   */
+  iterationBudget?: number
 }
 
 /**
@@ -46,7 +58,19 @@ export class ToolRegistry {
     return this.handlers.get(name)
   }
 
-  listDefinitions(): ToolDefinition[] {
-    return [...this.handlers.values()].map((h) => h.definition)
+  /** The handlers offered in this session; ungated ones only without one. */
+  available(session?: Session): ToolHandler[] {
+    return [...this.handlers.values()].filter((h) =>
+      h.available ? !!session && h.available(session) : true
+    )
+  }
+
+  listDefinitions(session?: Session): ToolDefinition[] {
+    return this.available(session).map((h) => h.definition)
+  }
+
+  /** The iteration budget for a turn in this session. */
+  iterationBudget(session: Session, fallback: number): number {
+    return Math.max(fallback, ...this.available(session).map((h) => h.iterationBudget ?? 0))
   }
 }

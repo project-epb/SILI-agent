@@ -153,7 +153,7 @@ export async function runAgentLoop(
   // (read-before-write + optimistic-lock).
   const turnState: Record<string, unknown> = opts.turnState ?? {}
 
-  const allTools = opts.registry.listDefinitions()
+  const allTools = opts.registry.listDefinitions(opts.session)
   const isAborted = () => opts.signal?.aborted === true
 
   outer: while (iterations < opts.maxIterations) {
@@ -423,13 +423,15 @@ async function dispatchTool(
   turnState: Record<string, unknown>
 ): Promise<string> {
   const handler = opts.registry.get(tc.name)
-  if (!handler) return `Error: unknown tool "${tc.name}"`
+  if (!handler || (handler.available && !handler.available(opts.session)))
+    return `Error: unknown tool "${tc.name}"`
   try {
     return await handler.execute(tc.arguments, {
       ctx: opts.ctx,
       logger: opts.logger,
       session: opts.session,
       turnState,
+      signal: opts.signal,
     })
   } catch (e: any) {
     return `Error: ${e?.message || String(e)}`

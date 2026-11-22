@@ -44,10 +44,14 @@ export const PROTOCOL_ELEMENT_TYPES = {
   /** One-shot block telling the agent it was just interrupted. */
   INTERRUPT_NOTICE: 'interrupt_notice',
   /**
-   * Header of messages that arrived in a group while the agent was working,
+   * Header of messages that arrived while the agent was working,
    * appended to the turn's last tool result (steer).
    */
   STEER_NOTICE: 'steer_notice',
+  /** A background task on the Linux machine ended (plugins/linux). */
+  TASK_NOTIFICATION: 'task_notification',
+  /** Where this message's images and files were saved on the Linux machine. */
+  ATTACHMENTS: 'attachments',
   /**
    * System-issued compaction request. Wraps the "please summarize"
    * instruction inside the synthetic summary user message produced by
@@ -88,6 +92,14 @@ export const PROTOCOL_TAGS = {
     open: '<steer_notice>',
     close: '</steer_notice>',
   },
+  TASK_NOTIFICATION: {
+    open: '<task_notification>',
+    close: '</task_notification>',
+  },
+  ATTACHMENTS: {
+    open: '<attachments>',
+    close: '</attachments>',
+  },
   SYSTEM_COMPACT: {
     open: '<system_compact>',
     close: '</system_compact>',
@@ -112,6 +124,8 @@ export const PROTOCOL_ONLY_ELEMENT_TYPES: ReadonlySet<string> = new Set([
   PROTOCOL_ELEMENT_TYPES.QUOTED_MESSAGE,
   PROTOCOL_ELEMENT_TYPES.INTERRUPT_NOTICE,
   PROTOCOL_ELEMENT_TYPES.STEER_NOTICE,
+  PROTOCOL_ELEMENT_TYPES.TASK_NOTIFICATION,
+  PROTOCOL_ELEMENT_TYPES.ATTACHMENTS,
   PROTOCOL_ELEMENT_TYPES.SYSTEM_COMPACT,
   'system:compact', // legacy: pre-2026-05-18 namespaced form
   PROTOCOL_ELEMENT_TYPES.INTERRUPTED,
@@ -126,6 +140,8 @@ const INBOUND_TAG_PATTERN = new RegExp(
     PROTOCOL_ELEMENT_TYPES.QUOTED_MESSAGE,
     PROTOCOL_ELEMENT_TYPES.INTERRUPT_NOTICE,
     PROTOCOL_ELEMENT_TYPES.STEER_NOTICE,
+    PROTOCOL_ELEMENT_TYPES.TASK_NOTIFICATION,
+    PROTOCOL_ELEMENT_TYPES.ATTACHMENTS,
     PROTOCOL_ELEMENT_TYPES.SYSTEM_COMPACT,
   ].join('|')})\\b`,
   'gi'

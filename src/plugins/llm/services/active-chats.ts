@@ -79,6 +79,10 @@ export class ActiveChatRegistry {
     this.backlogs.set(key, [...(this.backlogs.get(key) ?? []), ...items])
   }
 
+  hasBacklog(key: string | number): boolean {
+    return !!this.backlogs.get(key)?.length
+  }
+
   takeBacklog(key: string | number): SteerItem[] {
     const items = this.backlogs.get(key) ?? []
     this.backlogs.delete(key)

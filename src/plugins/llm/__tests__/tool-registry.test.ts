@@ -38,6 +38,18 @@ const fakeHandler = (name: string, result = 'ok'): ToolHandler => ({
 })
 
 describe('ToolRegistry', () => {
+  it('offers a gated tool only where it is available, never without a session', () => {
+    const r = new ToolRegistry()
+    r.register(fakeHandler('open'))
+    r.register({ ...fakeHandler('gated'), available: (s: any) => s.ok, iterationBudget: 40 })
+    const names = (s?: any) => r.listDefinitions(s).map((d) => d.name)
+    expect(names()).toEqual(['open'])
+    expect(names({ ok: false })).toEqual(['open'])
+    expect(names({ ok: true })).toEqual(['open', 'gated'])
+    expect(r.iterationBudget({ ok: false } as any, 5)).toBe(5)
+    expect(r.iterationBudget({ ok: true } as any, 5)).toBe(40)
+  })
+
   it('starts empty', () => {
     const r = new ToolRegistry()
     expect(r.listDefinitions()).toEqual([])

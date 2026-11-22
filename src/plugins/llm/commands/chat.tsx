@@ -139,6 +139,9 @@ export default class ChatCommand extends BasePlugin {
     }
     const trigger = leftovers.pop()
     if (!trigger) return
+    // A message without a prompt (a task notification) has no envelope to
+    // rebuild: it rides in the backlog and the turn runs without a prompt.
+    if (!trigger.prompt) leftovers.push(trigger)
     if (leftovers.length) this.ctx.llm.activeChats.putBacklog(key, leftovers)
     trigger.session
       .execute({ name: 'chat', args: [trigger.prompt] })
@@ -203,8 +206,13 @@ export default class ChatCommand extends BasePlugin {
       })
       .userFields(['id', 'name', 'openai_last_conversation_id', 'authority'])
       .channelFields(['openai_last_conversation_id'])
-      .check((_, content) => {
-        if (!content?.trim()) return ''
+      .check(({ session }, content) => {
+        // No prompt is a turn only when something waits in the backlog (a
+        // task notification, see #runSteerLeftovers).
+        if (!content?.trim()) {
+          const key = resolveConversationScope(session!).key
+          if (!ctx.llm.activeChats.hasBacklog(key)) return ''
+        }
       })
       .check(({ options }) => {
         if (options.model) {
@@ -428,18 +436,31 @@ export default class ChatCommand extends BasePlugin {
               llm.config.quotedMessageMaxLength ?? 1000
             )
           : ''
-        const userMessageBlock = [
-          PROTOCOL_TAGS.USER_MESSAGE.open,
-          userMessageBody,
-          PROTOCOL_TAGS.USER_MESSAGE.close,
-        ].join('\n')
+        const userMessageBlock = userMessageBody
+          ? [
+              PROTOCOL_TAGS.USER_MESSAGE.open,
+              userMessageBody,
+              PROTOCOL_TAGS.USER_MESSAGE.close,
+            ].join('\n')
+          : ''
+        // Where this message's images and files landed on the Linux machine.
+        const attachmentsBlock = userMessageBody
+          ? await llm.ctx
+              .get('linux')
+              ?.saveAttachments(session)
+              .catch((e: unknown) => {
+                llm.logger.warn('[chat] saving attachments failed:', e)
+                return ''
+              })
+          : ''
         // Base envelope shapes — the optional memory snapshot prefix is
         // computed AFTER history load (we only seed memory on the first
         // turn of a fresh conversation, and post-compaction sessions
         // already carry the snapshot inside their summary user row).
         let persistableEnvelopeBase = [
-          chatInfoBlock,
+          userMessageBody ? chatInfoBlock : '',
           quotedMessageBlock,
+          attachmentsBlock,
           userMessageBlock,
         ]
           .filter(Boolean)
@@ -451,6 +472,7 @@ export default class ChatCommand extends BasePlugin {
               chatInfoBlock,
               interruptNoticeBlock,
               quotedMessageBlock,
+              attachmentsBlock,
               userMessageBlock,
             ]
               .filter(Boolean)
@@ -479,8 +501,9 @@ export default class ChatCommand extends BasePlugin {
           if (fromOthers(backlog))
             getMemoryToolState(turnState).othersSpoke = true
           const earlier = backlog.map((item) => item.envelope).join('\n\n')
-          persistableEnvelopeBase = `${earlier}\n\n${persistableEnvelopeBase}`
-          userMessageEnvelopeBase = `${earlier}\n\n${userMessageEnvelopeBase}`
+          const prepend = (base: string) => [earlier, base].filter(Boolean).join('\n\n')
+          persistableEnvelopeBase = prepend(persistableEnvelopeBase)
+          userMessageEnvelopeBase = prepend(userMessageEnvelopeBase)
         }
 
         // 解析 conversation_id：
@@ -809,7 +832,10 @@ export default class ChatCommand extends BasePlugin {
             features: { enableThinking, thinkingBudget, enableSearch },
             signal: abortController.signal,
             registry: effectiveRegistry,
-            maxIterations: llm.config.maxToolIterations ?? 5,
+            maxIterations: effectiveRegistry.iterationBudget(
+              session,
+              llm.config.maxToolIterations ?? 5
+            ),
             showToolCallNotice: llm.config.showToolCallNotice ?? false,
             dsmlLeakMaxRetries: llm.config.dsmlLeakMaxRetries ?? 2,
             session,

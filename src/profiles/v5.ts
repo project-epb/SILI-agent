@@ -50,6 +50,7 @@ import PluginGelbooru from '~/gelbooru'
 import PluginGithub from '~/github'
 import PluginHljs from '~/hljs'
 import { PluginHomo } from '~/homo'
+import PluginLinux from '~/linux'
 import PluginLLM from '~/llm'
 import PluginMarkdown from '~/md'
 import PluginMediawiki from '~/mediawiki'
@@ -379,6 +380,13 @@ function install(app: App) {
     ctx.inject(['channelMessageHistory'], (ctx) => {
       ctx.plugin(PluginLLM, llmConfig(env))
       ctx.plugin(PluginWhoAsked)
+    })
+    // 服务等级 100，按会话用 `feature -e linux` 打开
+    ctx.inject(['llm', 'feature'], (ctx) => {
+      ctx.plugin(PluginLinux, {
+        dataDir: `${ctx.baseDir}/data/linux`,
+        proxy: env.http_proxy || env.HTTP_PROXY,
+      })
     })
     // 服务等级 100（声明在插件里），按群用 `feature -e comfyui` 打开
     ctx.plugin(PluginComfyUI, comfyUIConfig(env, ctx.baseDir, []))
