@@ -29,6 +29,8 @@ export interface SplitOptions {
    * 出现 `\n` 时，切到第一个 `\n`。默认 500。
    */
   maxChunkLen?: number
+  /** Emit the remaining text once all explicit break markers are consumed. */
+  force?: boolean
 }
 
 export interface SplitResult {
@@ -50,6 +52,13 @@ function emit(slice: string, nextIndex: number): SplitResult {
   return { text: slice.trim() ? slice : '', nextIndex }
 }
 
+export function isAgentMessageStart(
+  buffer: string,
+  fromIndex: number
+): boolean {
+  return fromIndex === 0 || buffer.endsWith(MARKER, fromIndex)
+}
+
 export function splitContent(
   buffer: string,
   fromIndex: number,
@@ -68,6 +77,8 @@ export function splitContent(
     const cut = markerIdx + MARKER.length
     return emit(rest.slice(0, cut), fromIndex + cut)
   }
+
+  if (opts.force) return emit(rest, buffer.length)
 
   // 2. 超长 + 多行兜底——**仅当** agent 整段从未输出过 marker 才触发。
   // 一旦它表态过想分段（哪怕只一次），就让它接管：当前可能在写代码块

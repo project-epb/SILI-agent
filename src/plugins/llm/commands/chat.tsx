@@ -22,13 +22,13 @@ import { addTurnSpeaker } from '../utils/turn-speakers'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry, getMemoryToolState, snapshotTiers } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
-import { PROTOCOL_TAGS } from '../utils/protocol'
+import { PROTOCOL_ELEMENT_TYPES, PROTOCOL_TAGS } from '../utils/protocol'
 import {
   buildQuotedMessageBlock,
   extractQuoteMeta,
   mergeRecordedQuote,
 } from '../utils/quoted-message'
-import { splitContent } from '../utils/stream-splitter'
+import { isAgentMessageStart, splitContent } from '../utils/stream-splitter'
 import { clampThinkingBudget, resolveThinkingLevel } from '../utils/thinking'
 
 /** Ops may stop anyone's turn. */
@@ -353,6 +353,7 @@ export default class ChatCommand extends BasePlugin {
             ).catch(() => null)
           : null
         const chatInfo = {
+          message_id: session.messageId || undefined,
           koishi: {
             uid: session.user.id,
             callme: session.user.name,
@@ -571,7 +572,6 @@ export default class ChatCommand extends BasePlugin {
         let sendBuffer = ''
         // sendFromIndex 同时挂在 activeChats entry 上，让二次进入能读到
         const sendFromIndex = sendFromIndexRef
-        let lastMessageId: string = session.messageId
 
         // 没开调试时，每思考 10 秒发送一个状态指示器
         const emojiCodes = ['181', '285', '267', '312', '284', '37']
@@ -799,50 +799,60 @@ export default class ChatCommand extends BasePlugin {
           maxPerTurn: llm.config.progressNudgeMaxPerTurn ?? 0,
         })
         const flushVisibleText = async (force: boolean) => {
-          const next = force
-            ? {
-                // Force-flush mirrors splitContent's whitespace-suppression
-                // policy — sending a buffer of trailing `\n` only would
-                // surface as "[暂不支持的消息类型]" on QQ.
-                text: sendBuffer.slice(sendFromIndex.value).trim()
-                  ? sendBuffer.slice(sendFromIndex.value)
-                  : '',
-                nextIndex: sendBuffer.length,
-              }
-            : splitContent(sendBuffer, sendFromIndex.value, {
-                maxChunkLen: 500,
-              })
-          if (next.text) {
+          while (sendFromIndex.value < sendBuffer.length) {
+            const from = sendFromIndex.value
+            const next = splitContent(sendBuffer, from, {
+              maxChunkLen: 500,
+              force,
+            })
+            if (next.nextIndex === from) return
+            if (!next.text) {
+              sendFromIndex.value = next.nextIndex
+              continue
+            }
             stopEmojiReaction()
             progressNudge.seen()
-            // 输出层处理：先按白名单过滤 element（防止 agent 乱用 <at> 等
-            // 骚扰类 element），再把 <img ref="..."/> 还原成原始 base64 src
-            // 让 koishi 真正发图。两步顺序无关——sanitize 不动 <img>，
-            // resolveRefs 不动其他 element。
             const safeText = await llm.imageRefs.resolveRefsToDataUris(
-              sanitizeAgentOutput(next.text)
+              sanitizeAgentOutput(
+                next.text,
+                isAgentMessageStart(sendBuffer, from)
+              )
             )
-            // Stickers go out as their own image messages after the text, the
-            // way a person sends one; a sticker-only reply sends no text at all.
             const elements = h.parse(safeText)
+            const quoteType = PROTOCOL_ELEMENT_TYPES.REPLY_QUOTE
+            const quoteId = elements.find((e) => e.type === quoteType)?.attrs.id
+            const quoted =
+              typeof quoteId === 'string' && quoteId
+                ? await llm.ctx.channelMessageHistory
+                    ?.find(session, quoteId)
+                    .catch(() => undefined)
+                : undefined
+            let quote = quoted
+              ? h(quoteType, { id: quoted.messageId })
+              : undefined
             const stickers = elements.filter((e) => e.type === 'sticker')
-            const body = elements.filter((e) => e.type !== 'sticker')
+            const body = elements.filter(
+              (e) => e.type !== 'sticker' && e.type !== quoteType
+            )
+            // The reference belongs to the first actual send, including a sticker-only message.
             if (body.some((e) => e.type !== 'text' || e.attrs.content.trim())) {
-              const [msgId] = await session.sendQueued(
+              await session.sendQueued(
                 <>
-                  {lastMessageId ? <quote id={lastMessageId} /> : ''}
+                  {quote}
                   <markdown>{body}</markdown>
                 </>
               )
-              if (msgId) lastMessageId = msgId
+              quote = undefined
             }
             const pool = llm.ctx.get('stickerPool')
             for (const sticker of stickers) {
               const img = pool?.resolve(sticker.attrs)
-              if (img) await session.sendQueued(img)
+              if (!img) continue
+              await session.sendQueued(quote ? [quote, img] : img)
+              quote = undefined
             }
+            sendFromIndex.value = next.nextIndex
           }
-          sendFromIndex.value = next.nextIndex
         }
 
         // 如果禁用 agent，临时使用一个空 registry
@@ -935,12 +945,7 @@ export default class ChatCommand extends BasePlugin {
           this.#runSteerLeftovers(scope.key, activeEntry)
           resolveCompletion()
           stopEmojiReaction()
-          return (
-            <>
-              <quote id={session.messageId}></quote>
-              {this.RANDOM_ERROR_MSG}
-            </>
-          )
+          return this.RANDOM_ERROR_MSG
         }
 
         // SILENT 路径：agent 主动选择沉默，不发任何东西，emoji 提示用户
@@ -968,10 +973,7 @@ export default class ChatCommand extends BasePlugin {
 
         if (agentResult.totalUsage && options.debug) {
           await session.sendQueued(
-            <>
-              {lastMessageId && <quote id={lastMessageId}></quote>}
-              {JSON.stringify(agentResult.totalUsage, null, 2)}
-            </>
+            h.text(JSON.stringify(agentResult.totalUsage, null, 2))
           )
         }
 

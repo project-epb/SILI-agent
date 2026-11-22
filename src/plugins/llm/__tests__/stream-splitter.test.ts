@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { PROTOCOL_MARKERS } from '../utils/protocol'
-import { splitContent } from '../utils/stream-splitter'
+import { isAgentMessageStart, splitContent } from '../utils/stream-splitter'
 
 const CHUNK_BREAK_MARKER = PROTOCOL_MARKERS.MSG_BREAK
 
@@ -31,6 +31,31 @@ describe('splitContent', () => {
       'one' + CHUNK_BREAK_MARKER + 'two' + CHUNK_BREAK_MARKER + 'three'
     const out = splitContent(buf, 0)
     expect(out.text).toBe('one' + CHUNK_BREAK_MARKER)
+  })
+
+  it('opens a quote slot at every explicit break, even if all arrive together', () => {
+    const buf =
+      'one' + CHUNK_BREAK_MARKER + 'two' + CHUNK_BREAK_MARKER + 'three'
+    const first = splitContent(buf, 0, { force: true })
+    const second = splitContent(buf, first.nextIndex, { force: true })
+    const third = splitContent(buf, second.nextIndex, { force: true })
+
+    expect([first.text, second.text, third.text]).toEqual([
+      'one' + CHUNK_BREAK_MARKER,
+      'two' + CHUNK_BREAK_MARKER,
+      'three',
+    ])
+    expect(isAgentMessageStart(buf, 0)).toBe(true)
+    expect(isAgentMessageStart(buf, first.nextIndex)).toBe(true)
+    expect(isAgentMessageStart(buf, second.nextIndex)).toBe(true)
+  })
+
+  it('keeps an automatic chunk boundary inside the same model message', () => {
+    const buf = 'a'.repeat(280) + '\n[koishi:quote id="other"]continued'
+    const first = splitContent(buf, 0, { maxChunkLen: 280 })
+
+    expect(first.text).toBe('a'.repeat(280) + '\n')
+    expect(isAgentMessageStart(buf, first.nextIndex)).toBe(false)
   })
 
   it('respects fromIndex offset', () => {

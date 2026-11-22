@@ -65,6 +65,8 @@ export const PROTOCOL_ELEMENT_TYPES = {
   SILENT: 'silent',
   /** Agent-inserted message-break point (drives stream chunk boundaries). */
   MSG_BREAK: 'msg_break',
+  /** Agent-selected reference for the start of an outbound message. */
+  REPLY_QUOTE: 'quote',
 } as const
 
 /**
