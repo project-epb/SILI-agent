@@ -1,6 +1,6 @@
 import type { Logger, Session } from 'koishi'
 
-/** A group message that arrived while a turn of that group was running. */
+/** A message that arrived while a turn of its conversation was running. */
 export interface SteerItem {
   session: Session
   prompt: string
@@ -29,9 +29,9 @@ export interface ActiveChatEntry {
    */
   conversationId: string
   /**
-   * Group conversations only: messages waiting to be steered into this
-   * turn. The agent loop drains it after each tool iteration; what is left
-   * when the turn ends runs as the next turn.
+   * Messages waiting to be steered into this turn. The agent loop drains
+   * it after each tool iteration; what is left when the turn ends runs as
+   * the next turn, unless the turn was stopped.
    */
   inbox: SteerItem[]
   /**
@@ -40,6 +40,8 @@ export interface ActiveChatEntry {
    * prompt in again.
    */
   wroteRecords: boolean
+  /** Platform user id of whoever started the turn: may stop it in a group. */
+  starterUserId: string
 }
 
 export type AbortReason = 'user-stop' | 'user-reset' | 'user-interrupt'
@@ -56,7 +58,7 @@ export type AbortReason = 'user-stop' | 'user-reset' | 'user-interrupt'
  */
 export class ActiveChatRegistry {
   private readonly entries = new Map<string | number, ActiveChatEntry>()
-  /** Steered messages handed to the next turn of a group (see SteerItem). */
+  /** Steered messages handed to the next turn (see SteerItem). */
   private readonly backlogs = new Map<string | number, SteerItem[]>()
 
   constructor(private readonly logger: Logger) {}

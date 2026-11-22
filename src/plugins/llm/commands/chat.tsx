@@ -2,6 +2,7 @@ import { Context, Session, Time, h } from 'koishi'
 
 import crypto from 'node:crypto'
 
+import { isGroupAdmin } from '@/modules/CommandPermissions'
 import { cancellableInterval } from '@/utils/cancellableDefferred'
 import { getUserRoles } from '@/utils/formatSession'
 
@@ -10,12 +11,16 @@ import BasePlugin from '~/_boilerplate'
 import { runAgentLoop } from '../agent-loop'
 import type { ChatMessage } from '../providers/_base'
 import type { ActiveChatEntry, SteerItem } from '../services/active-chats'
-import { resolveConversationScope } from '../services/conversation-scope'
+import {
+  type ConversationScope,
+  resolveConversationScope,
+} from '../services/conversation-scope'
+import { parseStopKeyword } from '../utils/stop-keyword'
 import type { TurnStatus } from '../services/history-filter'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry, getMemoryToolState, snapshotTiers } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
-import { PROTOCOL_MARKERS, PROTOCOL_TAGS } from '../utils/protocol'
+import { PROTOCOL_TAGS } from '../utils/protocol'
 import {
   buildQuotedMessageBlock,
   extractQuoteMeta,
@@ -24,8 +29,27 @@ import {
 import { splitContent } from '../utils/stream-splitter'
 import { clampThinkingBudget, resolveThinkingLevel } from '../utils/thinking'
 
+/** Ops may stop anyone's turn. */
+const STOP_ANY_TURN_AUTHORITY = 4
+
 /**
- * Steered group messages as appended to a tool result: a notice that they
+ * In a shared group only whoever started the turn, a group admin or an op
+ * may stop it, or any member could cut off someone else's task.
+ */
+function canStopTurn(
+  session: Session,
+  scope: ConversationScope,
+  running: ActiveChatEntry
+): boolean {
+  if (!scope.shared) return true
+  if (running.starterUserId === session.userId) return true
+  if (((session.user as any)?.authority ?? 0) >= STOP_ANY_TURN_AUTHORITY)
+    return true
+  return isGroupAdmin(session)
+}
+
+/**
+ * Steered messages as appended to a tool result: a notice that they
  * arrived mid-turn, then each message's own envelope. '' when none.
  */
 function wrapSteer(items: SteerItem[]): string {
@@ -33,7 +57,7 @@ function wrapSteer(items: SteerItem[]): string {
   return [
     [
       PROTOCOL_TAGS.STEER_NOTICE.open,
-      '以下消息是你忙着的时候群里新发来的。先把手头的事做完，再回应它们，不要忽略。',
+      '以下消息是你忙着的时候新发来的。先把手头的事做完，再回应它们，不要忽略。',
       PROTOCOL_TAGS.STEER_NOTICE.close,
     ].join('\n'),
     ...items.map((item) => item.envelope),
@@ -101,12 +125,18 @@ export default class ChatCommand extends BasePlugin {
   }
 
   /**
-   * Messages steered into a group turn after its last tool iteration never
+   * Messages steered into a turn after its last tool iteration never
    * reached the model. Run them as the next turn: the newest one as the
    * trigger (it gets the passive replies), the rest as its backlog.
    */
   #runSteerLeftovers(key: string | number, entry: ActiveChatEntry) {
     const leftovers = entry.inbox.splice(0)
+    // A stopped turn starts nothing on its own: what was steered in waits
+    // for the next message.
+    if (entry.abort.signal.reason === 'user-stop') {
+      if (leftovers.length) this.ctx.llm.activeChats.putBacklog(key, leftovers)
+      return
+    }
     const trigger = leftovers.pop()
     if (!trigger) return
     if (leftovers.length) this.ctx.llm.activeChats.putBacklog(key, leftovers)
@@ -206,16 +236,27 @@ export default class ChatCommand extends BasePlugin {
         let intraSeq = 0
         const nextSeq = () => ++intraSeq
 
-        // 打断场景识别 + 等老会话退出
+        // A message reaching a running turn is steered into it further down.
+        // Only a stop word (IM has no stop button) aborts the turn; what
+        // follows the word then runs as this turn's prompt.
         let interruptScenario: 'fresh' | 'pre-stream' | 'mid-stream' = 'fresh'
         let interruptedOldPrompt = ''
         let inheritedConversationId: string | null = null
-        // A running group turn is never interrupted: new group messages are
-        // steered into it further down. Only a DM interrupts itself.
-        const existingActive = scope.shared
-          ? undefined
-          : llm.activeChats.get(scope.key)
+        const running = llm.activeChats.get(scope.key)
+        const stopRest = running ? parseStopKeyword(userPrompt ?? '') : null
+        const existingActive =
+          running && stopRest !== null && canStopTurn(session, scope, running)
+            ? running
+            : undefined
         if (existingActive) {
+          if (!stopRest) {
+            llm.logger.info('[chat] stopped by keyword: id=%s', existingActive.conversationId)
+            existingActive.abort.abort('user-stop')
+            await existingActive.completion.catch(() => {})
+            session.setReaction?.('🫡').catch(() => {})
+            return
+          }
+          userPrompt = stopRest
           interruptScenario =
             existingActive.sendFromIndex.value === 0
               ? 'pre-stream'
@@ -227,7 +268,7 @@ export default class ChatCommand extends BasePlugin {
             interruptScenario,
             inheritedConversationId
           )
-          existingActive.abort.abort('user-interrupt')
+          existingActive.abort.abort('user-stop')
           // 等老 session 真的 unwind（finally 解锁），避免和它的入库竞态
           await existingActive.completion.catch(() => {})
           // Nothing shown, but tools ran: the old turn stays in history with
@@ -335,9 +376,8 @@ export default class ChatCommand extends BasePlugin {
           interruptScenario === 'mid-stream'
             ? [
                 PROTOCOL_TAGS.INTERRUPT_NOTICE.open,
-                '上一轮回复被用户打断。',
-                `如果用户这条消息是要你停止说话（"闭嘴"、"别说了"、"打住"等），可以**仅**返回 ${PROTOCOL_MARKERS.SILENT}（不要带任何其他文字）来表示什么都不说。`,
-                '其他情况正常回复，但不要重复或继续上一轮未说完的内容。',
+                '用户叫停了上一轮回复，接着发了这条消息。',
+                '按这条消息做，不要重复或继续上一轮未说完的内容。',
                 PROTOCOL_TAGS.INTERRUPT_NOTICE.close,
               ].join('\n')
             : ''
@@ -422,29 +462,25 @@ export default class ChatCommand extends BasePlugin {
         const turnState: Record<string, unknown> = {}
         const fromOthers = (items: SteerItem[]) =>
           items.some((item) => item.session.userId !== session.userId)
-        if (scope.shared) {
-          const running = llm.activeChats.get(scope.key)
-          if (running) {
-            running.inbox.push({
-              session,
-              prompt: userPrompt ?? '',
-              envelope: persistableEnvelopeBase,
-            })
-            llm.logger.info(
-              '[chat] steered into the running turn of %s',
-              scope.key
-            )
-            return
-          }
-          // Messages steered into the previous turn too late for it to see.
-          const backlog = llm.activeChats.takeBacklog(scope.key)
-          if (backlog.length) {
-            if (fromOthers(backlog))
-              getMemoryToolState(turnState).othersSpoke = true
-            const earlier = backlog.map((item) => item.envelope).join('\n\n')
-            persistableEnvelopeBase = `${earlier}\n\n${persistableEnvelopeBase}`
-            userMessageEnvelopeBase = `${earlier}\n\n${userMessageEnvelopeBase}`
-          }
+        // Re-read: the awaits above let a turn start or end meanwhile.
+        const runningNow = llm.activeChats.get(scope.key)
+        if (runningNow) {
+          runningNow.inbox.push({
+            session,
+            prompt: userPrompt ?? '',
+            envelope: persistableEnvelopeBase,
+          })
+          llm.logger.info('[chat] steered into the running turn of %s', scope.key)
+          return
+        }
+        // Messages steered into the previous turn too late for it to see.
+        const backlog = llm.activeChats.takeBacklog(scope.key)
+        if (backlog.length) {
+          if (fromOthers(backlog))
+            getMemoryToolState(turnState).othersSpoke = true
+          const earlier = backlog.map((item) => item.envelope).join('\n\n')
+          persistableEnvelopeBase = `${earlier}\n\n${persistableEnvelopeBase}`
+          userMessageEnvelopeBase = `${earlier}\n\n${userMessageEnvelopeBase}`
         }
 
         // 解析 conversation_id：
@@ -471,6 +507,7 @@ export default class ChatCommand extends BasePlugin {
           conversationId: conversation_id,
           inbox: [],
           wroteRecords: false,
+          starterUserId: session.userId ?? '',
         }
         llm.activeChats.register(scope.key, activeEntry)
         if (scope.conversationId !== conversation_id) {
