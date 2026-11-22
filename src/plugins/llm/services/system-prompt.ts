@@ -10,6 +10,8 @@
  */
 import type { Context } from 'koishi'
 
+import { createHash } from 'node:crypto'
+
 import {
   PROTOCOL_ELEMENT_TYPES,
   PROTOCOL_MARKERS,
@@ -50,9 +52,14 @@ export class SystemPromptRegistry {
     }
   }
 
-  /** Each section in its own `<plugin id>` block, so the model can tell whose rules it reads. */
+  /**
+   * Each section in its own `<plugin id>` block, so the model can tell whose
+   * rules it reads. Ordered by id, never by registration: listeners register
+   * as plugins load, and load order varies between restarts.
+   */
   render(): string {
-    return this.sections
+    return [...this.sections]
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map((s) => `<plugin id="${s.id}">\n${s.content}\n</plugin>`)
       .join('\n\n')
   }
@@ -243,6 +250,10 @@ export class SystemPromptBuilder {
     }
     const text = buildSystemPromptText(basePrompt, catalog, extensions, this.voice)
     this.cache = { basePrompt, catalog, extensions, text }
+    // Compare across restarts: the same hash means the cached prefix survives.
+    this.ctx
+      ?.logger('llm')
+      .info('[llm] system prompt rebuilt: %d chars, sha256 %s', text.length, sha256(text).slice(0, 16))
     return text
   }
 
@@ -276,4 +287,8 @@ export class SystemPromptBuilder {
     }
     return registry.render()
   }
+}
+
+function sha256(text: string) {
+  return createHash('sha256').update(text).digest('hex')
 }

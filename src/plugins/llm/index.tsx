@@ -6,6 +6,7 @@
 import { Context, Time } from 'koishi'
 
 import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 
 import BasePlugin from '~/_boilerplate'
@@ -385,6 +386,17 @@ export default class PluginLLM extends BasePlugin<Config> {
     })
     this.ctx.on('ready', () => {
       this.ctx.setInterval(() => idleCompactor.run(), 10 * Time.minute)
+      // Build the prompt once after late plugins have loaded, so every
+      // process logs its prefix hash (SystemPromptBuilder) for comparison.
+      this.ctx.setTimeout(() => {
+        this.systemPrompt.get(this.catalog.getOrRefresh())
+        const tools = JSON.stringify(this.tools.listDefinitions())
+        this.logger.info(
+          '[llm] tool list: %d chars, sha256 %s',
+          tools.length,
+          createHash('sha256').update(tools).digest('hex').slice(0, 16)
+        )
+      }, Time.minute)
     })
 
     for (const providerConfig of config.providers) {

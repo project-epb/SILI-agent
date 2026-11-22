@@ -19,7 +19,7 @@ describe('SystemPromptRegistry', () => {
     r.add('shared', 'first')
     r.add('other', 'middle')
     r.add('shared', 'second')
-    expect(r.render()).toBe('<plugin id="shared">\nsecond\n</plugin>\n\n<plugin id="other">\nmiddle\n</plugin>')
+    expect(r.render()).toBe('<plugin id="other">\nmiddle\n</plugin>\n\n<plugin id="shared">\nsecond\n</plugin>')
   })
 
   it('ignores empty / whitespace-only content', () => {
@@ -34,6 +34,16 @@ describe('SystemPromptRegistry', () => {
     const r = new SystemPromptRegistry()
     r.add('a', '   padded  \n')
     expect(r.render()).toBe('<plugin id="a">\npadded\n</plugin>')
+  })
+
+  it('renders the same whatever order plugins registered in', () => {
+    const a = new SystemPromptRegistry()
+    a.add('sticker', 'S')
+    a.add('linux', 'L')
+    const b = new SystemPromptRegistry()
+    b.add('linux', 'L')
+    b.add('sticker', 'S')
+    expect(a.render()).toBe(b.render())
   })
 
   it('throws when id is empty', () => {

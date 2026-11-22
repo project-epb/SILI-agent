@@ -43,11 +43,21 @@ describe('ToolRegistry', () => {
     const gated = { ...fakeHandler('gated'), available: (s: any) => s.ok, iterationBudget: 40 }
     r.register(fakeHandler('open'))
     r.register(gated)
-    expect(r.listDefinitions().map((d) => d.name)).toEqual(['open', 'gated'])
+    expect(r.listDefinitions().map((d) => d.name)).toEqual(['gated', 'open'])
     expect(r.allows(gated, { ok: false } as any)).toBe(false)
     expect(r.allows(gated, { ok: true } as any)).toBe(true)
     expect(r.iterationBudget({ ok: false } as any, 5)).toBe(5)
     expect(r.iterationBudget({ ok: true } as any, 5)).toBe(40)
+  })
+
+  it('lists the same tools in the same order whatever order they registered in', () => {
+    const a = new ToolRegistry()
+    a.register(fakeHandler('web_search'))
+    a.register(fakeHandler('exec'))
+    const b = new ToolRegistry()
+    b.register(fakeHandler('exec'))
+    b.register(fakeHandler('web_search'))
+    expect(a.listDefinitions()).toEqual(b.listDefinitions())
   })
 
   it('starts empty', () => {

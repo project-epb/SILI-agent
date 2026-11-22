@@ -396,6 +396,24 @@ function makeCtx(commands: any[]): any {
   }
 }
 
+describe('buildCommandCatalog: order', () => {
+  it('renders the same catalog whatever order commands registered in', () => {
+    const build = (names: string[]) => {
+      const app = new Context()
+      for (const n of names) app.command(n, `${n} desc`)
+      return renderCompactCatalog(buildCommandCatalog(app))
+    }
+    expect(build(['wiki', 'dice', 'wiki.search', 'wiki.connect'])).toBe(
+      build(['dice', 'wiki', 'wiki.connect', 'wiki.search'])
+    )
+    const app = new Context()
+    app.command('wiki.search')
+    app.command('wiki.connect')
+    const [wiki] = buildCommandCatalog(app)
+    expect(wiki.children.map((c) => c.name)).toEqual(['wiki.connect', 'wiki.search'])
+  })
+})
+
 describe('buildCommandCatalog: Koishi help metadata', () => {
   it('uses registered examples and skips missing translations and injected help options', () => {
     const app = new Context()

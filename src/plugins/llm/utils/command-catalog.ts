@@ -289,9 +289,9 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
       ? Object.keys(cmd._aliases).filter((a) => a !== cmd.name)
       : []
 
-    const children = (cmd.children ?? [])
-      .map(visit)
-      .filter(Boolean) as CommandCatalogEntry[]
+    const children = byName(
+      (cmd.children ?? []).map(visit).filter(Boolean) as CommandCatalogEntry[]
+    )
 
     return {
       name: cmd.displayName || cmd.name,
@@ -308,8 +308,19 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
   }
 
   // 仅处理顶层命令（无 parent 或 parent 是 root）
-  return list
-    .filter((cmd: any) => !cmd.parent || cmd.parent === cmd._root)
-    .map(visit)
-    .filter(Boolean) as CommandCatalogEntry[]
+  return byName(
+    list
+      .filter((cmd: any) => !cmd.parent || cmd.parent === cmd._root)
+      .map(visit)
+      .filter(Boolean) as CommandCatalogEntry[]
+  )
+}
+
+/**
+ * The catalog is in the cached system prompt; its order must not follow
+ * command registration, which follows plugin load order and varies between
+ * restarts. Code-point order, not locale order, so it is the same anywhere.
+ */
+function byName(entries: CommandCatalogEntry[]): CommandCatalogEntry[] {
+  return entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }

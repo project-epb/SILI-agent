@@ -65,9 +65,14 @@ export class ToolRegistry {
     return !handler.available || handler.available(session)
   }
 
-  /** Every registered tool, the same in every conversation. */
+  /**
+   * Every registered tool, the same in every conversation, ordered by name:
+   * tools register as plugins load, and load order varies between restarts.
+   */
   listDefinitions(): ToolDefinition[] {
-    return [...this.handlers.values()].map((h) => h.definition)
+    return [...this.handlers.values()]
+      .map((h) => h.definition)
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   }
 
   /** The iteration budget for a turn in this session. */
