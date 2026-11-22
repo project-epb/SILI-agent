@@ -9,7 +9,7 @@ services:
       dockerfile: ./docker/sili-core.dockerfile
     # 启动流程见 scripts/docker-entrypoint.sh（镜像 CMD），本地想要热重载可用
     # docker-compose.override.yml 覆盖 command
-    mem_limit: 1.5g
+    mem_limit: 2g
     restart: unless-stopped
     networks:
       sili-network:
