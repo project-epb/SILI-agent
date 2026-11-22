@@ -27,12 +27,14 @@ export interface ToolHandler {
   definition: ToolDefinition
   execute(args: Record<string, any>, toolCtx: ToolContext): Promise<string>
   /**
-   * Offered only in conversations where this returns true. A gated tool is
-   * never offered without a session to check (e.g. the memory fork).
+   * May run only in conversations where this returns true. The tool is still
+   * listed everywhere: the tool list is part of the cached prompt prefix and
+   * must not vary with feature switches or authority. State the condition in
+   * the description and refuse at dispatch.
    */
   available?(session: Session): boolean
   /**
-   * Tool iterations a turn may take while this tool is offered, when more
+   * Tool iterations a turn may take where this tool is available, when more
    * than the configured default (agent work runs many commands in a row).
    */
   iterationBudget?: number
@@ -58,19 +60,21 @@ export class ToolRegistry {
     return this.handlers.get(name)
   }
 
-  /** The handlers offered in this session; ungated ones only without one. */
-  available(session?: Session): ToolHandler[] {
-    return [...this.handlers.values()].filter((h) =>
-      h.available ? !!session && h.available(session) : true
-    )
+  /** Whether this handler may run in the session (see `ToolHandler.available`). */
+  allows(handler: ToolHandler, session: Session): boolean {
+    return !handler.available || handler.available(session)
   }
 
-  listDefinitions(session?: Session): ToolDefinition[] {
-    return this.available(session).map((h) => h.definition)
+  /** Every registered tool, the same in every conversation. */
+  listDefinitions(): ToolDefinition[] {
+    return [...this.handlers.values()].map((h) => h.definition)
   }
 
   /** The iteration budget for a turn in this session. */
   iterationBudget(session: Session, fallback: number): number {
-    return Math.max(fallback, ...this.available(session).map((h) => h.iterationBudget ?? 0))
+    const budgets = [...this.handlers.values()]
+      .filter((h) => h.iterationBudget && this.allows(h, session))
+      .map((h) => h.iterationBudget!)
+    return Math.max(fallback, ...budgets)
   }
 }

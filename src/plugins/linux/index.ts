@@ -22,7 +22,7 @@ export interface Config {
   memoryMiB?: number
   /** HTTP proxy for the guest's egress, e.g. `http://mihomo.sili.local:7897`. */
   proxy?: string
-  /** Tool iterations a turn may take where the machine is offered. */
+  /** Tool iterations a turn may take where the machine is available. */
   iterationBudget?: number
 }
 

@@ -39,6 +39,7 @@ const EXEC_TOOL: ToolDefinition = {
   description: [
     '在你自己的 Linux 机器上执行 shell 命令。',
     '',
+    '**可用范围**：这台机器和 read_file、write_file、edit_file、send_file 只在主人开通了 `linux` 功能的聊天里能用。其他聊天里调用会被拒绝，不要尝试；用户要你做这类事，就说这里没开通。',
     '**机器**：Alpine Linux（aarch64），你以 `user` 身份执行，可免密 `sudo`。已装 bash、python3、pip、curl、jq、git、ripgrep；缺什么就 `sudo apk add` 装，Python 包用 `pip install --user --break-system-packages`。能上公网，内网地址一律不通。',
     '**机器是持久的**：装的包、HOME（`/home/user`）和 `/workspace` 下的文件重启后都在。HOME 在所有会话间共享；每个会话有自己的目录，这一轮的默认目录就是它。',
     '**目录**：每次调用都从 `cwd`（不传就是会话目录）开始，`cd` 只在这一次调用里有效。',

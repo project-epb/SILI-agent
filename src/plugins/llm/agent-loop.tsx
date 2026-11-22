@@ -153,7 +153,7 @@ export async function runAgentLoop(
   // (read-before-write + optimistic-lock).
   const turnState: Record<string, unknown> = opts.turnState ?? {}
 
-  const allTools = opts.registry.listDefinitions(opts.session)
+  const allTools = opts.registry.listDefinitions()
   const isAborted = () => opts.signal?.aborted === true
 
   outer: while (iterations < opts.maxIterations) {
@@ -423,8 +423,9 @@ async function dispatchTool(
   turnState: Record<string, unknown>
 ): Promise<string> {
   const handler = opts.registry.get(tc.name)
-  if (!handler || (handler.available && !handler.available(opts.session)))
-    return `Error: unknown tool "${tc.name}"`
+  if (!handler) return `Error: unknown tool "${tc.name}"`
+  if (!opts.registry.allows(handler, opts.session))
+    return `Error: ${tc.name} is not enabled in this chat. Tell the user it is unavailable here; do not retry or work around it.`
   try {
     return await handler.execute(tc.arguments, {
       ctx: opts.ctx,
