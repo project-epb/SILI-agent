@@ -17,6 +17,7 @@ import {
 } from '../services/conversation-scope'
 import { parseStopKeyword } from '../utils/stop-keyword'
 import type { TurnStatus } from '../services/history-filter'
+import { createProgressNudge } from '../utils/progress-nudge'
 import { addTurnSpeaker } from '../utils/turn-speakers'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry, getMemoryToolState, snapshotTiers } from '../tools'
@@ -53,6 +54,12 @@ function canStopTurn(
  * Steered messages as appended to a tool result: a notice that they
  * arrived mid-turn, then each message's own envelope. '' when none.
  */
+const PROGRESS_NUDGE = [
+  PROTOCOL_TAGS.STEER_NOTICE.open,
+  '用户已经有一阵没看到你的消息了。先用一句话说说你在做什么（不要分条），然后继续。',
+  PROTOCOL_TAGS.STEER_NOTICE.close,
+].join('\n')
+
 function wrapSteer(items: SteerItem[]): string {
   if (!items.length) return ''
   // Prompt-less items are system notifications (e.g. <task_notification>):
@@ -787,6 +794,10 @@ export default class ChatCommand extends BasePlugin {
             .catch((e) => llm.logger.warn('[chat] turn removal failed:', e))
 
         // 逐字流给用户的 helper
+        const progressNudge = createProgressNudge({
+          afterMs: llm.config.progressNudgeAfterMs ?? 0,
+          maxPerTurn: llm.config.progressNudgeMaxPerTurn ?? 0,
+        })
         const flushVisibleText = async (force: boolean) => {
           const next = force
             ? {
@@ -803,6 +814,7 @@ export default class ChatCommand extends BasePlugin {
               })
           if (next.text) {
             stopEmojiReaction()
+            progressNudge.seen()
             // 输出层处理：先按白名单过滤 element（防止 agent 乱用 <at> 等
             // 骚扰类 element），再把 <img ref="..."/> 还原成原始 base64 src
             // 让 koishi 真正发图。两步顺序无关——sanitize 不动 <img>，
@@ -906,7 +918,9 @@ export default class ChatCommand extends BasePlugin {
               noteSpeakers(items)
               if (fromOthers(items))
                 getMemoryToolState(turnState).othersSpoke = true
-              return wrapSteer(items)
+              return [wrapSteer(items), progressNudge.take() ? PROGRESS_NUDGE : '']
+                .filter(Boolean)
+                .join('\n\n')
             },
             onTurnEnd: async () => {
               // 强制把这一轮累积的可见文本发出，作为一条独立消息——

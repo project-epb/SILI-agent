@@ -178,6 +178,13 @@ export interface Config {
    */
   showToolCallNotice?: boolean
   /**
+   * Remind the model to say what it is doing after this long without
+   * visible text during tool calls; 0 disables. See utils/progress-nudge.
+   */
+  progressNudgeAfterMs?: number
+  /** At most this many progress reminders per turn. */
+  progressNudgeMaxPerTurn?: number
+  /**
    * DeepSeek "DSML leak" workaround (see utils/dsml-leak.ts): when the model
    * dumps its tool-call markup as plain content, re-send the same payload
    * this many times before giving up (then a graceful fallback reply shows).
@@ -316,6 +323,8 @@ export default class PluginLLM extends BasePlugin<Config> {
       enableAgent: true,
       maxToolIterations: 5,
       showToolCallNotice: false,
+      progressNudgeAfterMs: 60 * 1000,
+      progressNudgeMaxPerTurn: 2,
       dsmlLeakMaxRetries: 2,
       memoryByteLimit: 3000,
       sharedMemoryByteLimit: 3000,
