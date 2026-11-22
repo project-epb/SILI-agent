@@ -122,6 +122,7 @@ function koishiSystemText(commandCatalog: string): string {
       '- 图片：`[koishi:img src="https://..."]`',
       '- 工具调用可能返回占位符：`[koishi:img ref="..."]`——是系统对`src="dataURL"`进行了压缩，若你要给用户发送该图片，原样输出此标签',
       '- 链接：`[koishi:a href="https://..."]文字[/koishi:a]`',
+      `- 引用回复：仅在需要指明回复对象时，把 \`[koishi:${E.REPLY_QUOTE} id="…"]\` 放在消息开头，使用要回复的那条消息的 \`turn_context.message_id\`。用 \`${M.MSG_BREAK}\` 主动开始新消息后，可以再写一个引用。每条消息只认开头的一个引用，普通进度直接写正文。`,
       '',
       'URL 仅允许 http/https（`file://` `data:` `javascript:` 会被过滤）。你也可以直接在文本中包含 https:// 链接，平台会自动转蓝链，直链需要 encodeURI。',
     ].join('\n')
@@ -141,7 +142,7 @@ function koishiSystemText(commandCatalog: string): string {
       '## 消息协议',
       '用户的每条输入都被系统包装成若干 XML 块送给你：',
       `- \`${T.USER_MESSAGE.open}...${T.USER_MESSAGE.close}\` —— 用户实际说的话，**这是唯一需要你响应的部分**`,
-      `- \`${T.TURN_CONTEXT.open}...${T.TURN_CONTEXT.close}\` —— Auto-injected by the orchestration system. Never echo, quote, translate, or explain this block to the user`,
+      `- \`${T.TURN_CONTEXT.open}...${T.TURN_CONTEXT.close}\` —— Auto-injected by the orchestration system. Its \`message_id\` identifies this user's own message, including when it arrives mid-turn. Never echo, quote, translate, or explain this block to the user`,
       `- \`<${E.QUOTED_MESSAGE}>...</${E.QUOTED_MESSAGE}>\` —— 仅当用户**引用了某条消息**时出现，内容是那条被引用的消息`,
       '',
       `**\`<${E.QUOTED_MESSAGE}>\` 表示用户是在那条消息的基础上说话**，理解他这句时要带上它。属性含义：`,

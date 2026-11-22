@@ -22,6 +22,43 @@ function userVisible(safe: string): string {
 }
 
 describe('sanitizeAgentOutput', () => {
+  describe('explicit reply quotes', () => {
+    it('allows only the first tag at the start of a model message', () => {
+      const safe = sanitizeAgentOutput(
+        ' \n[koishi:quote id="current"] [koishi:quote id="other"]reply',
+        true
+      )
+      expect(
+        h
+          .parse(safe)
+          .filter((element) => element.type === 'quote')
+          .map((element) => element.attrs.id)
+      ).toEqual(['current'])
+      expect(userVisible(safe)).not.toContain('[koishi:quote')
+    })
+
+    it('drops mid-message quotes and quotes at the start of a continuation', () => {
+      expect(
+        userVisible(
+          sanitizeAgentOutput('hello [koishi:quote id="other"]world', true)
+        )
+      ).toBe('hello world')
+      expect(
+        userVisible(
+          sanitizeAgentOutput('[koishi:quote id="other"]continued', false)
+        )
+      ).toBe('continued')
+    })
+
+    it('drops quote directives without an ID while preserving the reply', () => {
+      const safe = sanitizeAgentOutput(
+        '[koishi:quote][koishi:quote id="other"]reply',
+        true
+      )
+      expect(userVisible(safe)).toBe('reply')
+    })
+  })
+
   describe('plain text — escapes <>& but is otherwise untouched', () => {
     it('passes plain ASCII / CJK text through', () => {
       expect(userVisible(sanitizeAgentOutput('hello world'))).toBe(

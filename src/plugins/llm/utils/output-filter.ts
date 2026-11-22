@@ -10,6 +10,7 @@ import {
   getAttr,
   parseKoishiBBCode,
 } from './koishi-bbcode'
+import { PROTOCOL_ELEMENT_TYPES } from './protocol'
 
 /**
  * URL safety check: only `http(s)://` is accepted on `src`/`href`.
@@ -58,13 +59,29 @@ const PAIRED_TAGS: ReadonlySet<string> = new Set(['a'])
  * The split keeps the parser reusable and individually testable, and
  * isolates LLM-specific policy from syntax.
  */
-export function sanitizeAgentOutput(text: string): string {
+export function sanitizeAgentOutput(text: string, allowQuote = false): string {
   if (!text) return text
 
   const nodes = parseKoishiBBCode(fixAngleMarkers(text), {
     pairedTags: PAIRED_TAGS,
   })
-  return nodes.map(renderNode).join('')
+  const first = nodes.find(
+    (node) => node.kind === 'element' || node.content.trim()
+  )
+  return nodes
+    .map((node) => {
+      if (
+        node.kind === 'element' &&
+        node.tag.toLowerCase() === PROTOCOL_ELEMENT_TYPES.REPLY_QUOTE
+      ) {
+        const id = getAttr(node, 'id')?.trim()
+        return allowQuote && node === first && id
+          ? h(PROTOCOL_ELEMENT_TYPES.REPLY_QUOTE, { id }).toString()
+          : ''
+      }
+      return renderNode(node)
+    })
+    .join('')
 }
 
 /**
