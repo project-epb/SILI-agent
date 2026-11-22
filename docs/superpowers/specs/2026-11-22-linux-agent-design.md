@@ -50,8 +50,9 @@ SILI 只能在 QuickJS 里跑纯 JS，做不了真正的 agent 工作（装包�
    Why：参照 only-chat 的工具形状；用专门工具写文件，避免 heredoc 和 sed 的转义问题。
 11. `send_file(path, caption?)`：把 VM 里的文件发到当前 QQ 会话，图片作为图片消息，其他文件作为文件消息。
 12. QQ 收到的图片和文件，在已开通本功能的会话里，下载到 `<会话目录>/inbox/` 下，信封里用协议标签标出 VM 内路径。
-13. 机器使用说明写在 `exec` 的工具描述里，不写进 `SILI-vN.prompt.md`，也不进 system prompt。
-    Why：工具只在开通的会话里出现，说明随工具出现，又不会让共享的 system prompt 缓存分成两份。
+13. 机器使用说明通过 `llm/build-system-prompt` 钩子作为「Linux 机器」一节加进系统提示词，所有会话相同；工具定义只介绍参数。
+    Why：工具列表已在所有会话中相同，说明不必跟着工具走；only-chat 的经验是工具定义只讲参数，大段说明放系统提示词更合适。
+
 14. 删除 `run_code_sandbox`、它的运行时服务和 QuickJS 依赖。
     Why：主人说实际上没怎么用过。
 

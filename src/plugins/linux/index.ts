@@ -8,7 +8,7 @@ import { PROTOCOL_TAGS, escapeProtocolTags } from '~/llm/utils/protocol'
 import { type Job, LinuxMachine, WORKSPACE } from './machine'
 import type { ProxyAddress } from './net-backend'
 import { conversationDirName } from './output'
-import { buildLinuxTools } from './tools'
+import { MACHINE_PROMPT, buildLinuxTools } from './tools'
 
 declare module 'koishi' {
   interface Context {
@@ -82,6 +82,8 @@ export default class LinuxService extends Service {
       iterationBudget: options.iterationBudget ?? 40,
     })
     for (const tool of tools) ctx.llm.tools.register(tool)
+    // The same in every chat, like the tool list: availability is stated, not varied.
+    ctx.on('llm/build-system-prompt', (registry) => registry.add('linux', MACHINE_PROMPT))
 
     ctx.on('dispose', () => {
       for (const tool of tools) ctx.llm.tools.unregister(tool.definition.name)
