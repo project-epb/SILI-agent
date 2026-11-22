@@ -50,8 +50,11 @@ export class SystemPromptRegistry {
     }
   }
 
+  /** Each section in its own `<plugin id>` block, so the model can tell whose rules it reads. */
   render(): string {
-    return this.sections.map((s) => s.content).join('\n\n')
+    return this.sections
+      .map((s) => `<plugin id="${s.id}">\n${s.content}\n</plugin>`)
+      .join('\n\n')
   }
 }
 
@@ -73,9 +76,24 @@ declare module 'koishi' {
 export function buildSystemPromptText(
   basePrompt: string,
   commandCatalog: string,
-  extensions = ''
+  extensions = '',
+  voice = ''
 ): string {
-  const parts: string[] = [basePrompt]
+  const system = koishiSystemText(commandCatalog)
+  // Top-level blocks: persona, the bot's own rules, IM voice, then plugins
+  // (already wrapped by SystemPromptRegistry.render).
+  return [
+    basePrompt && `<persona>\n${basePrompt}\n</persona>`,
+    `<koishi_system>\n${system}\n</koishi_system>`,
+    voice && `<voice_im>\n${voice}\n</voice_im>`,
+    extensions,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function koishiSystemText(commandCatalog: string): string {
+  const parts: string[] = []
   if (commandCatalog) {
     parts.push(commandCatalog)
     parts.push(
@@ -177,9 +195,6 @@ export function buildSystemPromptText(
       '```',
     ].join('\n')
   )
-  if (extensions) {
-    parts.push(extensions)
-  }
   return parts.join('\n\n')
 }
 
@@ -207,7 +222,9 @@ export class SystemPromptBuilder {
    */
   constructor(
     private readonly getBasePrompt: () => string,
-    private readonly ctx?: Context
+    private readonly ctx?: Context,
+    /** The IM voice every persona shares (`<voice_im>`). */
+    private readonly voice = ''
   ) {}
 
   /** Get prompt text for the standard path; reuses cached string when
@@ -224,7 +241,7 @@ export class SystemPromptBuilder {
     ) {
       return cached.text
     }
-    const text = buildSystemPromptText(basePrompt, catalog, extensions)
+    const text = buildSystemPromptText(basePrompt, catalog, extensions, this.voice)
     this.cache = { basePrompt, catalog, extensions, text }
     return text
   }
@@ -233,7 +250,7 @@ export class SystemPromptBuilder {
    *  without touching the cache. Still picks up hook extensions so a
    *  third-party plugin's contribution shows up under the debug path. */
   buildWithBase(basePrompt: string, catalog: string): string {
-    return buildSystemPromptText(basePrompt, catalog, this.collectExtensions())
+    return buildSystemPromptText(basePrompt, catalog, this.collectExtensions(), this.voice)
   }
 
   /** Force the next get() to recompute. Useful if base prompt source

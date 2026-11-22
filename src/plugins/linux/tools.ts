@@ -52,7 +52,7 @@ export const MACHINE_PROMPT = [
 
 const EXEC_TOOL: ToolDefinition = {
   name: 'exec',
-  description: '在你的 Linux 机器上执行 shell 命令。机器说明见系统提示词「Linux 机器」一节。',
+  description: '在你的 Linux 机器上执行 shell 命令。机器说明见系统提示词里的 `<plugin id="linux">`。',
   parameters: {
     type: 'object',
     properties: {

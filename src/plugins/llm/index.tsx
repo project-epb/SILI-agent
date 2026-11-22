@@ -290,7 +290,8 @@ export default class PluginLLM extends BasePlugin<Config> {
   })
   readonly systemPrompt: SystemPromptBuilder = new SystemPromptBuilder(
     () => this.config.systemPrompt.default ?? '',
-    this.ctx
+    this.ctx,
+    PluginLLM.readPromptFile('IM-voice.prompt.md')
   )
   readonly chatHistory: ChatHistoryService = new ChatHistoryService(this.ctx)
   readonly activeChats: ActiveChatRegistry = new ActiveChatRegistry(this.logger)
@@ -326,8 +327,8 @@ export default class PluginLLM extends BasePlugin<Config> {
       systemPrompt: {
         default:
           process.env.KOISHI_ENV === 'dev'
-            ? PluginLLM.readPersonaPrompt('Noir-v2.prompt.md')
-            : PluginLLM.readPersonaPrompt('SILI-v7.prompt.md'),
+            ? PluginLLM.readPromptFile('Noir-v2.prompt.md')
+            : PluginLLM.readPromptFile('SILI-v7.prompt.md'),
       },
     }
     config = {
@@ -655,14 +656,6 @@ export default class PluginLLM extends BasePlugin<Config> {
     } catch (e) {
       return ''
     }
-  }
-
-  /** A persona prompt followed by the chat voice every persona shares. */
-  static readPersonaPrompt(file: string) {
-    return [
-      PluginLLM.readPromptFile(file),
-      PluginLLM.readPromptFile('IM-voice.prompt.md'),
-    ].join('\n\n')
   }
 
   /**

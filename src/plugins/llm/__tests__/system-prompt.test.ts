@@ -11,7 +11,7 @@ describe('SystemPromptRegistry', () => {
     const r = new SystemPromptRegistry()
     r.add('a', 'alpha content')
     r.add('b', 'beta content')
-    expect(r.render()).toBe('alpha content\n\nbeta content')
+    expect(r.render()).toBe('<plugin id="a">\nalpha content\n</plugin>\n\n<plugin id="b">\nbeta content\n</plugin>')
   })
 
   it('replaces content when the same id is registered twice', () => {
@@ -19,7 +19,7 @@ describe('SystemPromptRegistry', () => {
     r.add('shared', 'first')
     r.add('other', 'middle')
     r.add('shared', 'second')
-    expect(r.render()).toBe('second\n\nmiddle')
+    expect(r.render()).toBe('<plugin id="shared">\nsecond\n</plugin>\n\n<plugin id="other">\nmiddle\n</plugin>')
   })
 
   it('ignores empty / whitespace-only content', () => {
@@ -27,13 +27,13 @@ describe('SystemPromptRegistry', () => {
     r.add('a', '   ')
     r.add('b', '')
     r.add('c', 'real')
-    expect(r.render()).toBe('real')
+    expect(r.render()).toBe('<plugin id="c">\nreal\n</plugin>')
   })
 
   it('trims content when storing', () => {
     const r = new SystemPromptRegistry()
     r.add('a', '   padded  \n')
-    expect(r.render()).toBe('padded')
+    expect(r.render()).toBe('<plugin id="a">\npadded\n</plugin>')
   })
 
   it('throws when id is empty', () => {
@@ -57,6 +57,14 @@ describe('buildSystemPromptText', () => {
   it('appends extensions as the last section when present', () => {
     const out = buildSystemPromptText('BASE', 'CATALOG', 'my custom block')
     expect(out.endsWith('my custom block')).toBe(true)
+  })
+
+  it('wraps persona, koishi system and voice in their own blocks, in that order', () => {
+    const out = buildSystemPromptText('BASE', 'CATALOG', '', 'VOICE')
+    const at = (tag: string) => out.indexOf(tag)
+    expect(out.startsWith('<persona>\nBASE\n</persona>')).toBe(true)
+    expect(at('<koishi_system>')).toBeGreaterThan(at('</persona>'))
+    expect(at('<voice_im>\nVOICE\n</voice_im>')).toBeGreaterThan(at('</koishi_system>'))
   })
 
   it('omits the extensions section when empty', () => {
@@ -137,7 +145,7 @@ describe('SystemPromptBuilder', () => {
     const out = b.get('catalog')
     expect(out).toContain('Added by plugin A')
     expect(out).toContain('Added by plugin B')
-    expect(out.endsWith('Added by plugin B')).toBe(true)
+    expect(out.endsWith('Added by plugin B\n</plugin>')).toBe(true)
   })
 
   it('cache invalidates when hook contributors change between calls', () => {
