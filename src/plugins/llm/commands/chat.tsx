@@ -54,14 +54,22 @@ function canStopTurn(
  */
 function wrapSteer(items: SteerItem[]): string {
   if (!items.length) return ''
+  // Prompt-less items are system notifications (e.g. <task_notification>):
+  // they describe themselves, and the "reply to them" notice must not cover
+  // them, or the model answers every finished job as if a user had spoken.
+  const hasMessages = items.some((item) => item.prompt)
   return [
-    [
-      PROTOCOL_TAGS.STEER_NOTICE.open,
-      '以下消息是你忙着的时候新发来的。先把手头的事做完，再回应它们，不要忽略。',
-      PROTOCOL_TAGS.STEER_NOTICE.close,
-    ].join('\n'),
+    hasMessages
+      ? [
+          PROTOCOL_TAGS.STEER_NOTICE.open,
+          '以下用户消息是你忙着的时候新发来的。先把手头的事做完，再回应它们，不要忽略。',
+          PROTOCOL_TAGS.STEER_NOTICE.close,
+        ].join('\n')
+      : '',
     ...items.map((item) => item.envelope),
-  ].join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 /**
