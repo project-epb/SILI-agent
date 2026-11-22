@@ -17,6 +17,7 @@ import {
 } from '../services/conversation-scope'
 import { parseStopKeyword } from '../utils/stop-keyword'
 import type { TurnStatus } from '../services/history-filter'
+import { addTurnSpeaker } from '../utils/turn-speakers'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry, getMemoryToolState, snapshotTiers } from '../tools'
 import { sanitizeAgentOutput } from '../utils/output-filter'
@@ -490,8 +491,13 @@ export default class ChatCommand extends BasePlugin {
         // Per-turn tool state, handed to the agent loop. Memory writes are
         // refused once the turn carries someone else's message.
         const turnState: Record<string, unknown> = {}
+        addTurnSpeaker(turnState, session)
+        // Prompt-less items are task notifications: no one spoke them.
+        const noteSpeakers = (items: SteerItem[]) => {
+          for (const item of items) if (item.prompt) addTurnSpeaker(turnState, item.session)
+        }
         const fromOthers = (items: SteerItem[]) =>
-          items.some((item) => item.session.userId !== session.userId)
+          items.some((item) => item.prompt && item.session.userId !== session.userId)
         // Re-read: the awaits above let a turn start or end meanwhile.
         const runningNow = llm.activeChats.get(scope.key)
         if (runningNow) {
@@ -506,6 +512,7 @@ export default class ChatCommand extends BasePlugin {
         // Messages steered into the previous turn too late for it to see.
         const backlog = llm.activeChats.takeBacklog(scope.key)
         if (backlog.length) {
+          noteSpeakers(backlog)
           if (fromOthers(backlog))
             getMemoryToolState(turnState).othersSpoke = true
           const earlier = backlog.map((item) => item.envelope).join('\n\n')
@@ -896,6 +903,7 @@ export default class ChatCommand extends BasePlugin {
             turnState,
             drainSteer: () => {
               const items = activeEntry.inbox.splice(0)
+              noteSpeakers(items)
               if (fromOthers(items))
                 getMemoryToolState(turnState).othersSpoke = true
               return wrapSteer(items)

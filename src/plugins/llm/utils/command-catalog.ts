@@ -28,6 +28,8 @@ export interface CommandCatalogOption {
   name: string
   type: string
   description?: string
+  /** Set only when the option asks for more than its command does. */
+  authority?: number
 }
 
 export interface CommandCatalogEntry {
@@ -42,6 +44,8 @@ export interface CommandCatalogEntry {
   options: CommandCatalogOption[]
   aliases: string[]
   children: CommandCatalogEntry[]
+  /** Koishi authority the caller needs (command config, default 1). */
+  authority?: number
 }
 
 function renderEntry(entry: CommandCatalogEntry, indent: number): string {
@@ -137,6 +141,10 @@ export function renderCatalogEntryDetail(entry: CommandCatalogEntry): string {
   lines.push(`# ${heading}`)
   lines.push('')
   lines.push(entry.agentHelp?.trim() || entry.description?.trim() || '(无描述)')
+  if (entry.authority !== undefined) {
+    lines.push('')
+    lines.push(`权限等级：${entry.authority}（执行者的 authority 低于它会被拒绝）`)
+  }
 
   if (entry.usage?.trim()) {
     lines.push('')
@@ -160,7 +168,8 @@ export function renderCatalogEntryDetail(entry: CommandCatalogEntry): string {
     lines.push('将下列键和值传入 `options` 对象。')
     for (const o of entry.options) {
       const desc = o.description ? ' — ' + o.description : ''
-      lines.push(`- \`${o.name}\` (${o.type})${desc}`)
+      const tags = [o.type, o.authority ? `权限 ${o.authority}` : ''].filter(Boolean).join(', ')
+      lines.push(`- \`${o.name}\` (${tags})${desc}`)
     }
   }
 
@@ -260,6 +269,7 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
       description: a.description,
     }))
 
+    const authority: number = cmd.config?.authority ?? 1
     const options: CommandCatalogOption[] = Object.values(cmd._options ?? {})
       .filter((o: any) => o.descPath !== 'commands.help.options.help')
       .map((o: any) => ({
@@ -272,6 +282,7 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
           ) ||
           o.description ||
           '',
+        ...(o.authority > authority ? { authority: o.authority } : {}),
       }))
 
     const aliases: string[] = cmd._aliases
@@ -292,6 +303,7 @@ export function buildCommandCatalog(ctx: Context): CommandCatalogEntry[] {
       options,
       aliases,
       children,
+      authority,
     }
   }
 

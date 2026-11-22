@@ -8,12 +8,15 @@ import {
   renderCatalogEntryDetail,
   searchCatalogEntries,
 } from '../utils/command-catalog'
+import { describeSpeaker, pickSpeaker } from '../utils/turn-speakers'
 import type { ToolHandler } from './types'
 
 export const EXECUTE_KOISHI_COMMAND_TOOL: ToolDefinition = {
   name: 'execute_koishi_command',
   description: [
-    '以当前用户的身份执行一条 Koishi 指令。系统提示词的「可用指令」列出顶层指令。调用时直接使用帮助或清单返回的完整指令名。',
+    '以某个用户的身份执行一条 Koishi 指令：权限按他算，改名、签到这类指令也作用在他身上。系统提示词的「可用指令」列出顶层指令。调用时直接使用帮助或清单返回的完整指令名。',
+    '',
+    '- 身份：这一轮只有一个人说话时可省略 `as_uid`；有两人及以上说过话时必须传，填这条指令是为谁执行的那个人的 `turn_context.koishi.uid`。',
     '',
     '- 查找指令：`{name: "virtual:find-command", args: ["关键词"]}`，例如 `"禁言"`，按名称和描述搜索所有层级。',
     '- 首次使用某条指令前查看详情：`{name: "help", args: ["channel.mute.member"]}`。用详情中的参数和选项键构造调用。',
@@ -35,6 +38,10 @@ export const EXECUTE_KOISHI_COMMAND_TOOL: ToolDefinition = {
         description: '选项对象，键名以指令详情为准',
         additionalProperties: true,
       },
+      as_uid: {
+        type: 'string',
+        description: '以谁的身份执行：这一轮说过话的某人的 koishi uid',
+      },
     },
     required: ['name'],
   },
@@ -44,6 +51,7 @@ export interface ExecuteKoishiCommandInput {
   name: string
   args?: string[]
   options?: Record<string, any>
+  as_uid?: string
 }
 
 /**
@@ -213,11 +221,14 @@ export async function runExecuteKoishiCommand(
 
 export const executeKoishiCommandHandler: ToolHandler = {
   definition: EXECUTE_KOISHI_COMMAND_TOOL,
-  async execute(args, { ctx, session }) {
-    return runExecuteKoishiCommand(
-      session,
-      args as ExecuteKoishiCommandInput,
-      ctx
-    )
+  async execute(args, { ctx, session, turnState }) {
+    const input = args as ExecuteKoishiCommandInput
+    // help and search act on no one.
+    if (input?.name === 'help' || input?.name === 'virtual:find-command')
+      return runExecuteKoishiCommand(session, input, ctx)
+    const speaker = pickSpeaker(turnState, session, input?.as_uid)
+    if ('error' in speaker) return speaker.error
+    const result = await runExecuteKoishiCommand(speaker.session, input, ctx)
+    return `以 ${describeSpeaker(speaker.uid, speaker.session)} 的身份执行了 \`${input.name}\`：\n${result}`
   },
 }
