@@ -23,8 +23,8 @@ SILI 只能在 QuickJS 里跑纯 JS，做不了真正的 agent 工作（装包�
 3. VM 退出（panic、wasm trap、OOM）后，正在执行的工具返回错误；下一次调用自动重启 VM。
    Why：README 写明内核 wasm trap 会结束整个会话，只能重启。
 
-4. 命令以 `user`（uid 1000，免密 sudo）身份执行。首次启动时打开 apk 的 community 仓库，装上 bash、python3、py3-pip、curl、jq、git、ripgrep、file，装完写标记文件，之后不再重复。
-   Why：模型能用 `sudo apk add` 自行补装；提权也出不了 wasm。
+4. 命令以 `user`（uid 1000，免密 sudo）身份执行。首次启动时打开 apk 的 community 仓库，装上 bash、python3、py3-pip、curl、jq、git、ripgrep、file，装完写标记文件，之后不再重复。每次开机再以 `user` 身份预取 unkernel kw 层的 node、bun、uv（已在 `~/.local/bin` 的跳过）。
+   Why：模型能用 `sudo apk add` 自行补装；提权也出不了 wasm。kw 层的这些程序是首次调用才下载的壳（node 约 200 MB），不预取的话第一次调用会撞上 30 秒超时。
 
 5. 所有文件操作（读写、编辑、`send_file`、收件箱）都用访客里的命令通过 stdin/stdout 传字节，不把宿主目录挂进访客。
    Why：unkernel 的 `nodeFs` 只对路径最后一段加了 `O_NOFOLLOW`；访客有 sudo，root 能直接通过 vsock 发原始 9p 请求，让宿主顺着中间的符号链接越出目录。

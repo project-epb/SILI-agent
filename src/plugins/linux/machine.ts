@@ -9,6 +9,12 @@ const JOBS_DIR = `${WORKSPACE}/.jobs`
 const PROVISIONED_MARK = '/var/lib/sili/provisioned'
 const PACKAGES = ['bash', 'python3', 'py3-pip', 'curl', 'jq', 'git', 'ripgrep', 'file']
 const PROVISION_TIMEOUT_MS = 10 * 60_000
+/**
+ * unkernel's kw layer ships these as shims that download the real program
+ * into ~/.local/bin on first call (node alone is ~200 MB): a first `node -v`
+ * in a tool call blows the 30 s default timeout. Fetch them while booting.
+ */
+const KW_RUNTIMES = ['node', 'bun', 'uv']
 
 export interface RunOptions {
   input?: Uint8Array | string
@@ -129,6 +135,12 @@ export class LinuxMachine {
     })
     if (r.exitCode !== 0)
       this.logger.warn('[linux] provisioning failed: %s', decode(r.stderr).slice(-2000))
+    const fetch = KW_RUNTIMES.map(
+      (t) => `[ -e "$HOME/.local/bin/${t}" ] || /usr/lib/kw/bin/${t} --version >/dev/null`
+    ).join('\n')
+    const f = await this.run(['sh', '-ec', fetch], { user: 'user', timeoutMs: PROVISION_TIMEOUT_MS })
+    if (f.exitCode !== 0)
+      this.logger.warn('[linux] fetching runtimes failed: %s', decode(f.stderr).slice(-2000))
   }
 
   #post(msg: HostMessage, transfer: ArrayBuffer[] = []) {
