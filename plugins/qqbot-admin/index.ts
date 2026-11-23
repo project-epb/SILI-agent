@@ -15,9 +15,8 @@ import type {
 import { applyChat } from './chat'
 
 /**
- * Console page for the v5 channel manager: which groups the official QQ bot is
- * in, who has DMed it, and their recorded conversations. All listeners
- * require authority 4 (ops).
+ * Console pages for recorded conversations and the v5 QQ channel manager.
+ * All listeners require authority 4 (ops).
  */
 const AUTH = 4
 const PLATFORM = 'qq'

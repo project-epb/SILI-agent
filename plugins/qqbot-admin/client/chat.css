@@ -64,7 +64,9 @@ html.dark .qc-root, [data-theme="dark"] .qc-root {
   background: var(--qc-paper);
   border-right: 1px solid var(--qc-rule);
 }
-.qc-list-head { display: flex; align-items: center; height: 62px; padding: 10px 16px; border-bottom: 1px solid var(--qc-rule); }
+.qc-list-head { display: flex; align-items: center; gap: 6px; height: 62px; padding: 10px 16px; border-bottom: 1px solid var(--qc-rule); }
+.qc-list-head input { min-width: 0; }
+.qc-list-head select { flex: 0 0 auto; max-width: 48%; }
 .qc-list-head input, .qc-members input { width: 100%; }
 .qc-list ul { overflow: auto; padding: 8px; }
 .qc-list-empty { padding: 4px 16px; color: var(--qc-quiet); }
@@ -193,7 +195,7 @@ html.dark .qc-root, [data-theme="dark"] .qc-root {
   color: var(--qc-accent) !important;
   text-align: left;
 }
-.qc-author:hover { text-decoration: underline; }
+button.qc-author:hover { text-decoration: underline; }
 .qc-self-author {
   display: flex;
   align-items: baseline;

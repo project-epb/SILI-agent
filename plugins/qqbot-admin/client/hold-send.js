@@ -20,11 +20,16 @@ export const HoldSend = defineComponent({
     }
 
     async function submit(text) {
-      const { selfId, channelId } = props.chat
+      const { platform, selfId, channelId } = props.chat
       sending.value = true
       error.value = ''
       try {
-        await send('qqbot-admin/chat-send', { selfId, channelId, text })
+        await send('qqbot-admin/chat-send', {
+          platform,
+          selfId,
+          channelId,
+          text,
+        })
         if (props.modelValue.trim() === text) emit('update:modelValue', '')
         emit('sent')
       } catch (cause) {
@@ -112,7 +117,7 @@ export const HoldSend = defineComponent({
             h('textarea', {
               'aria-label': '给当前会话发送消息',
               'aria-describedby': 'qc-send-hint',
-              placeholder: '以 SILI 身份发送消息',
+              placeholder: '以本机器人身份发送消息',
               value: props.modelValue,
               maxlength: 2000,
               rows: 2,
