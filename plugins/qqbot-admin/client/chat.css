@@ -292,7 +292,22 @@ button.qc-author:hover { text-decoration: underline; }
 .qc-reply-draft button { padding: 2px 6px; border: 0; border-radius: 5px; background: transparent; }
 .qc-reply-draft button:hover { background: var(--qc-rule); }
 .qc-compose-row textarea { flex: 1; min-width: 0; resize: none; field-sizing: fixed; }
-.qc-compose-hint { margin-top: 5px; font-size: 11px; color: var(--qc-quiet); }
+.qc-compose-tools { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 5px; }
+.qc-compose-hint { font-size: 11px; color: var(--qc-quiet); }
+.qc-root .qc-element-mode {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--qc-rule);
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--qc-quiet);
+}
+.qc-root .qc-element-mode[aria-pressed="true"] {
+  background: var(--qc-selected);
+  border-color: var(--qc-accent);
+  color: var(--qc-accent);
+}
 .qc-send {
   position: relative;
   overflow: hidden;
