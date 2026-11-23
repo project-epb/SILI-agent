@@ -2,6 +2,7 @@ import { $, Context, Time } from 'koishi'
 
 import { qqAvatar } from '../../src/plugins/qqbot/avatar'
 import { GUARDED_PLATFORMS } from '../../src/plugins/qqbot/gate'
+import type { QQMemberRole } from '../../src/plugins/qqbot/tables'
 import type { ChannelMessage } from '../../src/services/channel-message-history'
 
 type Scope = Pick<ChannelMessage, 'platform' | 'selfId' | 'channelId'>
@@ -17,6 +18,8 @@ export interface ChatProfile {
   groupName?: string
   avatar?: string
   isBot?: boolean
+  /** Last role QQ reported for this member in the group; may be stale. */
+  role?: QQMemberRole
 }
 
 export function knownName(value: unknown, id: string) {
@@ -92,7 +95,7 @@ export function createChatProfileLookup(ctx: Context) {
                 channelId: scope.channelId,
                 userId: selected,
               },
-              ['userId', 'nickname']
+              ['userId', 'nickname', 'role']
             )
           : [],
       ])
@@ -105,10 +108,12 @@ export function createChatProfileLookup(ctx: Context) {
       }
       for (const member of members) {
         const groupName = knownName(member.nickname, member.userId)
-        if (groupName)
+        const role = member.role || undefined
+        if (groupName || role)
           profiles.set(member.userId, {
             ...profiles.get(member.userId),
-            groupName,
+            ...(groupName && { groupName }),
+            ...(role && { role }),
           })
       }
     }

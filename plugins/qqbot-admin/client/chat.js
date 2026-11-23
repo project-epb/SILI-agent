@@ -68,21 +68,22 @@ const sameRun = (a, b) =>
   dayOf(a.time) === dayOf(b.time) &&
   Math.abs(b.time - a.time) < GROUP_GAP
 
-function avatar(name, id, mention, src) {
+const roleNames = { owner: '群主', admin: '管理员' }
+const touchOnly = () => window.matchMedia('(hover: none)').matches
+
+function avatar(name, id, onOpen, src) {
   const hue = hueOf(id)
   return h(
-    mention ? 'button' : 'span',
+    onOpen ? 'button' : 'span',
     {
-      class: ['qc-avatar', `is-${hue}`, mention && 'qc-mention-avatar'],
-      ...(mention
+      class: ['qc-avatar', `is-${hue}`, onOpen && 'qc-avatar-button'],
+      ...(onOpen
         ? {
             type: 'button',
-            title: `双击艾特 ${name}`,
-            'aria-label': `艾特 ${name}`,
-            onDblclick: mention,
-            onClick: (event) => {
-              if (!event.detail) mention()
-            },
+            title: name,
+            'aria-label': `${name} 的消息操作`,
+            'aria-haspopup': 'menu',
+            onClick: onOpen,
           }
         : { 'aria-hidden': 'true' }),
     },
@@ -179,6 +180,8 @@ function createChatPage(Features) {
       const clockNow = ref(Date.now())
       const composer = ref(null)
       const recallState = ref(null)
+      const actionMenu = ref(null)
+      const root = ref(null)
       const recalledIds = new Set()
       const nodes = new Map()
       const activity = new Map()
@@ -348,6 +351,7 @@ function createChatPage(Features) {
         menu.value = false
         panel.value = null
         recallState.value = null
+        actionMenu.value = null
         newMessages.value = false
         nodes.clear()
         recalledIds.clear()
@@ -493,6 +497,108 @@ function createChatPage(Features) {
         }
       }
 
+      // Anchored to the tap point (or the trigger for keyboard clicks), flipped to stay inside the root.
+      function openMenu(event, row) {
+        const box = root.value?.getBoundingClientRect()
+        if (!box) return
+        const trigger = event.currentTarget.getBoundingClientRect()
+        const x = event.detail ? event.clientX : trigger.left
+        const y = event.detail ? event.clientY : trigger.bottom
+        const left = Math.max(8, Math.min(x - box.left, box.width - 188))
+        const below = y - box.top < box.height - 200
+        actionMenu.value = {
+          id: row.id,
+          left,
+          ...(below
+            ? { top: y - box.top + 4 }
+            : { bottom: box.bottom - y + 4 }),
+        }
+      }
+
+      function renderActionMenu(chat) {
+        const menuState = actionMenu.value
+        const row =
+          menuState && messages.value.find((item) => item.id === menuState.id)
+        if (!row) return null
+        const name = displayName(chat, row)
+        const close = (action) => () => {
+          actionMenu.value = null
+          action()
+        }
+        const items = [
+          !row.recalled && ['引用', () => selectReply(chat, row, name)],
+          chat.kind === 'group' &&
+            !row.isSelf &&
+            row.userId && [
+              `艾特 ${name}`,
+              () => composer.value?.insertMention(row.userId),
+            ],
+          chat.kind === 'group' &&
+            !row.isSelf &&
+            chat.platform === 'qq' &&
+            row.userId && ['成员配置', () => showUser(chat, row)],
+          !row.recalled &&
+            row.recallUntil > clockNow.value && [
+              recallLabel(chat),
+              () => recall(chat, row),
+              true,
+            ],
+        ].filter(Boolean)
+        return [
+          h('div', {
+            class: 'qc-menu-backdrop',
+            onClick: () => (actionMenu.value = null),
+            onContextmenu: (event) => {
+              event.preventDefault()
+              actionMenu.value = null
+            },
+          }),
+          h(
+            'div',
+            {
+              class: 'qc-action-menu',
+              role: 'menu',
+              style: {
+                left: `${menuState.left}px`,
+                top: menuState.top != null ? `${menuState.top}px` : undefined,
+                bottom:
+                  menuState.bottom != null
+                    ? `${menuState.bottom}px`
+                    : undefined,
+              },
+              onKeydown: (event) => {
+                if (event.key === 'Escape') actionMenu.value = null
+              },
+            },
+            items.length
+              ? items.map(([label, action, danger]) =>
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      role: 'menuitem',
+                      class: danger && 'is-danger',
+                      onClick: close(action),
+                    },
+                    label
+                  )
+                )
+              : h('span', { class: 'qc-action-empty' }, '没有可用操作')
+          ),
+        ]
+      }
+
+      function displayName(chat, row) {
+        return (
+          row.username ||
+          (row.isSelf
+            ? ownName.value
+            : chat.kind === 'dm'
+              ? nameOf(chat)
+              : '群友')
+        )
+      }
+
       function messageActions(chat, row, name) {
         if (row.recalled) return null
         return h('span', { class: 'qc-message-actions' }, [
@@ -531,13 +637,7 @@ function createChatPage(Features) {
       }
 
       function renderMessage(chat, row, index) {
-        const name =
-          row.username ||
-          (row.isSelf
-            ? ownName.value
-            : chat.kind === 'dm'
-              ? nameOf(chat)
-              : '群友')
+        const name = displayName(chat, row)
         const previous = messages.value[index - 1]
         const next = messages.value[index + 1]
         const newDay = !previous || dayOf(row.time) !== dayOf(previous.time)
@@ -561,60 +661,86 @@ function createChatPage(Features) {
           ),
         ])
         const actions = messageActions(chat, row, name)
-        const bubble = h('div', { class: 'qc-bubble' }, [
-          author && head
-            ? h('div', { class: 'qc-author-line' }, [
-                h(
-                  editableAuthor ? 'button' : 'span',
+        const roleTag = author && roleNames[row.role]
+        const bubble = h(
+          'div',
+          {
+            class: 'qc-bubble',
+            // Touch screens have no hover actions: tapping the bubble opens the menu instead.
+            onClick: (event) => {
+              if (
+                touchOnly() &&
+                !event.target.closest('a, button, img, audio, video')
+              )
+                openMenu(event, row)
+            },
+          },
+          [
+            author && head
+              ? h('div', { class: 'qc-author-line' }, [
+                  h(
+                    editableAuthor ? 'button' : 'span',
+                    {
+                      class: ['qc-author', `is-${hueOf(row.userId)}`],
+                      ...(editableAuthor
+                        ? {
+                            type: 'button',
+                            onClick: () => showUser(chat, row),
+                            disabled: !row.userId,
+                          }
+                        : {}),
+                    },
+                    name
+                  ),
+                  row.isBot || roleTag
+                    ? h('span', { class: 'qc-member-tags' }, [
+                        row.isBot
+                          ? h('small', { class: 'qc-member-tag' }, '机器人')
+                          : null,
+                        roleTag
+                          ? h(
+                              'small',
+                              { class: ['qc-member-tag', `is-${row.role}`] },
+                              roleTag
+                            )
+                          : null,
+                      ])
+                    : null,
+                ])
+              : null,
+            row.isSelf && head && chat.kind === 'group'
+              ? h('div', { class: 'qc-self-author' }, name)
+              : null,
+            quote
+              ? h(
+                  quoteVisible ? 'button' : 'div',
                   {
-                    class: ['qc-author', `is-${hueOf(row.userId)}`],
-                    ...(editableAuthor
-                      ? {
-                          type: 'button',
-                          onClick: () => showUser(chat, row),
-                          disabled: !row.userId,
-                        }
-                      : {}),
+                    class: 'qc-quote',
+                    type: quoteVisible ? 'button' : undefined,
+                    onClick: quoteVisible ? () => jumpTo(quote.id) : undefined,
                   },
-                  name
-                ),
-                row.isBot
-                  ? h('small', { class: 'qc-member-tag' }, '机器人')
-                  : null,
-              ])
-            : null,
-          row.isSelf && head && chat.kind === 'group'
-            ? h('div', { class: 'qc-self-author' }, name)
-            : null,
-          quote
-            ? h(
-                quoteVisible ? 'button' : 'div',
-                {
-                  class: 'qc-quote',
-                  type: quoteVisible ? 'button' : undefined,
-                  onClick: quoteVisible ? () => jumpTo(quote.id) : undefined,
-                },
-                quoteContent
-              )
-            : null,
-          h('div', { class: 'qc-body' }, [
-            row.recalled
-              ? h('em', { class: 'qc-recalled' }, `已${recallLabel(chat)}`)
-              : row.body.length
-                ? row.body.map((part, index) =>
-                    contentPart(part, index, chat.selfId, ownName.value)
-                  )
-                : '[消息内容不可用]',
-            meta,
-          ]),
-          recallState.value?.id === row.id && recallState.value.error
-            ? h(
-                'p',
-                { class: 'qc-error', role: 'alert' },
-                recallState.value.error
-              )
-            : null,
-        ])
+                  quoteContent
+                )
+              : null,
+            h('div', { class: 'qc-body' }, [
+              row.recalled
+                ? h('em', { class: 'qc-recalled' }, `已${recallLabel(chat)}`)
+                : row.body.length
+                  ? row.body.map((part, index) =>
+                      contentPart(part, index, chat.selfId, ownName.value)
+                    )
+                  : '[消息内容不可用]',
+              meta,
+            ]),
+            recallState.value?.id === row.id && recallState.value.error
+              ? h(
+                  'p',
+                  { class: 'qc-error', role: 'alert' },
+                  recallState.value.error
+                )
+              : null,
+          ]
+        )
         return [
           newDay ? h('div', { class: 'qc-date' }, date.format(row.time)) : null,
           h(
@@ -633,9 +759,7 @@ function createChatPage(Features) {
                       ? avatar(
                           name,
                           row.userId,
-                          row.userId
-                            ? () => composer.value?.insertMention(row.userId)
-                            : undefined,
+                          (event) => openMenu(event, row),
                           row.avatar
                         )
                       : h('span', {
@@ -866,6 +990,7 @@ function createChatPage(Features) {
               ref: scroller,
               'aria-label': '聊天记录',
               onScroll: () => {
+                actionMenu.value = null
                 if (nearBottom() && newMessages.value) {
                   newMessages.value = false
                   scheduleHistory()
@@ -938,13 +1063,19 @@ function createChatPage(Features) {
             h(
               'div',
               {
+                ref: root,
                 class: [
                   'qc-root',
                   chat && 'has-chat',
                   panel.value && 'has-panel',
                 ],
               },
-              [renderList(), renderChat(chat), chat ? renderPanel(chat) : null]
+              [
+                renderList(),
+                renderChat(chat),
+                chat ? renderPanel(chat) : null,
+                chat ? renderActionMenu(chat) : null,
+              ]
             ),
         })
       }
