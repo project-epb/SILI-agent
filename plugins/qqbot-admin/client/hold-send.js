@@ -119,7 +119,10 @@ export const HoldSend = defineComponent({
         event.ctrlKey ||
         event.metaKey ||
         event.isComposing ||
-        event.keyCode === 229
+        event.keyCode === 229 ||
+        // Touch keyboards keep Enter as a newline; sending is button-only there.
+        (event.currentTarget.tagName === 'TEXTAREA' &&
+          window.matchMedia('(pointer: coarse)').matches)
       )
         return
       event.preventDefault()
