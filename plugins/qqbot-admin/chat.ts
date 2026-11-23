@@ -11,6 +11,20 @@ const PRIVATE_PREFIX = 'private:'
 const PAGE_SIZE = 60
 const MAX_MESSAGE_LENGTH = 2000
 const RECALL_WINDOW = 2 * Time.minute
+const TEXT_FORMATS = new Set([
+  'b',
+  'strong',
+  'i',
+  'em',
+  'u',
+  's',
+  'del',
+  'code',
+  'pre',
+  'p',
+  'blockquote',
+  'br',
+])
 
 interface ChatTarget {
   platform: string
@@ -130,6 +144,7 @@ interface Conversation extends ChatTarget {
   id: string
   kind: 'group' | 'dm'
   name: string
+  botName: string
   time: number
 }
 
@@ -143,7 +158,11 @@ declare module '@koishijs/console' {
       hasOlder: boolean
     }>
     'qqbot-admin/chat-send'(
-      payload: ChatTarget & { text: string; quoteId?: string }
+      payload: ChatTarget & {
+        text: string
+        quoteId?: string
+        parseElements?: boolean
+      }
     ): Promise<{
       ok: true
     }>
@@ -175,6 +194,8 @@ function targetOf(target: ChatTarget) {
 
 const chatKey = ({ platform, selfId, channelId }: ChatTarget) =>
   JSON.stringify([platform, selfId, channelId])
+const botKey = (platform: string, selfId: string) =>
+  JSON.stringify([platform, selfId])
 
 function messageIdOf(value: unknown) {
   if (typeof value !== 'string' || !value || value.length > 255)
@@ -182,11 +203,17 @@ function messageIdOf(value: unknown) {
   return value
 }
 
-async function draftElements(ctx: Context, scope: ChatTarget, text: string) {
-  const tokens = [...text.matchAll(/<at id="([^"]*)"\s*\/>/g)]
-  if (!tokens.length) return [h.text(text)]
-  const ids = tokens.map((token) => h.unescape(token[1]))
-  if (ids.some((id) => !id || id.length > 64 || id === 'all'))
+async function validateMentions(
+  ctx: Context,
+  scope: ChatTarget,
+  ids: string[]
+) {
+  if (!ids.length) return
+  if (
+    ids.some(
+      (id) => typeof id !== 'string' || !id || id.length > 64 || id === 'all'
+    )
+  )
     throw new Error('艾特的用户标识无效。')
   const users = await ctx.database
     .select('channel_message', {
@@ -199,16 +226,63 @@ async function draftElements(ctx: Context, scope: ChatTarget, text: string) {
   const recorded = new Set(users.map((row) => row.userId))
   if (ids.some((id) => !recorded.has(id)))
     throw new Error('只能艾特本会话中有记录的发言者。')
+}
+
+function plainDraftElements(text: string) {
+  const tokens = [...text.matchAll(/<at id="([^"]*)"\s*\/>/g)]
+  if (!tokens.length) return [h.text(text)]
   const elements: h[] = []
   let cursor = 0
-  for (const [index, token] of tokens.entries()) {
+  for (const token of tokens) {
     if (token.index > cursor)
       elements.push(h.text(text.slice(cursor, token.index)))
-    elements.push(h.at(ids[index]))
+    elements.push(h.at(h.unescape(token[1])))
     cursor = token.index + token[0].length
   }
   if (cursor < text.length) elements.push(h.text(text.slice(cursor)))
   return elements
+}
+
+function validateDraftElement({ type, attrs, children }: h): h {
+  if (type === 'text') return h.text(String(attrs.content ?? ''))
+  if (type === 'at') {
+    if (attrs.type || typeof attrs.id !== 'string' || children.length)
+      throw new Error('艾特请使用 <at id="…"/>。')
+    return h.at(attrs.id)
+  }
+  if (type === 'markdown') {
+    if (children.some((element) => element.type !== 'text'))
+      throw new Error('请把艾特等元素放在 <markdown> 外面。')
+    const markdown = children.length
+      ? children.map((element) => element.attrs.content).join('')
+      : typeof attrs.content === 'string'
+        ? attrs.content
+        : ''
+    return h('markdown', h.text(markdown))
+  }
+  if (type === 'a') {
+    const href = safeUrl(attrs.href)
+    if (!href) throw new Error('链接需要有效的 HTTP(S) 地址。')
+    return h('a', { href }, children.map(validateDraftElement))
+  }
+  if (TEXT_FORMATS.has(type)) return h(type, children.map(validateDraftElement))
+  if (type === 'quote')
+    throw new Error('<quote> 只能放在消息开头，且只能有一个。')
+  throw new Error(`元素解析模式暂不支持 <${type}>。`)
+}
+
+function parsedDraft(text: string) {
+  // Parsing without a context keeps template expressions literal.
+  const parsed = h.parse(text)
+  let quoteId: string | undefined
+  if (parsed[0]?.type === 'quote') {
+    const quote = parsed.shift()!
+    if (quote.children.length) throw new Error('引用请使用 <quote id="…"/>。')
+    quoteId = messageIdOf(quote.attrs.id)
+  }
+  const elements = parsed.map(validateDraftElement)
+  if (!elements.length) throw new Error('请在引用后输入要发送的内容。')
+  return { elements, quoteId }
 }
 
 export function applyChat(ctx: Context, authority: number) {
@@ -255,6 +329,12 @@ export function applyChat(ctx: Context, authority: number) {
         .orderBy('lastAt', 'desc')
         .execute()
       if (!activity.length) return []
+      const botNames = new Map(
+        ctx.bots.map(
+          (bot) =>
+            [botKey(bot.platform, bot.selfId), bot.user?.name ?? ''] as const
+        )
+      )
       const conversations = new Map<string, Conversation>()
       const groupIds = new Set<string>()
       const userIds = new Set<string>()
@@ -279,6 +359,7 @@ export function applyChat(ctx: Context, authority: number) {
           id,
           kind: direct ? 'dm' : 'group',
           name: row.channelName ?? '',
+          botName: botNames.get(botKey(platform, selfId)) ?? '',
           time: new Date(row.lastAt).getTime(),
         })
         if (platform === QQ_PLATFORM) (direct ? userIds : groupIds).add(id)
@@ -502,13 +583,25 @@ export function applyChat(ctx: Context, authority: number) {
         }
         if (!group.allowProactive) throw new Error('此群未允许机器人主动发送。')
       }
-      const elements = await draftElements(ctx, scope, content)
-      if (payload.quoteId !== undefined) {
+      const { elements, quoteId: inlineQuote } =
+        payload.parseElements === true
+          ? parsedDraft(content)
+          : { elements: plainDraftElements(content), quoteId: undefined }
+      await validateMentions(
+        ctx,
+        scope,
+        h.select(elements, 'at').map((element) => element.attrs.id)
+      )
+      if (payload.quoteId !== undefined && inlineQuote !== undefined)
+        throw new Error('编辑框已有引用，请移除其中一个引用。')
+      const quoteId =
+        payload.quoteId === undefined ? inlineQuote : payload.quoteId
+      if (quoteId !== undefined) {
         const [quote] = await ctx.database.get(
           'channel_message',
           {
             ...scope,
-            messageId: messageIdOf(payload.quoteId),
+            messageId: messageIdOf(quoteId),
             recalled: { $ne: true },
           },
           ['messageId', 'refIdx']

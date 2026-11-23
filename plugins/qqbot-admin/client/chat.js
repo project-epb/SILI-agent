@@ -78,7 +78,7 @@ function avatar(name, id, mention) {
   )
 }
 
-function contentPart(part, index, selfId) {
+function contentPart(part, index, selfId, ownName) {
   switch (part.kind) {
     case 'image':
       return h('img', {
@@ -117,7 +117,7 @@ function contentPart(part, index, selfId) {
           key: index,
           class: ['qc-mention', self && 'is-self'],
         },
-        part.text || (self ? '@SILI' : '@成员')
+        part.text || (self ? `@${ownName}` : '@成员')
       )
     }
     default:
@@ -166,6 +166,13 @@ function createChatPage(Features) {
 
       const current = computed(() =>
         chats.value.find((chat) => keyOf(chat) === selected.value)
+      )
+      const ownName = computed(
+        () =>
+          current.value?.botName ||
+          messages.value.findLast((row) => row.isSelf && row.username)
+            ?.username ||
+          '本机器人'
       )
       const messageIds = computed(
         () => new Set(messages.value.map((row) => row.id))
@@ -495,7 +502,11 @@ function createChatPage(Features) {
       function renderMessage(chat, row, index) {
         const name =
           row.username ||
-          (row.isSelf ? 'SILI' : chat.kind === 'dm' ? nameOf(chat) : '群友')
+          (row.isSelf
+            ? ownName.value
+            : chat.kind === 'dm'
+              ? nameOf(chat)
+              : '群友')
         const previous = messages.value[index - 1]
         const newDay = !previous || dayOf(row.time) !== dayOf(previous.time)
         const author = chat.kind === 'group' && !row.isSelf
@@ -572,7 +583,7 @@ function createChatPage(Features) {
                       )
                     : row.body.length
                       ? row.body.map((part, index) =>
-                          contentPart(part, index, chat.selfId)
+                          contentPart(part, index, chat.selfId, ownName.value)
                         )
                       : '[消息内容不可用]'
                 ),

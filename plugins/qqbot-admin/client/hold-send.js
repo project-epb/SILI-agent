@@ -16,6 +16,7 @@ export const HoldSend = defineComponent({
   setup(props, { emit, expose }) {
     const holding = ref(false)
     const sending = ref(false)
+    const parseElements = ref(false)
     const error = ref('')
     const textarea = ref(null)
     expose({ focus: () => textarea.value?.focus(), insertMention })
@@ -61,7 +62,7 @@ export const HoldSend = defineComponent({
       })
     }
 
-    async function submit(text, quoteId) {
+    async function submit(text, quoteId, parse) {
       const { platform, selfId, channelId } = props.chat
       sending.value = true
       error.value = ''
@@ -72,14 +73,18 @@ export const HoldSend = defineComponent({
           channelId,
           text,
           quoteId,
+          parseElements: parse,
         })
         if (props.modelValue.trim() === text && props.quote?.id === quoteId) {
           emit('update:modelValue', '')
           emit('clear-quote')
+          parseElements.value = false
         }
         emit('sent')
       } catch (cause) {
         error.value = String(cause?.message ?? cause)
+          .split('\n', 1)[0]
+          .replace(/^Error:\s*/, '')
       } finally {
         sending.value = false
       }
@@ -88,6 +93,7 @@ export const HoldSend = defineComponent({
     function start(input) {
       const text = props.modelValue.trim()
       const quoteId = props.quote?.id
+      const parse = parseElements.value
       if (gesture || sending.value || !text || props.quote?.recalled) return
       gesture = input
       holding.value = true
@@ -96,10 +102,11 @@ export const HoldSend = defineComponent({
         if (
           props.modelValue.trim() === text &&
           props.quote?.id === quoteId &&
+          parseElements.value === parse &&
           !props.quote?.recalled &&
           document.hasFocus()
         )
-          void submit(text, quoteId)
+          void submit(text, quoteId, parse)
       }, HOLD_MS)
     }
 
@@ -200,7 +207,9 @@ export const HoldSend = defineComponent({
               ref: textarea,
               'aria-label': '给当前会话发送消息',
               'aria-describedby': 'qc-send-hint',
-              placeholder: '以本机器人身份发送消息',
+              placeholder: parseElements.value
+                ? '例如 <markdown>**加粗**</markdown>'
+                : '以本机器人身份发送消息',
               value: props.modelValue,
               maxlength: 2000,
               rows: 2,
@@ -235,11 +244,29 @@ export const HoldSend = defineComponent({
               h('span', sending.value ? '发送中…' : '按住发送')
             ),
           ]),
-          h(
-            'div',
-            { id: 'qc-send-hint', class: 'qc-compose-hint' },
-            '按住按钮或回车 0.6 秒发送 · Shift + Enter 换行'
-          ),
+          h('div', { class: 'qc-compose-tools' }, [
+            h(
+              'span',
+              { id: 'qc-send-hint', class: 'qc-compose-hint' },
+              '按住按钮或回车 0.6 秒发送 · Shift + Enter 换行'
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'qc-element-mode',
+                'aria-label': '解析 Koishi 元素',
+                'aria-pressed': parseElements.value,
+                disabled: sending.value,
+                onClick: () => {
+                  cancel()
+                  parseElements.value = !parseElements.value
+                  error.value = ''
+                },
+              },
+              parseElements.value ? '元素解析已开启' : '解析元素'
+            ),
+          ]),
           error.value
             ? h('p', { role: 'alert', class: 'qc-error' }, error.value)
             : null,
