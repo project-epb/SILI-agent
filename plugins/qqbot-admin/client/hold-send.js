@@ -172,77 +172,79 @@ export const HoldSend = defineComponent({
           },
         },
         [
-          props.quote
-            ? h('div', { class: 'qc-reply-draft' }, [
-                h('div', [
+          h('div', { class: 'qc-compose-box' }, [
+            props.quote
+              ? h('div', { class: 'qc-reply-draft' }, [
+                  h('div', [
+                    h(
+                      'strong',
+                      props.quote.recalled
+                        ? '引用已撤回或删除'
+                        : `引用 ${props.quote.author}`
+                    ),
+                    h(
+                      'span',
+                      props.quote.recalled
+                        ? '请取消引用或选择另一条消息'
+                        : props.quote.preview
+                    ),
+                  ]),
                   h(
-                    'strong',
-                    props.quote.recalled
-                      ? '引用已撤回或删除'
-                      : `引用 ${props.quote.author}`
-                  ),
-                  h(
-                    'span',
-                    props.quote.recalled
-                      ? '请取消引用或选择另一条消息'
-                      : props.quote.preview
-                  ),
-                ]),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    'aria-label': '取消引用',
-                    onClick: () => {
-                      cancel()
-                      emit('clear-quote')
+                    'button',
+                    {
+                      type: 'button',
+                      'aria-label': '取消引用',
+                      onClick: () => {
+                        cancel()
+                        emit('clear-quote')
+                      },
                     },
-                  },
-                  '×'
-                ),
-              ])
-            : null,
-          h('div', { class: 'qc-compose-row' }, [
-            h('textarea', {
-              ref: textarea,
-              'aria-label': '给当前会话发送消息',
-              'aria-describedby': 'qc-send-hint',
-              placeholder: parseElements.value
-                ? '例如 <markdown>**加粗**</markdown>'
-                : '以本机器人身份发送消息',
-              value: props.modelValue,
-              maxlength: 2000,
-              rows: 2,
-              onInput: (event) => {
-                cancel()
-                emit('update:modelValue', event.target.value)
-              },
-              onKeydown: keyDown,
-            }),
-            h(
-              'button',
-              {
-                type: 'button',
-                class: ['qc-send', holding.value && 'is-holding'],
-                disabled:
-                  sending.value ||
-                  !props.modelValue.trim() ||
-                  props.quote?.recalled,
+                    '×'
+                  ),
+                ])
+              : null,
+            h('div', { class: 'qc-compose-row' }, [
+              h('textarea', {
+                ref: textarea,
+                'aria-label': '给当前会话发送消息',
                 'aria-describedby': 'qc-send-hint',
-                onContextmenu: (event) => event.preventDefault(),
-                onPointerdown: (event) => {
-                  if (event.button !== 0 || !event.isPrimary) return
-                  event.currentTarget.setPointerCapture(event.pointerId)
-                  start({ pointerId: event.pointerId })
+                placeholder: parseElements.value
+                  ? '例如 <markdown>**加粗**</markdown>'
+                  : '以本机器人身份发送消息…',
+                value: props.modelValue,
+                maxlength: 2000,
+                rows: 1,
+                onInput: (event) => {
+                  cancel()
+                  emit('update:modelValue', event.target.value)
                 },
-                onPointermove: movePointer,
-                onPointerup: endPointer,
-                onPointercancel: endPointer,
-                onLostpointercapture: endPointer,
                 onKeydown: keyDown,
-              },
-              h('span', sending.value ? '发送中…' : '按住发送')
-            ),
+              }),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: ['qc-send', holding.value && 'is-holding'],
+                  disabled:
+                    sending.value ||
+                    !props.modelValue.trim() ||
+                    props.quote?.recalled,
+                  'aria-describedby': 'qc-send-hint',
+                  onContextmenu: (event) => event.preventDefault(),
+                  onPointerdown: (event) => {
+                    if (event.button !== 0 || !event.isPrimary) return
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    start({ pointerId: event.pointerId })
+                  },
+                  onPointermove: movePointer,
+                  onPointerup: endPointer,
+                  onPointercancel: endPointer,
+                  onLostpointercapture: endPointer,
+                  onKeydown: keyDown,
+                },
+                h('span', sending.value ? '发送中…' : '按住发送')
+              ),
+            ]),
           ]),
           h('div', { class: 'qc-compose-tools' }, [
             h(
