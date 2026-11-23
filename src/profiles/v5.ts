@@ -37,7 +37,9 @@ import {
 } from '@/profiles/shared/plugin-configs'
 import type { Profile } from '@/profiles/types'
 import PiggybackService from '@/services/PiggybackService'
-import ChannelMessageHistory from '@/services/channel-message-history'
+import ChannelMessageHistory, {
+  isDirectMessage,
+} from '@/services/channel-message-history'
 import HTMLService from '@/services/html'
 
 import PluginAbout from '~/about'
@@ -266,7 +268,7 @@ function install(app: App) {
 
   app.plugin(ChannelMessageHistory, {
     isServed: (session, outgoing) =>
-      outgoing && session.isDirect && isQQ(session)
+      outgoing && isQQ(session) && isDirectMessage(session)
         ? state.isDmAllowed(
             session.platform,
             session.selfId,

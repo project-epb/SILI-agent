@@ -1,4 +1,4 @@
-import { $, Context, Service, Session, Time, h } from 'koishi'
+import { $, Context, Service, Session, Time, Universal, h } from 'koishi'
 
 export interface ChannelMessage {
   platform: string
@@ -61,6 +61,14 @@ const newestFirst = { time: 'desc', messageId: 'desc' } as const
 
 function scopeOf({ platform, selfId, channelId }: Session) {
   return { platform, selfId, channelId }
+}
+
+export function isDirectMessage(session: Session) {
+  // QQ send acknowledgements can put the channel type only on the message.
+  return (
+    session.isDirect ||
+    session.event.message?.channel?.type === Universal.Channel.Type.DIRECT
+  )
 }
 
 /**
@@ -188,7 +196,7 @@ export default class ChannelMessageHistory extends Service {
     const sender = outgoing ? '' : ` | ${username || '<unknown>'} (${userId})`
     this.log.info(
       outgoing ? '↑' : '↓',
-      `${session.isDirect ? '[DM] ' : ''}${label}${sender}\n${slimMessageContent(content) || '<empty>'}`
+      `${isDirectMessage(session) ? '[DM] ' : ''}${label}${sender}\n${slimMessageContent(content) || '<empty>'}`
     )
     return true
   }
