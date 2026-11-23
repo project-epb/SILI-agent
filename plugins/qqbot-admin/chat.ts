@@ -3,9 +3,14 @@ import { $, Context, Query, Time, h } from 'koishi'
 import type { Console } from '@koishijs/console'
 
 import type {} from '../../src/plugins/qqbot'
+import { qqAvatar } from '../../src/plugins/qqbot/avatar'
 import { GUARDED_PLATFORMS, isServed } from '../../src/plugins/qqbot/gate'
 import type { ChannelMessage } from '../../src/services/channel-message-history'
-import { createMentionNameLookup, knownName } from './mention-names'
+import {
+  type ChatProfile,
+  createChatProfileLookup,
+  knownName,
+} from './chat-profiles'
 
 const QQ_PLATFORM = 'qq'
 const PRIVATE_PREFIX = 'private:'
@@ -137,6 +142,7 @@ interface ChatMessage {
   time: number
   userId: string
   username: string
+  avatar?: string
   isSelf: boolean
   recalled: boolean
   recallUntil: number | null
@@ -149,6 +155,7 @@ interface Conversation extends ChatTarget {
   kind: 'group' | 'dm'
   name: string
   botName: string
+  avatar?: string
   time: number
 }
 
@@ -296,7 +303,7 @@ export function applyChat(ctx: Context, authority: number) {
     'addListener' | 'broadcast'
   >
   const auth = { authority }
-  const lookupMentionNames = createMentionNameLookup(ctx)
+  const lookupProfiles = createChatProfileLookup(ctx)
   const recalling = new Set<string>()
   const broadcastActivity = (
     scope: ChatTarget,
@@ -381,7 +388,7 @@ export function applyChat(ctx: Context, authority: number) {
           ? ctx.database.get(
               'qqbot_user',
               { platform: QQ_PLATFORM, id: [...userIds] },
-              ['selfId', 'id', 'name']
+              ['selfId', 'id', 'name', 'avatar']
             )
           : [],
       ])
@@ -390,16 +397,19 @@ export function applyChat(ctx: Context, authority: number) {
           (row) => [JSON.stringify([row.selfId, row.id]), row.name] as const
         )
       )
-      const userNames = new Map<string, string>(
-        users.map(
-          (row) => [JSON.stringify([row.selfId, row.id]), row.name] as const
-        )
+      const accounts = new Map(
+        users.map((row) => [JSON.stringify([row.selfId, row.id]), row] as const)
       )
       return [...conversations.values()].map((chat) => {
         if (chat.platform === QQ_PLATFORM) {
-          const names = chat.kind === 'dm' ? userNames : groupNames
-          chat.name =
-            names.get(JSON.stringify([chat.selfId, chat.id])) || chat.name
+          const key = JSON.stringify([chat.selfId, chat.id])
+          if (chat.kind === 'dm') {
+            const account = accounts.get(key)
+            chat.name = account?.name || chat.name
+            chat.avatar = qqAvatar(account?.avatar)
+          } else {
+            chat.name = groupNames.get(key) || chat.name
+          }
         }
         return chat
       })
@@ -449,7 +459,7 @@ export function applyChat(ctx: Context, authority: number) {
       const referenceIds = [
         ...new Set(page.map((row) => row.quoteId).filter(Boolean)),
       ]
-      const [targets, mentionNames] = await Promise.all([
+      const [targets, profiles] = await Promise.all([
         referenceIds.length
           ? ctx.database.get(
               'channel_message',
@@ -458,19 +468,22 @@ export function applyChat(ctx: Context, authority: number) {
                 recalled: { $ne: true },
                 $or: [{ messageId: referenceIds }, { refIdx: referenceIds }],
               },
-              ['messageId', 'refIdx', 'username', 'isSelf', 'content']
+              ['messageId', 'refIdx', 'userId', 'username', 'isSelf', 'content']
             )
           : [],
-        lookupMentionNames(scope, unknownMentions, page).catch((error) => {
-          ctx.logger('qqbot-admin').debug('mention name lookup failed', error)
-          return new Map<string, string>()
+        lookupProfiles(scope, unknownMentions, page).catch((error) => {
+          ctx.logger('qqbot-admin').debug('chat profile lookup failed', error)
+          return new Map<string, ChatProfile>()
         }),
       ])
       const quotes = new Map<string, ChatMessage['quote']>()
       for (const row of targets) {
         const quote = {
           id: row.messageId,
-          author: row.username || (row.isSelf ? 'SILI' : '群友'),
+          author:
+            profiles.get(row.userId)?.groupName ||
+            row.username ||
+            (row.isSelf ? 'SILI' : '群友'),
           preview: quotePreview(row.content),
         }
         quotes.set(row.messageId, quote)
@@ -483,7 +496,12 @@ export function applyChat(ctx: Context, authority: number) {
             id: row.messageId,
             time: row.time.getTime(),
             userId: row.userId,
-            username: row.username,
+            username:
+              profiles.get(row.userId)?.groupName ||
+              row.username ||
+              profiles.get(row.userId)?.name ||
+              '',
+            avatar: profiles.get(row.userId)?.avatar,
             isSelf: row.isSelf,
             recalled: !!row.recalled,
             recallUntil:
@@ -491,10 +509,11 @@ export function applyChat(ctx: Context, authority: number) {
                 ? row.time.getTime() + RECALL_WINDOW
                 : null,
             body: bodies[index].map((part) => {
-              const name =
+              const profile =
                 part.kind === 'mention' && !part.text && part.userId
-                  ? mentionNames.get(part.userId)
+                  ? profiles.get(part.userId)
                   : undefined
+              const name = profile?.groupName || profile?.name
               return name ? { ...part, text: '@' + name } : part
             }),
             quote: row.quoteId

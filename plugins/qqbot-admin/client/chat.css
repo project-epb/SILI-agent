@@ -87,6 +87,7 @@ html.dark .qc-root, [data-theme="dark"] .qc-root {
 .qc-list-name, .qc-chat-title { display: grid; min-width: 0; gap: 2px; }
 .qc-list-name strong, .qc-chat-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qc-avatar {
+  position: relative;
   background: #d9ebe6;
   color: #256658;
   width: 39px;
@@ -101,6 +102,7 @@ html.dark .qc-root, [data-theme="dark"] .qc-root {
 .qc-avatar.is-blue { background: #dde7f4; color: #2a567e; }
 .qc-avatar.is-amber { background: #f6e7ce; color: #785725; }
 .qc-avatar.is-rose { background: #f2e0e4; color: #814354; }
+.qc-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .qc-mention-avatar { border: 0; padding: 0; touch-action: manipulation; }
 .qc-mention-avatar:hover { outline: 1px solid var(--qc-accent); }
 

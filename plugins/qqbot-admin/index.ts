@@ -353,13 +353,8 @@ export function apply(ctx: Context) {
           },
           ['id']
         )
-        if (
-          !matches.length ||
-          (userId && !matches.some((row) => row.id === userId))
-        ) {
-          return { rows: [], total: 0 }
-        }
-        if (!userId) query.userId = matches.map((row) => row.id)
+        query.$or = [{ nickname: expression }, { userId: expression }]
+        if (matches.length) query.$or.push({ userId: matches.map((row) => row.id) })
       }
       const { rows, total } = await page('qqbot_member', query, {
         page: p,
@@ -388,7 +383,7 @@ export function apply(ctx: Context) {
           channelId: r.channelId,
           channelName: channelName.get(r.channelId) ?? '',
           userId: r.userId,
-          userName: userName.get(r.userId) ?? '',
+          userName: r.nickname || userName.get(r.userId) || '',
           firstSeen: ts(r.firstSeen),
           lastSeen: ts(r.lastSeen),
           messageCount: r.messageCount ?? 0,

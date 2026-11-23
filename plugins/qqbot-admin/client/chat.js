@@ -52,7 +52,7 @@ const dayOf = (time) => new Date(time).toDateString()
 const timeOf = (time) =>
   dayOf(time) === dayOf(Date.now()) ? clock.format(time) : date.format(time)
 
-function avatar(name, id, mention) {
+function avatar(name, id, mention, src) {
   const hue = ['teal', 'blue', 'amber', 'rose'][
     String(id)
       .split('')
@@ -74,7 +74,21 @@ function avatar(name, id, mention) {
           }
         : { 'aria-hidden': 'true' }),
     },
-    [...name.trim()][0] || '·'
+    [
+      [...name.trim()][0] || '·',
+      src
+        ? h('img', {
+            key: src,
+            src,
+            alt: '',
+            loading: 'lazy',
+            referrerpolicy: 'no-referrer',
+            onError: (event) => {
+              event.currentTarget.hidden = true
+            },
+          })
+        : null,
+    ]
   )
 }
 
@@ -532,7 +546,8 @@ function createChatPage(Features) {
                     row.userId,
                     row.userId
                       ? () => composer.value?.insertMention(row.userId)
-                      : undefined
+                      : undefined,
+                    row.avatar
                   )
                 : null,
               h('div', { class: 'qc-bubble' }, [
@@ -661,7 +676,7 @@ function createChatPage(Features) {
                           onClick: () => open(chat),
                         },
                         [
-                          avatar(name, chat.id),
+                          avatar(name, chat.id, undefined, chat.avatar),
                           h('span', { class: 'qc-list-name' }, [
                             h('strong', name),
                             h('small', descriptionOf(chat)),
@@ -737,7 +752,7 @@ function createChatPage(Features) {
               },
               '‹'
             ),
-            avatar(nameOf(chat), chat.id),
+            avatar(nameOf(chat), chat.id, undefined, chat.avatar),
             h('div', { class: 'qc-chat-title' }, [
               h('strong', nameOf(chat)),
               h('small', descriptionOf(chat)),
