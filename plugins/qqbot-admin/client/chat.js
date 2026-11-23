@@ -406,19 +406,24 @@ function createChatPage(Features) {
         clearTimeout(listTimer)
       })
 
-      function showPanel(kind, target) {
+      // `parent` is the panel the header back arrow returns to; without one it closes the panel.
+      function showPanel(kind, target, parent) {
         menu.value = false
-        panel.value = { kind, target }
+        panel.value = { kind, target, parent }
       }
 
-      function showUser(chat, user) {
+      function showUser(chat, user, parent) {
         if (!user.userId) return
-        showPanel('settings', {
-          selfId: chat.selfId,
-          id: user.userId,
-          kind: 'dm',
-          name: user.userName || user.username,
-        })
+        showPanel(
+          'settings',
+          {
+            selfId: chat.selfId,
+            id: user.userId,
+            kind: 'dm',
+            name: user.userName || user.username,
+          },
+          parent
+        )
       }
 
       function withRecall(row) {
@@ -724,7 +729,7 @@ function createChatPage(Features) {
 
       function renderPanel(chat) {
         if (!panel.value) return null
-        const { kind, target } = panel.value
+        const { kind, target, parent } = panel.value
         const members = kind === 'members'
         const title = members
           ? '已记录成员'
@@ -733,12 +738,25 @@ function createChatPage(Features) {
             : '用户配置'
         return h('aside', { class: 'qc-panel', 'aria-label': title }, [
           h('header', [
+            h(
+              'button',
+              {
+                type: 'button',
+                class: ['qc-icon qc-panel-back', parent && 'has-parent'],
+                'aria-label': parent ? '返回已记录成员' : '返回聊天',
+                onClick: () =>
+                  parent
+                    ? showPanel(parent.kind, parent.target)
+                    : (panel.value = null),
+              },
+              '‹'
+            ),
             h('h2', title),
             h(
               'button',
               {
                 type: 'button',
-                class: 'qc-icon',
+                class: 'qc-icon qc-panel-close',
                 'aria-label': '关闭详情',
                 onClick: () => (panel.value = null),
               },
@@ -746,25 +764,16 @@ function createChatPage(Features) {
             ),
           ]),
           members
-            ? h(ChatMembers, { chat, onUser: (row) => showUser(chat, row) })
-            : [
-                chat.kind === 'group' && target.kind === 'dm'
-                  ? h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: 'qc-back-members',
-                        onClick: () => showPanel('members', chat),
-                      },
-                      '‹ 返回已记录成员'
-                    )
-                  : null,
-                h(ChatSettings, {
-                  target,
-                  features: Features,
-                  key: JSON.stringify([target.kind, target.selfId, target.id]),
-                }),
-              ],
+            ? h(ChatMembers, {
+                chat,
+                onUser: (row) =>
+                  showUser(chat, row, { kind: 'members', target: chat }),
+              })
+            : h(ChatSettings, {
+                target,
+                features: Features,
+                key: JSON.stringify([target.kind, target.selfId, target.id]),
+              }),
         ])
       }
 
@@ -789,10 +798,20 @@ function createChatPage(Features) {
               '‹'
             ),
             avatar(nameOf(chat), chat.id, undefined, chat.avatar),
-            h('div', { class: 'qc-chat-title' }, [
-              h('strong', nameOf(chat)),
-              h('small', descriptionOf(chat)),
-            ]),
+            h(
+              chat.platform === 'qq' ? 'button' : 'div',
+              {
+                class: 'qc-chat-title',
+                ...(chat.platform === 'qq'
+                  ? {
+                      type: 'button',
+                      title: chat.kind === 'group' ? '群配置' : '用户配置',
+                      onClick: () => showPanel('settings', chat),
+                    }
+                  : {}),
+              },
+              [h('strong', nameOf(chat)), h('small', descriptionOf(chat))]
+            ),
             chat.platform === 'qq'
               ? h('div', { class: 'qc-menu' }, [
                   h(
