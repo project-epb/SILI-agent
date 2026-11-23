@@ -1,5 +1,6 @@
 import { icons, receive, send } from '../client.js'
 import {
+  Transition,
   computed,
   defineComponent,
   h,
@@ -181,6 +182,8 @@ function createChatPage(Features) {
       const composer = ref(null)
       const recallState = ref(null)
       const actionMenu = ref(null)
+      // Which way the phone layout slides: 'fwd' pushes a level, 'back' pops one.
+      const navDir = ref('fwd')
       const root = ref(null)
       const recalledIds = new Set()
       const nodes = new Map()
@@ -343,6 +346,7 @@ function createChatPage(Features) {
         generation++
         clearTimeout(latestTimer)
         latestTimer = undefined
+        navDir.value = chat ? 'fwd' : 'back'
         selected.value = key
         loading.value = false
         hasOlder.value = false
@@ -411,9 +415,15 @@ function createChatPage(Features) {
       })
 
       // `parent` is the panel the header back arrow returns to; without one it closes the panel.
-      function showPanel(kind, target, parent) {
+      function showPanel(kind, target, parent, dir = 'fwd') {
+        navDir.value = dir
         menu.value = false
         panel.value = { kind, target, parent }
+      }
+
+      function closePanel() {
+        navDir.value = 'back'
+        panel.value = null
       }
 
       function showUser(chat, user, parent) {
@@ -860,52 +870,62 @@ function createChatPage(Features) {
           : target.kind === 'group'
             ? '群配置'
             : '用户配置'
-        return h('aside', { class: 'qc-panel', 'aria-label': title }, [
-          h('header', [
-            h(
-              'button',
-              {
-                type: 'button',
-                class: ['qc-icon qc-panel-back', parent && 'has-parent'],
-                'aria-label': parent ? '返回已记录成员' : '返回聊天',
-                onClick: () =>
-                  parent
-                    ? showPanel(parent.kind, parent.target)
-                    : (panel.value = null),
-              },
-              '‹'
-            ),
-            h('h2', title),
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'qc-icon qc-panel-close',
-                'aria-label': '关闭详情',
-                onClick: () => (panel.value = null),
-              },
-              '×'
-            ),
-          ]),
-          members
-            ? h(ChatMembers, {
-                chat,
-                onUser: (row) =>
-                  showUser(chat, row, { kind: 'members', target: chat }),
-              })
-            : h(ChatSettings, {
-                target,
-                features: Features,
-                key: JSON.stringify([target.kind, target.selfId, target.id]),
-              }),
+        const panelKey = JSON.stringify([
+          kind,
+          target.kind,
+          target.selfId,
+          target.id,
         ])
+        return h(
+          'aside',
+          { class: 'qc-panel', key: panelKey, 'aria-label': title },
+          [
+            h('header', [
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: ['qc-icon qc-panel-back', parent && 'has-parent'],
+                  'aria-label': parent ? '返回已记录成员' : '返回聊天',
+                  onClick: () =>
+                    parent
+                      ? showPanel(parent.kind, parent.target, undefined, 'back')
+                      : closePanel(),
+                },
+                '‹'
+              ),
+              h('h2', title),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'qc-icon qc-panel-close',
+                  'aria-label': '关闭详情',
+                  onClick: closePanel,
+                },
+                '×'
+              ),
+            ]),
+            members
+              ? h(ChatMembers, {
+                  chat,
+                  onUser: (row) =>
+                    showUser(chat, row, { kind: 'members', target: chat }),
+                })
+              : h(ChatSettings, {
+                  target,
+                  features: Features,
+                  key: JSON.stringify([target.kind, target.selfId, target.id]),
+                }),
+          ]
+        )
       }
 
       function renderChat(chat) {
         if (!chat)
           return h(
             'main',
-            { class: 'qc-empty' },
+            { class: 'qc-empty', key: 'empty' },
             h('span', '从左侧选择一个会话')
           )
         const key = keyOf(chat)
@@ -1072,8 +1092,12 @@ function createChatPage(Features) {
               },
               [
                 renderList(),
-                renderChat(chat),
-                chat ? renderPanel(chat) : null,
+                h(Transition, { name: `qc-${navDir.value}` }, () =>
+                  renderChat(chat)
+                ),
+                h(Transition, { name: `qc-${navDir.value}` }, () =>
+                  chat ? renderPanel(chat) : null
+                ),
                 chat ? renderActionMenu(chat) : null,
               ]
             ),

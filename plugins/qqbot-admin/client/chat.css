@@ -539,14 +539,30 @@ main.qc-empty span { padding: 4px 12px; border-radius: 14px; background: var(--q
   .qc-root.has-panel { grid-template-columns: minmax(240px, 26%) minmax(0, 1fr); }
   .qc-panel { position: absolute; z-index: 5; inset: 0 0 0 auto; width: min(360px, 100%); box-shadow: -3px 0 14px #00000026; }
 }
-/* Phone: list -> chat -> details as three full-screen levels, each with a back arrow. */
+/* Wide layouts swap panes instantly: hide the outgoing pane so it never shares the grid with the new one. */
+@media (min-width: 681px) {
+  .qc-fwd-leave-active, .qc-back-leave-active { display: none !important; }
+}
+/*
+ * Phone: list -> chat -> details stacked as full-screen cards, like Telegram.
+ * The list stays mounted underneath; pushing slides a card in from the right, popping slides it back out.
+ */
 @media (max-width: 680px) {
   .qc-root, .qc-root.has-panel { grid-template-columns: minmax(0, 1fr); }
-  .qc-panel { width: 100%; box-shadow: none; border-left: 0; animation: qc-push .18s ease-out; }
+  .qc-chat { position: absolute; inset: 0; z-index: 2; }
+  main.qc-empty { display: none; }
+  .qc-panel { width: 100%; box-shadow: none; border-left: 0; }
+  .qc-panel header { padding-left: 4px; gap: 8px; }
   .qc-panel-back:not(.has-parent) { display: grid; }
   .qc-panel-close { display: none; }
-  .qc-chat { animation: qc-push .18s ease-out; }
-  .qc-root:not(.has-chat) main.qc-empty, .qc-root.has-chat .qc-list { display: none; }
+  .qc-fwd-enter-active, .qc-fwd-leave-active, .qc-back-enter-active, .qc-back-leave-active {
+    transition: transform .26s cubic-bezier(.2, .8, .2, 1), opacity .26s;
+  }
+  .qc-fwd-enter-from, .qc-back-leave-to { transform: translateX(100%); }
+  .qc-fwd-leave-to, .qc-back-enter-from { transform: translateX(-20%); opacity: .5; }
+  .qc-back-leave-active { box-shadow: -4px 0 16px #00000040; }
+  .qc-chat.qc-back-leave-active { z-index: 3; }
+  .qc-panel.qc-fwd-enter-active, .qc-panel.qc-back-leave-active { z-index: 6; }
   .qc-list { border-right: none; }
   .qc-back { display: grid; }
   .qc-chat-head { padding-inline: 4px 8px; gap: 8px; }
@@ -554,4 +570,3 @@ main.qc-empty span { padding: 4px 12px; border-radius: 14px; background: var(--q
   .qc-bubble { max-width: 86%; }
   .qc-compose-hint { display: none; }
 }
-@keyframes qc-push { from { transform: translateX(24%); opacity: .4; } to { transform: none; opacity: 1; } }
