@@ -5,6 +5,7 @@ import type { Console } from '@koishijs/console'
 import type {} from '../../src/plugins/qqbot'
 import { GUARDED_PLATFORMS, isServed } from '../../src/plugins/qqbot/gate'
 import type { ChannelMessage } from '../../src/services/channel-message-history'
+import { createMentionNameLookup, knownName } from './mention-names'
 
 const QQ_PLATFORM = 'qq'
 const PRIVATE_PREFIX = 'private:'
@@ -67,18 +68,21 @@ function parts(elements: h[]): Part[] {
     if (type === 'text')
       return [{ kind: 'text', text: String(attrs.content ?? '') }]
     if (type === 'br') return [{ kind: 'text', text: '\n' }]
-    if (type === 'at')
+    if (type === 'at') {
+      const userId = String(attrs.id ?? attrs.qq ?? '')
+      const name = knownName(attrs.name, userId)
       return [
         {
           kind: 'mention',
-          userId: String(attrs.id ?? attrs.qq ?? ''),
-          text: attrs.name
-            ? '@' + attrs.name
+          userId,
+          text: name
+            ? '@' + name
             : attrs.type === 'all'
               ? '@全体成员'
               : undefined,
         },
       ]
+    }
     if (
       type === 'img' ||
       type === 'image' ||
@@ -292,6 +296,7 @@ export function applyChat(ctx: Context, authority: number) {
     'addListener' | 'broadcast'
   >
   const auth = { authority }
+  const lookupMentionNames = createMentionNameLookup(ctx)
   const recalling = new Set<string>()
   const broadcastActivity = (
     scope: ChatTarget,
@@ -428,20 +433,39 @@ export function applyChat(ctx: Context, authority: number) {
         limit: PAGE_SIZE + 1,
       })
       const page = rows.slice(0, PAGE_SIZE).reverse()
+      const bodies = page.map((row) => bodyOf(row.content))
+      const unknownMentions = new Set<string>()
+      for (const body of bodies) {
+        for (const part of body) {
+          if (
+            part.kind === 'mention' &&
+            !part.text &&
+            part.userId &&
+            part.userId !== scope.selfId
+          )
+            unknownMentions.add(part.userId)
+        }
+      }
       const referenceIds = [
         ...new Set(page.map((row) => row.quoteId).filter(Boolean)),
       ]
-      const targets = referenceIds.length
-        ? await ctx.database.get(
-            'channel_message',
-            {
-              ...scope,
-              recalled: { $ne: true },
-              $or: [{ messageId: referenceIds }, { refIdx: referenceIds }],
-            },
-            ['messageId', 'refIdx', 'username', 'isSelf', 'content']
-          )
-        : []
+      const [targets, mentionNames] = await Promise.all([
+        referenceIds.length
+          ? ctx.database.get(
+              'channel_message',
+              {
+                ...scope,
+                recalled: { $ne: true },
+                $or: [{ messageId: referenceIds }, { refIdx: referenceIds }],
+              },
+              ['messageId', 'refIdx', 'username', 'isSelf', 'content']
+            )
+          : [],
+        lookupMentionNames(scope, unknownMentions, page).catch((error) => {
+          ctx.logger('qqbot-admin').debug('mention name lookup failed', error)
+          return new Map<string, string>()
+        }),
+      ])
       const quotes = new Map<string, ChatMessage['quote']>()
       for (const row of targets) {
         const quote = {
@@ -455,7 +479,7 @@ export function applyChat(ctx: Context, authority: number) {
       return {
         hasOlder: rows.length > PAGE_SIZE,
         messages: page.map(
-          (row): ChatMessage => ({
+          (row, index): ChatMessage => ({
             id: row.messageId,
             time: row.time.getTime(),
             userId: row.userId,
@@ -466,7 +490,13 @@ export function applyChat(ctx: Context, authority: number) {
               row.isSelf && !row.recalled
                 ? row.time.getTime() + RECALL_WINDOW
                 : null,
-            body: bodyOf(row.content),
+            body: bodies[index].map((part) => {
+              const name =
+                part.kind === 'mention' && !part.text && part.userId
+                  ? mentionNames.get(part.userId)
+                  : undefined
+              return name ? { ...part, text: '@' + name } : part
+            }),
             quote: row.quoteId
               ? (quotes.get(row.quoteId) ?? { id: '', author: '', preview: '' })
               : null,
