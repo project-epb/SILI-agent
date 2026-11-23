@@ -8,6 +8,7 @@ import {
   onUnmounted,
   ref,
   resolveComponent,
+  watch,
 } from '../vue.js'
 import { ChatMembers, ChatSettings } from './chat-settings.js'
 import { HoldSend } from './hold-send.js'
@@ -34,6 +35,8 @@ const kindName = (chat) =>
   chat.kind === 'dm' ? '私聊' : chat.platform === 'qq' ? '群聊' : '频道'
 const descriptionOf = (chat) =>
   `${platformName(chat.platform)} · ${kindName(chat)}`
+const recallLabel = (chat) =>
+  chat.platform === 'qq' || chat.platform === 'qqguild' ? '撤回' : '删除'
 const nameOf = (chat) => chat.name || `${kindName(chat)} · ${chat.id.slice(-8)}`
 const clock = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit',
@@ -49,20 +52,33 @@ const dayOf = (time) => new Date(time).toDateString()
 const timeOf = (time) =>
   dayOf(time) === dayOf(Date.now()) ? clock.format(time) : date.format(time)
 
-function avatar(name, id) {
+function avatar(name, id, mention) {
   const hue = ['teal', 'blue', 'amber', 'rose'][
     String(id)
       .split('')
       .reduce((sum, c) => sum + c.charCodeAt(0), 0) % 4
   ]
   return h(
-    'span',
-    { class: ['qc-avatar', `is-${hue}`], 'aria-hidden': 'true' },
+    mention ? 'button' : 'span',
+    {
+      class: ['qc-avatar', `is-${hue}`, mention && 'qc-mention-avatar'],
+      ...(mention
+        ? {
+            type: 'button',
+            title: `双击艾特 ${name}`,
+            'aria-label': `艾特 ${name}`,
+            onDblclick: mention,
+            onClick: (event) => {
+              if (!event.detail) mention()
+            },
+          }
+        : { 'aria-hidden': 'true' }),
+    },
     [...name.trim()][0] || '·'
   )
 }
 
-function contentPart(part, index) {
+function contentPart(part, index, selfId) {
   switch (part.kind) {
     case 'image':
       return h('img', {
@@ -93,6 +109,17 @@ function contentPart(part, index) {
         },
         part.text
       )
+    case 'mention': {
+      const self = part.userId === selfId
+      return h(
+        'span',
+        {
+          key: index,
+          class: ['qc-mention', self && 'is-self'],
+        },
+        part.text || (self ? '@SILI' : '@成员')
+      )
+    }
     default:
       return part.text
   }
@@ -122,6 +149,11 @@ function createChatPage(Features) {
       const scroller = ref(null)
       const newMessages = ref(false)
       const drafts = ref({})
+      const replies = ref({})
+      const clockNow = ref(Date.now())
+      const composer = ref(null)
+      const recallState = ref(null)
+      const recalledIds = new Set()
       const nodes = new Map()
       const activity = new Map()
       let generation = 0
@@ -129,6 +161,7 @@ function createChatPage(Features) {
       let latestTimer
       let listTimer
       let poll
+      let tick
       let mounted = true
 
       const current = computed(() =>
@@ -236,8 +269,13 @@ function createChatPage(Features) {
             return
           }
           if (missedPage) byId.clear()
-          for (const row of result.messages) byId.set(row.id, row)
-          messages.value = sortMessages(byId)
+          for (const row of result.messages) {
+            if (row.recalled) recalledIds.add(row.id)
+            byId.set(row.id, row)
+          }
+          const reply = replies.value[selected.value]
+          if (reply && recalledIds.has(reply.id)) reply.recalled = true
+          messages.value = sortMessages(byId).map(withRecall)
           if (older || initial || !oldest || missedPage)
             hasOlder.value = result.hasOlder
           await nextTick()
@@ -276,8 +314,10 @@ function createChatPage(Features) {
         error.value = ''
         menu.value = false
         panel.value = null
+        recallState.value = null
         newMessages.value = false
         nodes.clear()
+        recalledIds.clear()
         if (chat) void history({ initial: true })
       }
 
@@ -293,6 +333,7 @@ function createChatPage(Features) {
           activity.set(key, Math.max(activity.get(key) ?? 0, event.time))
           listTimer ??= setTimeout(refreshChats, 250)
         }
+        if (event.recalledMessageId) markRecalled(key, event.recalledMessageId)
         if (selected.value === key) scheduleHistory()
       }
 
@@ -301,6 +342,20 @@ function createChatPage(Features) {
         void refreshChats()
         if (current.value) scheduleHistory()
       }
+
+      function updateRecallClock() {
+        clearTimeout(tick)
+        const now = Date.now()
+        clockNow.value = now
+        let next = Infinity
+        for (const row of messages.value) {
+          if (row.recallUntil > now) next = Math.min(next, row.recallUntil)
+        }
+        if (Number.isFinite(next))
+          tick = setTimeout(updateRecallClock, next - now)
+      }
+
+      watch(messages, updateRecallClock)
 
       onMounted(() => {
         subscriptions.add(onActivity)
@@ -313,6 +368,7 @@ function createChatPage(Features) {
         subscriptions.delete(onActivity)
         document.removeEventListener('visibilitychange', resync)
         clearInterval(poll)
+        clearTimeout(tick)
         clearTimeout(latestTimer)
         clearTimeout(listTimer)
       })
@@ -330,6 +386,110 @@ function createChatPage(Features) {
           kind: 'dm',
           name: user.userName || user.username,
         })
+      }
+
+      function withRecall(row) {
+        if (recalledIds.has(row.id))
+          return {
+            ...row,
+            recalled: true,
+            recallUntil: null,
+            body: [],
+            quote: null,
+          }
+        if (row.quote?.id && recalledIds.has(row.quote.id))
+          return { ...row, quote: { id: '' } }
+        return row
+      }
+
+      function markRecalled(key, id) {
+        const reply = replies.value[key]
+        if (reply?.id === id) reply.recalled = true
+        if (selected.value !== key) return
+        recalledIds.add(id)
+        messages.value = messages.value.map(withRecall)
+      }
+
+      function selectReply(chat, row, name) {
+        const preview = row.body
+          .map((part) => part.text || '')
+          .join('')
+          .trim()
+          .slice(0, 150)
+        replies.value[keyOf(chat)] = {
+          id: row.id,
+          author: name,
+          preview: preview || '消息',
+        }
+        void nextTick(() => composer.value?.focus())
+      }
+
+      async function recall(chat, row) {
+        if (
+          recallState.value?.busy ||
+          row.recalled ||
+          row.recallUntil <= Date.now()
+        )
+          return
+        const action = recallLabel(chat)
+        if (!window.confirm(`${action}这条机器人消息？`)) return
+        const { platform, selfId, channelId } = chat
+        const key = keyOf(chat)
+        const token = generation
+        recallState.value = { id: row.id, busy: true }
+        try {
+          await send('qqbot-admin/chat-recall', {
+            platform,
+            selfId,
+            channelId,
+            messageId: row.id,
+          })
+          if (mounted) markRecalled(key, row.id)
+          if (generation === token) recallState.value = null
+        } catch (cause) {
+          if (generation === token)
+            recallState.value = {
+              id: row.id,
+              error: String(cause?.message ?? cause),
+            }
+        }
+      }
+
+      function messageFooter(chat, row, name) {
+        const action = recallLabel(chat)
+        return h('div', { class: 'qc-message-footer' }, [
+          !row.recalled
+            ? h('span', { class: 'qc-message-actions' }, [
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: () => selectReply(chat, row, name),
+                  },
+                  '引用'
+                ),
+                row.recallUntil > clockNow.value
+                  ? h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'qc-recall',
+                        disabled: !!recallState.value?.busy,
+                        onClick: () => recall(chat, row),
+                      },
+                      recallState.value?.id === row.id && recallState.value.busy
+                        ? '处理中…'
+                        : action
+                    )
+                  : null,
+              ])
+            : null,
+          h(
+            'time',
+            { datetime: new Date(row.time).toISOString() },
+            clock.format(row.time)
+          ),
+        ])
       }
 
       function renderMessage(chat, row, index) {
@@ -355,7 +515,15 @@ function createChatPage(Features) {
                 node ? nodes.set(row.id, node) : nodes.delete(row.id),
             },
             [
-              author ? avatar(name, row.userId) : null,
+              author
+                ? avatar(
+                    name,
+                    row.userId,
+                    row.userId
+                      ? () => composer.value?.insertMention(row.userId)
+                      : undefined
+                  )
+                : null,
               h('div', { class: 'qc-bubble' }, [
                 editableAuthor
                   ? h(
@@ -396,15 +564,26 @@ function createChatPage(Features) {
                 h(
                   'div',
                   { class: 'qc-body' },
-                  row.body.length
-                    ? row.body.map(contentPart)
-                    : '[消息内容不可用]'
+                  row.recalled
+                    ? h(
+                        'em',
+                        { class: 'qc-recalled' },
+                        `已${recallLabel(chat)}`
+                      )
+                    : row.body.length
+                      ? row.body.map((part, index) =>
+                          contentPart(part, index, chat.selfId)
+                        )
+                      : '[消息内容不可用]'
                 ),
-                h(
-                  'time',
-                  { datetime: new Date(row.time).toISOString() },
-                  clock.format(row.time)
-                ),
+                messageFooter(chat, row, name),
+                recallState.value?.id === row.id && recallState.value.error
+                  ? h(
+                      'p',
+                      { class: 'qc-error', role: 'alert' },
+                      recallState.value.error
+                    )
+                  : null,
               ]),
             ]
           ),
@@ -654,9 +833,12 @@ function createChatPage(Features) {
               )
             : null,
           h(HoldSend, {
+            ref: composer,
             key: `compose:${key}`,
             chat,
             modelValue: drafts.value[key] ?? '',
+            quote: replies.value[key],
+            onClearQuote: () => delete replies.value[key],
             'onUpdate:modelValue': (value) => (drafts.value[key] = value),
             onSent: () => {
               if (selected.value === key) scheduleHistory()

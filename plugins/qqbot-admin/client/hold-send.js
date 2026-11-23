@@ -1,15 +1,24 @@
 import { send } from '../client.js'
-import { defineComponent, h, onMounted, onUnmounted, ref } from '../vue.js'
+import {
+  defineComponent,
+  h,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+} from '../vue.js'
 
 const HOLD_MS = 600
 
 export const HoldSend = defineComponent({
-  props: { chat: Object, modelValue: String },
-  emits: ['update:modelValue', 'sent'],
-  setup(props, { emit }) {
+  props: { chat: Object, modelValue: String, quote: Object },
+  emits: ['update:modelValue', 'sent', 'clear-quote'],
+  setup(props, { emit, expose }) {
     const holding = ref(false)
     const sending = ref(false)
     const error = ref('')
+    const textarea = ref(null)
+    expose({ focus: () => textarea.value?.focus(), insertMention })
     let timer
     let gesture
 
@@ -19,7 +28,40 @@ export const HoldSend = defineComponent({
       holding.value = false
     }
 
-    async function submit(text) {
+    function insertMention(userId) {
+      const field = textarea.value
+      if (!field) return
+      const xml = userId.replace(
+        /[&"<>]/g,
+        (character) =>
+          ({
+            '&': '&amp;',
+            '"': '&quot;',
+            '<': '&lt;',
+            '>': '&gt;',
+          })[character]
+      )
+      const token = `<at id="${xml}"/> `
+      const { selectionStart, selectionEnd } = field
+      const value =
+        props.modelValue.slice(0, selectionStart) +
+        token +
+        props.modelValue.slice(selectionEnd)
+      cancel()
+      if (value.length > 2000) {
+        error.value = '插入艾特后超过 2000 个字符。'
+        return
+      }
+      error.value = ''
+      emit('update:modelValue', value)
+      void nextTick(() => {
+        field.focus()
+        const cursor = selectionStart + token.length
+        field.setSelectionRange(cursor, cursor)
+      })
+    }
+
+    async function submit(text, quoteId) {
       const { platform, selfId, channelId } = props.chat
       sending.value = true
       error.value = ''
@@ -29,8 +71,12 @@ export const HoldSend = defineComponent({
           selfId,
           channelId,
           text,
+          quoteId,
         })
-        if (props.modelValue.trim() === text) emit('update:modelValue', '')
+        if (props.modelValue.trim() === text && props.quote?.id === quoteId) {
+          emit('update:modelValue', '')
+          emit('clear-quote')
+        }
         emit('sent')
       } catch (cause) {
         error.value = String(cause?.message ?? cause)
@@ -41,13 +87,19 @@ export const HoldSend = defineComponent({
 
     function start(input) {
       const text = props.modelValue.trim()
-      if (gesture || sending.value || !text) return
+      const quoteId = props.quote?.id
+      if (gesture || sending.value || !text || props.quote?.recalled) return
       gesture = input
       holding.value = true
       timer = setTimeout(() => {
         cancel()
-        if (props.modelValue.trim() === text && document.hasFocus())
-          void submit(text)
+        if (
+          props.modelValue.trim() === text &&
+          props.quote?.id === quoteId &&
+          !props.quote?.recalled &&
+          document.hasFocus()
+        )
+          void submit(text, quoteId)
       }, HOLD_MS)
     }
 
@@ -113,8 +165,39 @@ export const HoldSend = defineComponent({
           },
         },
         [
+          props.quote
+            ? h('div', { class: 'qc-reply-draft' }, [
+                h('div', [
+                  h(
+                    'strong',
+                    props.quote.recalled
+                      ? '引用已撤回或删除'
+                      : `引用 ${props.quote.author}`
+                  ),
+                  h(
+                    'span',
+                    props.quote.recalled
+                      ? '请取消引用或选择另一条消息'
+                      : props.quote.preview
+                  ),
+                ]),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    'aria-label': '取消引用',
+                    onClick: () => {
+                      cancel()
+                      emit('clear-quote')
+                    },
+                  },
+                  '×'
+                ),
+              ])
+            : null,
           h('div', { class: 'qc-compose-row' }, [
             h('textarea', {
+              ref: textarea,
               'aria-label': '给当前会话发送消息',
               'aria-describedby': 'qc-send-hint',
               placeholder: '以本机器人身份发送消息',
@@ -132,7 +215,10 @@ export const HoldSend = defineComponent({
               {
                 type: 'button',
                 class: ['qc-send', holding.value && 'is-holding'],
-                disabled: sending.value || !props.modelValue.trim(),
+                disabled:
+                  sending.value ||
+                  !props.modelValue.trim() ||
+                  props.quote?.recalled,
                 'aria-describedby': 'qc-send-hint',
                 onContextmenu: (event) => event.preventDefault(),
                 onPointerdown: (event) => {
