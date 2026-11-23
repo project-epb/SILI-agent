@@ -144,6 +144,7 @@ interface ChatMessage {
   username: string
   avatar?: string
   isSelf: boolean
+  isBot: boolean
   recalled: boolean
   recallUntil: number | null
   body: Part[]
@@ -503,6 +504,7 @@ export function applyChat(ctx: Context, authority: number) {
               '',
             avatar: profiles.get(row.userId)?.avatar,
             isSelf: row.isSelf,
+            isBot: !!row.isBot || profiles.get(row.userId)?.isBot === true,
             recalled: !!row.recalled,
             recallUntil:
               row.isSelf && !row.recalled

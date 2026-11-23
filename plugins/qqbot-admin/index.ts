@@ -10,6 +10,7 @@ import type {
   QQBotChannel,
   QQBotMember,
   QQBotUser,
+  QQMemberRole,
 } from '../../src/plugins/qqbot/tables'
 
 import { applyChat } from './chat'
@@ -98,6 +99,9 @@ interface MemberRow {
   channelName: string
   userId: string
   userName: string
+  isBot: boolean | null
+  role: QQMemberRole | null
+  roleSeenAt: number | null
   firstSeen: number | null
   lastSeen: number | null
   messageCount: number
@@ -371,11 +375,11 @@ export function apply(ctx: Context) {
         ? await ctx.database.get(
             'qqbot_user',
             { selfId, id: [...new Set(rows.map((r) => r.userId))] },
-            ['id', 'name']
+              ['id', 'name', 'isBot']
           )
         : []
       const channelName = new Map(channels.map((c) => [c.id, c.name ?? '']))
-      const userName = new Map(users.map((u) => [u.id, u.name ?? '']))
+      const accounts = new Map(users.map((u) => [u.id, u] as const))
       return {
         total,
         rows: rows.map<MemberRow>((r) => ({
@@ -383,7 +387,10 @@ export function apply(ctx: Context) {
           channelId: r.channelId,
           channelName: channelName.get(r.channelId) ?? '',
           userId: r.userId,
-          userName: r.nickname || userName.get(r.userId) || '',
+          userName: r.nickname || accounts.get(r.userId)?.name || '',
+          isBot: accounts.get(r.userId)?.isBot ?? null,
+          role: r.role || null,
+          roleSeenAt: ts(r.roleSeenAt),
           firstSeen: ts(r.firstSeen),
           lastSeen: ts(r.lastSeen),
           messageCount: r.messageCount ?? 0,

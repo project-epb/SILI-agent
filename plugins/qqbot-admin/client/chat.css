@@ -200,6 +200,8 @@ html.dark .qc-root, [data-theme="dark"] .qc-root {
   text-align: left;
 }
 button.qc-author:hover { text-decoration: underline; }
+.qc-author-line { display: flex; flex-wrap: wrap; align-items: baseline; }
+.qc-root .qc-member-tag { margin-left: 6px; font-size: 10px; font-weight: 500; }
 .qc-self-author {
   display: flex;
   align-items: baseline;

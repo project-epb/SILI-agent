@@ -16,6 +16,7 @@ export interface ChatProfile {
   name?: string
   groupName?: string
   avatar?: string
+  isBot?: boolean
 }
 
 export function knownName(value: unknown, id: string) {
@@ -81,7 +82,7 @@ export function createChatProfileLookup(ctx: Context) {
             selfId: scope.selfId,
             id: selected,
           },
-          ['id', 'name', 'avatar']
+          ['id', 'name', 'avatar', 'isBot']
         ),
         qqGroup
           ? ctx.database.get(
@@ -99,6 +100,7 @@ export function createChatProfileLookup(ctx: Context) {
         profiles.set(account.id, {
           name: knownName(account.name, account.id),
           avatar: qqAvatar(account.avatar),
+          isBot: account.isBot ?? undefined,
         })
       }
       for (const member of members) {

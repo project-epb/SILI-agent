@@ -551,20 +551,25 @@ function createChatPage(Features) {
                   )
                 : null,
               h('div', { class: 'qc-bubble' }, [
-                editableAuthor
-                  ? h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: 'qc-author',
-                        onClick: () => showUser(chat, row),
-                        disabled: !row.userId,
-                      },
-                      name
-                    )
-                  : author
-                    ? h('span', { class: 'qc-author' }, name)
-                    : null,
+                author
+                  ? h('div', { class: 'qc-author-line' }, [
+                      editableAuthor
+                        ? h(
+                            'button',
+                            {
+                              type: 'button',
+                              class: 'qc-author',
+                              onClick: () => showUser(chat, row),
+                              disabled: !row.userId,
+                            },
+                            name
+                          )
+                        : h('span', { class: 'qc-author' }, name),
+                      row.isBot
+                        ? h('small', { class: 'qc-member-tag' }, '机器人')
+                        : null,
+                    ])
+                  : null,
                 row.isSelf
                   ? h('div', { class: 'qc-self-author' }, [
                       h('strong', name),

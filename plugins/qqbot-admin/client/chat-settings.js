@@ -2,6 +2,7 @@ import { send } from '../client.js'
 import { defineComponent, h, onMounted, onUnmounted, ref } from '../vue.js'
 
 const PAGE_SIZE = 30
+const roleNames = { owner: '群主', admin: '管理员', member: '成员' }
 
 export const ChatMembers = defineComponent({
   props: { chat: Object },
@@ -75,7 +76,24 @@ export const ChatMembers = defineComponent({
                         'button',
                         { type: 'button', onClick: () => emit('user', row) },
                         [
-                          h('strong', row.userName || row.userId),
+                          h('strong', [
+                            row.userName || row.userId,
+                            row.isBot === true
+                              ? h('small', { class: 'qc-member-tag' }, '机器人')
+                              : null,
+                            roleNames[row.role]
+                              ? h(
+                                  'small',
+                                  {
+                                    class: 'qc-member-tag',
+                                    title: row.roleSeenAt
+                                      ? `群角色记录于 ${new Date(row.roleSeenAt).toLocaleString('zh-CN')}`
+                                      : undefined,
+                                  },
+                                  roleNames[row.role]
+                                )
+                              : null,
+                          ]),
                           h('small', row.userId),
                           h('span', `${row.messageCount} 条`),
                         ]
