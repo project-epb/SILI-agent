@@ -1,14 +1,17 @@
-import { $, Context, Service, Session, Time, h } from 'koishi'
+import { $, Context, Service, Session, Time, Universal, h } from 'koishi'
 
 export interface ChannelMessage {
   platform: string
   selfId: string
   channelId: string
+  channelName?: string
+  channelType?: 'channel' | 'dm' | ''
   messageId: string
   userId: string
   username: string
   isBot: boolean
   isSelf: boolean
+  recalled?: boolean
   content: string
   mentions: string[]
   quoteId: string
@@ -21,6 +24,12 @@ export interface ChannelMessage {
 }
 
 declare module 'koishi' {
+  interface Events {
+    'channel-message-recorded'(
+      activity: Pick<ChannelMessage, 'platform' | 'selfId' | 'channelId' | 'time'>
+    ): void
+  }
+
   interface Context {
     channelMessageHistory: ChannelMessageHistory
   }
@@ -38,11 +47,14 @@ interface Config {
 const messageFields = {
   selfId: 'string(64)',
   channelId: 'string(128)',
+  channelName: 'string(255)',
+  channelType: 'string(16)',
   messageId: 'string(255)',
   userId: 'string(64)',
   username: 'string(255)',
   isBot: 'boolean',
   isSelf: 'boolean',
+  recalled: 'boolean',
   content: 'text',
   mentions: 'list',
   quoteId: 'string(255)',
@@ -55,6 +67,14 @@ const newestFirst = { time: 'desc', messageId: 'desc' } as const
 
 function scopeOf({ platform, selfId, channelId }: Session) {
   return { platform, selfId, channelId }
+}
+
+export function isDirectMessage(session: Session) {
+  // QQ send acknowledgements can put the channel type only on the message.
+  return (
+    session.isDirect ||
+    session.event.message?.channel?.type === Universal.Channel.Type.DIRECT
+  )
 }
 
 /**
@@ -134,6 +154,12 @@ export default class ChannelMessageHistory extends Service {
     const messageId = session.messageId
     const userId = outgoing ? selfId : session.userId
     const username = outgoing ? session.bot.user?.name : session.username
+    const direct = isDirectMessage(session)
+    const channelName =
+      session.event.channel?.name ||
+      session.event.message?.channel?.name ||
+      (direct && !outgoing ? username : '') ||
+      ''
     const elements = session.elements ?? []
     const content = session.content || elements.join('')
     if (platform && selfId && channelId && messageId) {
@@ -147,11 +173,14 @@ export default class ChannelMessageHistory extends Service {
       ]
       const raw = session.event._data
       const author = raw?.d?.author ?? raw?.author
+      const time = new Date(session.timestamp || Date.now())
       try {
         await this.ctx.database.create('channel_message', {
           platform,
           selfId,
           channelId,
+          channelName,
+          channelType: direct ? 'dm' : 'channel',
           messageId,
           userId: userId ?? '',
           username: username ?? '',
@@ -163,19 +192,24 @@ export default class ChannelMessageHistory extends Service {
             session.event.message?.quote?.id ??
             String(h.select(elements, 'quote')[0]?.attrs.id ?? ''),
           refIdx: refIdxOf(raw),
-          time: new Date(session.timestamp || Date.now()),
+          time,
+        })
+        this.ctx.emit('channel-message-recorded', {
+          platform,
+          selfId,
+          channelId,
+          time,
         })
       } catch (error) {
         if (isDuplicate(error)) return false
         this.storageLog.warn('record message', error)
       }
     }
-    const channel = session.event.channel?.name
-    const label = `${channel ? channel + ' ' : ''}(${platform}:${channelId})`
+    const label = `${channelName ? channelName + ' ' : ''}(${platform}:${channelId})`
     const sender = outgoing ? '' : ` | ${username || '<unknown>'} (${userId})`
     this.log.info(
       outgoing ? '↑' : '↓',
-      `${session.isDirect ? '[DM] ' : ''}${label}${sender}\n${slimMessageContent(content) || '<empty>'}`
+      `${direct ? '[DM] ' : ''}${label}${sender}\n${slimMessageContent(content) || '<empty>'}`
     )
     return true
   }
@@ -187,7 +221,11 @@ export default class ChannelMessageHistory extends Service {
   async find(session: Session, id: string): Promise<ChannelMessage | undefined> {
     const [row] = await this.ctx.database.get(
       'channel_message',
-      { ...scopeOf(session), ...(id.startsWith('REFIDX_') ? { refIdx: id } : { messageId: id }) },
+      {
+        ...scopeOf(session),
+        recalled: { $ne: true },
+        ...(id.startsWith('REFIDX_') ? { refIdx: id } : { messageId: id }),
+      },
       { limit: 1 }
     )
     return row

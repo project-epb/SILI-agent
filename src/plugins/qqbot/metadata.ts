@@ -1,7 +1,9 @@
 import { Bot, Context, Logger, Session, Time } from 'koishi'
 
+import { qqAvatar } from './avatar'
 import { GUARDED_PLATFORMS } from './gate'
 import type { ServedState } from './state'
+import type { QQMemberRole } from './tables'
 
 interface ChannelDelta {
   selfId: string
@@ -16,6 +18,8 @@ interface UserDelta {
   id: string
   platform: string
   name?: string
+  avatar?: string
+  isBot?: boolean
   firstSeen: Date
   lastSeen: Date
   count: number
@@ -25,6 +29,9 @@ interface MemberDelta {
   selfId: string
   channelId: string
   userId: string
+  nickname?: string
+  role?: QQMemberRole
+  roleSeenAt?: Date
   firstSeen: Date
   lastSeen: Date
   count: number
@@ -105,6 +112,10 @@ export class MetadataRecorder {
     if (!GUARDED_PLATFORMS.has(session.platform)) return
     const { platform, selfId, userId, channelId } = session
     const now = new Date(session.timestamp || Date.now())
+    // The QQ adapter keeps the original gateway message alongside the session.
+    const raw = session.event._data
+    const rawAuthor = raw?.d?.author ?? raw?.author
+    const author = platform === 'qq' ? rawAuthor : undefined
     if (userId) {
       const key = `${selfId}:${userId}`
       const user = this.users.get(key) ?? {
@@ -123,6 +134,10 @@ export class MetadataRecorder {
       // prefers member.nick).
       const name = session.event.user?.name
       if (name) user.name = name
+      const avatar = qqAvatar(author?.avatar)
+      if (avatar) user.avatar = avatar
+      const bot = rawAuthor?.bot ?? session.event.user?.isBot
+      if (typeof bot === 'boolean') user.isBot ??= bot
       this.users.set(key, user)
     }
     if (session.isDirect || !channelId) return
@@ -156,6 +171,17 @@ export class MetadataRecorder {
       }
       member.lastSeen = now
       member.count++
+      const nickname = author?.member_nickname ?? session.event.member?.nick
+      if (typeof nickname === 'string')
+        member.nickname = nickname.trim().slice(0, 255)
+      const role = author?.member_role
+      if (
+        (role === 'owner' || role === 'admin' || role === 'member') &&
+        (!member.roleSeenAt || now >= member.roleSeenAt)
+      ) {
+        member.role = role
+        member.roleSeenAt = now
+      }
       this.members.set(memberKey, member)
     }
   }
@@ -202,6 +228,10 @@ export class MetadataRecorder {
               id: d.id,
               platform: d.platform,
               ...(d.name ? { name: d.name } : {}),
+              ...(d.avatar ? { avatar: d.avatar } : {}),
+              ...(row?.isBot == null && d.isBot !== undefined
+                ? { isBot: d.isBot }
+                : {}),
               firstSeen: row?.firstSeen ?? d.firstSeen,
               lastSeen: d.lastSeen,
               messageCount: (row?.messageCount ?? 0) + d.count,
@@ -229,6 +259,12 @@ export class MetadataRecorder {
               selfId: d.selfId,
               channelId: d.channelId,
               userId: d.userId,
+              ...(d.nickname === undefined ? {} : { nickname: d.nickname }),
+              ...(d.role &&
+              d.roleSeenAt &&
+              (!row?.roleSeenAt || d.roleSeenAt >= row.roleSeenAt)
+                ? { role: d.role, roleSeenAt: d.roleSeenAt }
+                : {}),
               firstSeen: row?.firstSeen ?? d.firstSeen,
               lastSeen: d.lastSeen,
               messageCount: (row?.messageCount ?? 0) + d.count,
@@ -356,7 +392,8 @@ export class MetadataRecorder {
     try {
       const info = await bot.internal.getGroupInfo(groupId)
       patch.name = info?.group_name ?? ''
-      if (patch.name) this.groupNames.set(`${selfId}:${groupId}`, patch.name as string)
+      if (patch.name)
+        this.groupNames.set(`${selfId}:${groupId}`, patch.name as string)
       patch.memberNum = info?.group_member_num ?? 0
     } catch (error) {
       this.logger.debug(
