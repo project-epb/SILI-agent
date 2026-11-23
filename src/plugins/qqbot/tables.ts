@@ -39,6 +39,8 @@ export interface QQBotUser {
   platform: string
   /** Last name seen; group events carry it, DM events do not. */
   name: string
+  /** Last avatar URL supplied by the QQ gateway. */
+  avatar?: string
   firstSeen: Date
   lastSeen: Date
   messageCount: number
@@ -52,6 +54,8 @@ export interface QQBotMember {
   selfId: string
   channelId: string
   userId: string
+  /** QQ's nickname for this user in this group. */
+  nickname?: string
   firstSeen: Date
   lastSeen: Date
   messageCount: number
@@ -115,6 +119,7 @@ export function defineTables(ctx: Context) {
       id: 'string(64)',
       platform: 'string(32)',
       name: 'string(255)',
+      avatar: 'string(2048)',
       firstSeen: 'timestamp',
       lastSeen: 'timestamp',
       messageCount: 'unsigned',
@@ -129,6 +134,7 @@ export function defineTables(ctx: Context) {
       selfId: 'string(64)',
       channelId: 'string(128)',
       userId: 'string(64)',
+      nickname: 'string(255)',
       firstSeen: 'timestamp',
       lastSeen: 'timestamp',
       messageCount: 'unsigned',

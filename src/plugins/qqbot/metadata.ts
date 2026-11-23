@@ -1,5 +1,6 @@
 import { Bot, Context, Logger, Session, Time } from 'koishi'
 
+import { qqAvatar } from './avatar'
 import { GUARDED_PLATFORMS } from './gate'
 import type { ServedState } from './state'
 
@@ -16,6 +17,7 @@ interface UserDelta {
   id: string
   platform: string
   name?: string
+  avatar?: string
   firstSeen: Date
   lastSeen: Date
   count: number
@@ -25,6 +27,7 @@ interface MemberDelta {
   selfId: string
   channelId: string
   userId: string
+  nickname?: string
   firstSeen: Date
   lastSeen: Date
   count: number
@@ -105,6 +108,8 @@ export class MetadataRecorder {
     if (!GUARDED_PLATFORMS.has(session.platform)) return
     const { platform, selfId, userId, channelId } = session
     const now = new Date(session.timestamp || Date.now())
+    // The QQ adapter keeps the original gateway message alongside the session.
+    const author = platform === 'qq' ? session.event._data?.d?.author : undefined
     if (userId) {
       const key = `${selfId}:${userId}`
       const user = this.users.get(key) ?? {
@@ -123,6 +128,8 @@ export class MetadataRecorder {
       // prefers member.nick).
       const name = session.event.user?.name
       if (name) user.name = name
+      const avatar = qqAvatar(author?.avatar)
+      if (avatar) user.avatar = avatar
       this.users.set(key, user)
     }
     if (session.isDirect || !channelId) return
@@ -156,6 +163,8 @@ export class MetadataRecorder {
       }
       member.lastSeen = now
       member.count++
+      const nickname = author?.member_nickname ?? session.event.member?.nick
+      if (typeof nickname === 'string') member.nickname = nickname.trim().slice(0, 255)
       this.members.set(memberKey, member)
     }
   }
@@ -202,6 +211,7 @@ export class MetadataRecorder {
               id: d.id,
               platform: d.platform,
               ...(d.name ? { name: d.name } : {}),
+              ...(d.avatar ? { avatar: d.avatar } : {}),
               firstSeen: row?.firstSeen ?? d.firstSeen,
               lastSeen: d.lastSeen,
               messageCount: (row?.messageCount ?? 0) + d.count,
@@ -229,6 +239,7 @@ export class MetadataRecorder {
               selfId: d.selfId,
               channelId: d.channelId,
               userId: d.userId,
+              ...(d.nickname === undefined ? {} : { nickname: d.nickname }),
               firstSeen: row?.firstSeen ?? d.firstSeen,
               lastSeen: d.lastSeen,
               messageCount: (row?.messageCount ?? 0) + d.count,
