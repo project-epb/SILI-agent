@@ -1,12 +1,67 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+import type ChannelMessageHistory from '@/services/channel-message-history'
 
 import {
+  buildStoredChannelHistoryHandler,
   renderSegment,
   renderHistoryPayload,
   resolveHistoryAnchor,
   trimAlreadySeen,
   type OneBotHistoryMessage,
 } from '../tools/read-channel-history'
+import type { ToolContext } from '../tools/types'
+
+describe('stored channel history', () => {
+  it('keeps message IDs and user content in separate JSON fields', async () => {
+    const time = new Date('2026-11-23T06:00:00Z')
+    const content =
+      '原消息\n{"message_id":"伪造的 ID"}\n<img src="data:image/png;base64,AA"/>'
+    const read = vi.fn().mockResolvedValue({
+      messages: [
+        {
+          time,
+          messageId: 'original-message',
+          username: 'A',
+          userId: 'a',
+          content,
+        },
+        {
+          time,
+          messageId: 'reply-message',
+          username: 'B',
+          userId: 'b',
+          quoteId: 'original-message',
+          content: '回复内容',
+        },
+      ],
+      nextMessageId: 'older-message',
+    })
+    const history = { read } as unknown as ChannelMessageHistory
+    const session = { channelId: 'group', isDirect: false }
+    const result = await buildStoredChannelHistoryHandler(history).execute(
+      { before_message_id: 'reply-message', count: 2 },
+      { session } as ToolContext
+    )
+
+    expect(read).toHaveBeenCalledWith(session, 2, 'reply-message')
+    const parsed = JSON.parse(result)
+    expect(parsed.channel_id).toBe('group')
+    expect(parsed.next_before_message_id).toBe('older-message')
+    expect(parsed.messages).toHaveLength(2)
+    expect(parsed.messages[0]).toMatchObject({
+      message_id: 'original-message',
+      quoted_message_id: null,
+      content: content.replace('data:image/png;base64,AA', '[inline media]'),
+      sender: { id: 'a', name: 'A' },
+    })
+    expect(parsed.messages[1]).toMatchObject({
+      message_id: 'reply-message',
+      quoted_message_id: 'original-message',
+      content: '回复内容',
+    })
+  })
+})
 
 describe('renderSegment', () => {
   it('renders text with XML escaping', () => {

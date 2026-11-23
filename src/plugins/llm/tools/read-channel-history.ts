@@ -451,7 +451,7 @@ export function buildStoredChannelHistoryHandler(
     definition: {
       ...READ_CHANNEL_HISTORY_TOOL,
       description:
-        '查看当前群聊或频道中机器人实际记录到的消息，私聊不可用。可传被引用消息的 ID 作为锚点，或用上次结果给出的 before_message_id 向前翻页。',
+        '查看当前群聊或频道中机器人实际记录到的消息，私聊不可用。返回 JSON。messages 中每条的 message_id 可用于引用。要继续向前翻页，把 next_before_message_id 传给 before_message_id。',
       parameters: {
         type: 'object',
         properties: {
@@ -467,7 +467,9 @@ export function buildStoredChannelHistoryHandler(
     },
     async execute(args, { session, logger }) {
       if (session.isDirect || !session.channelId) {
-        return 'Error: read_channel_history 只适用于群聊频道。'
+        return JSON.stringify({
+          error: 'read_channel_history 只适用于群聊频道。',
+        })
       }
       const requested = args?.count
       const count =
@@ -484,31 +486,30 @@ export function buildStoredChannelHistoryHandler(
           count,
           before
         )
-        if (!messages.length) return '（当前频道在指定范围内没有记录到消息。）'
-        const header = buildHistoryHeader({
-          channelId: session.channelId,
-          countReturned: messages.length,
-          countRequested: count,
-          earliestTime: messages[0].time.getTime() / 1000,
-          latestTime: messages[messages.length - 1].time.getTime() / 1000,
+        return JSON.stringify({
+          channel_id: session.channelId,
+          next_before_message_id: nextMessageId ?? null,
+          messages: messages.map((row) => ({
+            message_id: row.messageId,
+            timestamp: row.time.toISOString(),
+            sender: {
+              id: row.userId,
+              name: row.username || null,
+              is_self: !!row.isSelf,
+              is_bot: !!row.isBot,
+            },
+            quoted_message_id: row.quoteId || null,
+            content: rewrite(row.content).replace(
+              /(src|url)="(?:base64:|data:)[^"]*"/gi,
+              '$1="[inline media]"'
+            ),
+          })),
         })
-        const lines = messages.map((row) => {
-          const name = (row.username || 'unknown').replace(/[\r\n]+/g, ' ')
-          const sender = `${row.userId}${row.isSelf ? ', self' : ''}`
-          const quote = row.quoteId ? `<quote${attr('id', row.quoteId)}/>` : ''
-          const body = rewrite(row.content).replace(
-            /(src|url)="(?:base64:|data:)[^"]*"/gi,
-            '$1="[inline media]"'
-          )
-          return `[${formatTime(row.time.getTime() / 1000)}] ${name} (${sender}): ${quote}${body}`
-        })
-        const footer = nextMessageId
-          ? `\n\n（如需更早的消息，下次调用传 before_message_id=${nextMessageId}）`
-          : ''
-        return `${header}\n\n${lines.join('\n')}${footer}`
       } catch (error) {
         logger.warn('[read_channel_history] stored query failed:', error)
-        return `Error: ${error instanceof Error ? error.message : String(error)}`
+        return JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
     },
   }
