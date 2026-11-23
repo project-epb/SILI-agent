@@ -122,7 +122,7 @@ function koishiSystemText(commandCatalog: string): string {
       '- 图片：`[koishi:img src="https://..."]`',
       '- 工具调用可能返回占位符：`[koishi:img ref="..."]`——是系统对`src="dataURL"`进行了压缩，若你要给用户发送该图片，原样输出此标签',
       '- 链接：`[koishi:a href="https://..."]文字[/koishi:a]`',
-      `- 引用回复：仅在需要指明回复对象时，把 \`[koishi:${E.REPLY_QUOTE} id="…"]\` 放在消息开头，使用要回复的那条消息的 \`turn_context.message_id\`。用 \`${M.MSG_BREAK}\` 主动开始新消息后，可以再写一个引用。每条消息只认开头的一个引用，普通进度直接写正文。`,
+      `- 引用回复：仅在需要指明回复对象时，把 \`[koishi:${E.REPLY_QUOTE} id="…"]\` 放在消息开头。当前用户输入和中途插话用各自的 \`turn_context.message_id\`。历史消息用 \`read_channel_history\` 返回的 \`messages\` 里那条记录的 \`message_id\`。用 \`${M.MSG_BREAK}\` 主动开始新消息后，可以再写一个引用。每条消息只认开头的一个引用，普通进度直接写正文。`,
       '',
       'URL 仅允许 http/https（`file://` `data:` `javascript:` 会被过滤）。你也可以直接在文本中包含 https:// 链接，平台会自动转蓝链，直链需要 encodeURI。',
     ].join('\n')
