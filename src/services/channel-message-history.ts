@@ -11,6 +11,7 @@ export interface ChannelMessage {
   username: string
   isBot: boolean
   isSelf: boolean
+  recalled?: boolean
   content: string
   mentions: string[]
   quoteId: string
@@ -53,6 +54,7 @@ const messageFields = {
   username: 'string(255)',
   isBot: 'boolean',
   isSelf: 'boolean',
+  recalled: 'boolean',
   content: 'text',
   mentions: 'list',
   quoteId: 'string(255)',
@@ -219,7 +221,11 @@ export default class ChannelMessageHistory extends Service {
   async find(session: Session, id: string): Promise<ChannelMessage | undefined> {
     const [row] = await this.ctx.database.get(
       'channel_message',
-      { ...scopeOf(session), ...(id.startsWith('REFIDX_') ? { refIdx: id } : { messageId: id }) },
+      {
+        ...scopeOf(session),
+        recalled: { $ne: true },
+        ...(id.startsWith('REFIDX_') ? { refIdx: id } : { messageId: id }),
+      },
       { limit: 1 }
     )
     return row

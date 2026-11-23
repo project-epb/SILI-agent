@@ -1,4 +1,4 @@
-import { $, Context, Query, h } from 'koishi'
+import { $, Context, Query, Time, h } from 'koishi'
 
 import type { Console } from '@koishijs/console'
 
@@ -10,6 +10,7 @@ const QQ_PLATFORM = 'qq'
 const PRIVATE_PREFIX = 'private:'
 const PAGE_SIZE = 60
 const MAX_MESSAGE_LENGTH = 2000
+const RECALL_WINDOW = 2 * Time.minute
 
 interface ChatTarget {
   platform: string
@@ -23,9 +24,10 @@ interface Cursor {
 }
 
 interface Part {
-  kind: 'text' | 'image' | 'audio' | 'video' | 'link'
+  kind: 'text' | 'image' | 'audio' | 'video' | 'link' | 'mention'
   text?: string
   url?: string
+  userId?: string
 }
 
 function safeUrl(value: unknown) {
@@ -54,9 +56,13 @@ function parts(elements: h[]): Part[] {
     if (type === 'at')
       return [
         {
-          kind: 'text',
-          text:
-            '@' + (attrs.name || (attrs.type === 'all' ? '全体成员' : '成员')),
+          kind: 'mention',
+          userId: String(attrs.id ?? attrs.qq ?? ''),
+          text: attrs.name
+            ? '@' + attrs.name
+            : attrs.type === 'all'
+              ? '@全体成员'
+              : undefined,
         },
       ]
     if (
@@ -98,6 +104,7 @@ function quotePreview(content: string) {
             image: '[图片]',
             audio: '[语音]',
             video: '[视频]',
+            mention: '@成员',
           } as Record<string, string>
         )[part.kind] ||
         ''
@@ -113,6 +120,8 @@ interface ChatMessage {
   userId: string
   username: string
   isSelf: boolean
+  recalled: boolean
+  recallUntil: number | null
   body: Part[]
   quote: { id: string; author: string; preview: string } | null
 }
@@ -133,7 +142,14 @@ declare module '@koishijs/console' {
       messages: ChatMessage[]
       hasOlder: boolean
     }>
-    'qqbot-admin/chat-send'(payload: ChatTarget & { text: string }): Promise<{
+    'qqbot-admin/chat-send'(
+      payload: ChatTarget & { text: string; quoteId?: string }
+    ): Promise<{
+      ok: true
+    }>
+    'qqbot-admin/chat-recall'(
+      payload: ChatTarget & { messageId: string }
+    ): Promise<{
       ok: true
     }>
   }
@@ -160,6 +176,41 @@ function targetOf(target: ChatTarget) {
 const chatKey = ({ platform, selfId, channelId }: ChatTarget) =>
   JSON.stringify([platform, selfId, channelId])
 
+function messageIdOf(value: unknown) {
+  if (typeof value !== 'string' || !value || value.length > 255)
+    throw new Error('消息标识无效。')
+  return value
+}
+
+async function draftElements(ctx: Context, scope: ChatTarget, text: string) {
+  const tokens = [...text.matchAll(/<at id="([^"]*)"\s*\/>/g)]
+  if (!tokens.length) return [h.text(text)]
+  const ids = tokens.map((token) => h.unescape(token[1]))
+  if (ids.some((id) => !id || id.length > 64 || id === 'all'))
+    throw new Error('艾特的用户标识无效。')
+  const users = await ctx.database
+    .select('channel_message', {
+      ...scope,
+      isSelf: { $ne: true },
+      userId: [...new Set(ids)],
+    })
+    .groupBy('userId')
+    .execute()
+  const recorded = new Set(users.map((row) => row.userId))
+  if (ids.some((id) => !recorded.has(id)))
+    throw new Error('只能艾特本会话中有记录的发言者。')
+  const elements: h[] = []
+  let cursor = 0
+  for (const [index, token] of tokens.entries()) {
+    if (token.index > cursor)
+      elements.push(h.text(text.slice(cursor, token.index)))
+    elements.push(h.at(ids[index]))
+    cursor = token.index + token[0].length
+  }
+  if (cursor < text.length) elements.push(h.text(text.slice(cursor)))
+  return elements
+}
+
 export function applyChat(ctx: Context, authority: number) {
   // Koishi may resolve the console service through a second copy of the package.
   const console = ctx.console as unknown as Pick<
@@ -167,20 +218,28 @@ export function applyChat(ctx: Context, authority: number) {
     'addListener' | 'broadcast'
   >
   const auth = { authority }
+  const recalling = new Set<string>()
+  const broadcastActivity = (
+    scope: ChatTarget,
+    time: Date,
+    recalledMessageId?: string
+  ) => {
+    void console
+      .broadcast(
+        'qqbot-admin/chat-activity',
+        { ...scope, time: time.getTime(), recalledMessageId },
+        auth
+      )
+      .catch((error) =>
+        ctx
+          .logger('qqbot-admin')
+          .warn('chat activity notification failed', error)
+      )
+  }
   ctx.on(
     'channel-message-recorded',
     ({ platform, selfId, channelId, time }) => {
-      void console
-        .broadcast(
-          'qqbot-admin/chat-activity',
-          { platform, selfId, channelId, time: time.getTime() },
-          auth
-        )
-        .catch((error) =>
-          ctx
-            .logger('qqbot-admin')
-            .warn('chat activity notification failed', error)
-        )
+      broadcastActivity({ platform, selfId, channelId }, time)
     }
   )
 
@@ -296,6 +355,7 @@ export function applyChat(ctx: Context, authority: number) {
             'channel_message',
             {
               ...scope,
+              recalled: { $ne: true },
               $or: [{ messageId: referenceIds }, { refIdx: referenceIds }],
             },
             ['messageId', 'refIdx', 'username', 'isSelf', 'content']
@@ -320,12 +380,72 @@ export function applyChat(ctx: Context, authority: number) {
             userId: row.userId,
             username: row.username,
             isSelf: row.isSelf,
+            recalled: !!row.recalled,
+            recallUntil:
+              row.isSelf && !row.recalled
+                ? row.time.getTime() + RECALL_WINDOW
+                : null,
             body: bodyOf(row.content),
             quote: row.quoteId
               ? (quotes.get(row.quoteId) ?? { id: '', author: '', preview: '' })
               : null,
           })
         ),
+      }
+    },
+    auth
+  )
+
+  console.addListener(
+    'qqbot-admin/chat-recall',
+    async (payload) => {
+      const scope = targetOf(payload)
+      const messageId = messageIdOf(payload.messageId)
+      const key = JSON.stringify([
+        scope.platform,
+        scope.selfId,
+        scope.channelId,
+        messageId,
+      ])
+      if (recalling.has(key)) throw new Error('这条消息正在处理。')
+      recalling.add(key)
+      try {
+        const query = { ...scope, messageId, isSelf: true }
+        const [message] = await ctx.database.get('channel_message', query, [
+          'time',
+          'recalled',
+        ])
+        if (!message) throw new Error('只能操作本机器人发出的消息。')
+        if (message.recalled) return { ok: true } as const
+        const age = Date.now() - message.time.getTime()
+        if (!Number.isFinite(age) || age < 0 || age >= RECALL_WINDOW)
+          throw new Error('只能操作两分钟内发出的消息。')
+        const bot = ctx.bots.find(
+          (bot) =>
+            bot.platform === scope.platform && bot.selfId === scope.selfId
+        )
+        if (!bot) throw new Error('该会话的机器人当前不可用。')
+        try {
+          await bot.deleteMessage(scope.channelId, messageId)
+        } catch {
+          throw new Error('平台未确认撤回或删除。')
+        }
+        try {
+          await ctx.database.set('channel_message', query, {
+            recalled: true,
+            content: '',
+            quoteId: '',
+          })
+        } catch (error) {
+          ctx
+            .logger('qqbot-admin')
+            .warn('update recalled message history failed', error)
+          throw new Error('平台已处理消息，本地历史更新失败。')
+        }
+        broadcastActivity(scope, message.time, messageId)
+        return { ok: true } as const
+      } finally {
+        recalling.delete(key)
       }
     },
     auth
@@ -382,12 +502,28 @@ export function applyChat(ctx: Context, authority: number) {
         }
         if (!group.allowProactive) throw new Error('此群未允许机器人主动发送。')
       }
-      const text = h.text(content)
+      const elements = await draftElements(ctx, scope, content)
+      if (payload.quoteId !== undefined) {
+        const [quote] = await ctx.database.get(
+          'channel_message',
+          {
+            ...scope,
+            messageId: messageIdOf(payload.quoteId),
+            recalled: { $ne: true },
+          },
+          ['messageId', 'refIdx']
+        )
+        if (!quote) throw new Error('引用消息不可用，请取消引用或重新选择。')
+        const id = GUARDED_PLATFORMS.has(platform)
+          ? quote.refIdx || quote.messageId
+          : quote.messageId
+        elements.unshift(h.quote(id))
+      }
       try {
         const sent =
           platform === QQ_PLATFORM && direct && userId
-            ? await bot.sendPrivateMessage(userId, text)
-            : await bot.sendMessage(channelId, text)
+            ? await bot.sendPrivateMessage(userId, elements)
+            : await bot.sendMessage(channelId, elements)
         if (!sent.length) throw new Error('No message ID returned.')
       } catch {
         throw new Error(
