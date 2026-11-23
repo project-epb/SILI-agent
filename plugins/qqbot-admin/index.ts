@@ -12,16 +12,24 @@ import type {
   QQBotUser,
 } from '../../src/plugins/qqbot/tables'
 
+import { applyChat } from './chat'
+
 /**
  * Console page for the v5 channel manager: which groups the official QQ bot is
- * in, who has DMed it, and switches to activate them. All listeners require
- * authority 4 (ops). Never returns message content.
+ * in, who has DMed it, and their recorded conversations. All listeners
+ * require authority 4 (ops).
  */
 const AUTH = 4
 const PLATFORM = 'qq'
 
 export const name = 'qqbot-admin'
-export const inject = ['console', 'database', 'qqbot', 'feature']
+export const inject = [
+  'console',
+  'database',
+  'qqbot',
+  'feature',
+  'channelMessageHistory',
+]
 
 type Status = 'all' | 'active' | 'inactive'
 
@@ -31,6 +39,20 @@ const MAX_PAGE_SIZE = 200
 interface PageArgs {
   page?: number
   pageSize?: number
+}
+
+interface DirectoryArgs extends PageArgs {
+  status?: Status
+  q?: string
+  selfId?: string
+  id?: string
+}
+
+interface MemberArgs extends PageArgs {
+  selfId: string
+  channelId?: string
+  userId?: string
+  q?: string
 }
 
 interface Page<T> {
@@ -84,19 +106,9 @@ interface MemberRow {
 
 declare module '@koishijs/console' {
   interface Events {
-    'qqbot-admin/groups'(
-      payload: { status?: Status; q?: string } & PageArgs
-    ): Page<GroupRow>
-    'qqbot-admin/users'(
-      payload: { status?: Status; q?: string } & PageArgs
-    ): Page<UserRow>
-    'qqbot-admin/members'(
-      payload: {
-        selfId: string
-        channelId?: string
-        userId?: string
-      } & PageArgs
-    ): Page<MemberRow>
+    'qqbot-admin/groups'(payload: DirectoryArgs): Page<GroupRow>
+    'qqbot-admin/users'(payload: DirectoryArgs): Page<UserRow>
+    'qqbot-admin/members'(payload: MemberArgs): Page<MemberRow>
     'qqbot-admin/toggle-group'(payload: {
       selfId: string
       id: string
@@ -137,6 +149,8 @@ function searchQuery(q: string | undefined, nameField: 'name') {
 }
 
 export function apply(ctx: Context) {
+  applyChat(ctx, AUTH)
+
   /** Rows and total count of one page, newest activity first. */
   async function page<
     K extends 'qqbot_channel' | 'qqbot_user' | 'qqbot_member',
@@ -165,10 +179,14 @@ export function apply(ctx: Context) {
     async ({
       status = 'all',
       q,
+      selfId,
+      id,
       page: p,
       pageSize,
-    }: { status?: Status; q?: string } & PageArgs = {}) => {
+    }: DirectoryArgs = {}) => {
       const filters: Query.Expr<QQBotChannel>[] = [{ platform: PLATFORM }]
+      if (selfId) filters.push({ selfId })
+      if (id) filters.push({ id })
       if (status === 'active') filters.push({ activated: true })
       else if (status === 'inactive') filters.push({ activated: { $ne: true } })
       const search = searchQuery(q, 'name')
@@ -209,9 +227,11 @@ export function apply(ctx: Context) {
     async ({
       status = 'all',
       q,
+      selfId,
+      id,
       page: p,
       pageSize,
-    }: { status?: Status; q?: string } & PageArgs = {}) => {
+    }: DirectoryArgs = {}) => {
       // Ops (authority >= 4) are few: resolve their openids up front.
       const opAccounts = await ctx.database.get(
         'user',
@@ -231,6 +251,8 @@ export function apply(ctx: Context) {
         $or: [{ dmActive: true }, { id: { $in: opIds } }],
       }
       const filters: Query.Expr<QQBotUser>[] = [{ platform: PLATFORM }]
+      if (selfId) filters.push({ selfId })
+      if (id) filters.push({ id })
       if (status === 'active') filters.push(served)
       else if (status === 'inactive') filters.push({ $not: served })
 
@@ -313,12 +335,33 @@ export function apply(ctx: Context) {
       selfId,
       channelId,
       userId,
+      q,
       page: p,
       pageSize,
-    }: { selfId: string; channelId?: string; userId?: string } & PageArgs) => {
+    }: MemberArgs) => {
       const query: Query.Expr<QQBotMember> = { selfId }
       if (channelId) query.channelId = channelId
       if (userId) query.userId = userId
+      const needle = typeof q === 'string' ? q.trim().slice(0, 120) : ''
+      if (needle) {
+        const expression = { $regex: new RegExp(escapeRegExp(needle), 'i') }
+        const matches = await ctx.database.get(
+          'qqbot_user',
+          {
+            platform: PLATFORM,
+            selfId,
+            $or: [{ name: expression }, { id: expression }],
+          },
+          ['id']
+        )
+        if (
+          !matches.length ||
+          (userId && !matches.some((row) => row.id === userId))
+        ) {
+          return { rows: [], total: 0 }
+        }
+        if (!userId) query.userId = matches.map((row) => row.id)
+      }
       const { rows, total } = await page('qqbot_member', query, {
         page: p,
         pageSize,
