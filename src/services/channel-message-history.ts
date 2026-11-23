@@ -21,6 +21,12 @@ export interface ChannelMessage {
 }
 
 declare module 'koishi' {
+  interface Events {
+    'channel-message-recorded'(
+      activity: Pick<ChannelMessage, 'platform' | 'selfId' | 'channelId' | 'time'>
+    ): void
+  }
+
   interface Context {
     channelMessageHistory: ChannelMessageHistory
   }
@@ -147,6 +153,7 @@ export default class ChannelMessageHistory extends Service {
       ]
       const raw = session.event._data
       const author = raw?.d?.author ?? raw?.author
+      const time = new Date(session.timestamp || Date.now())
       try {
         await this.ctx.database.create('channel_message', {
           platform,
@@ -163,7 +170,13 @@ export default class ChannelMessageHistory extends Service {
             session.event.message?.quote?.id ??
             String(h.select(elements, 'quote')[0]?.attrs.id ?? ''),
           refIdx: refIdxOf(raw),
-          time: new Date(session.timestamp || Date.now()),
+          time,
+        })
+        this.ctx.emit('channel-message-recorded', {
+          platform,
+          selfId,
+          channelId,
+          time,
         })
       } catch (error) {
         if (isDuplicate(error)) return false

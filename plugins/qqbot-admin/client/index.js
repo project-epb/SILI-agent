@@ -1,6 +1,8 @@
 import { defineComponent, h, onMounted, ref, resolveComponent, watch } from '../vue.js'
 import { icons, send } from '../client.js'
 
+import { registerChat } from './chat.js'
+
 function when(ts) {
   if (!ts) return '—'
   const d = new Date(ts)
@@ -430,6 +432,7 @@ const Page = defineComponent({
 })
 
 export default (ctx) => {
+  registerChat(ctx, Features)
   // 侧栏图标：QQ 开放平台的机器人头像，描成线条以便跟随主题色
   icons.register('qqbot-admin', {
     render: () =>

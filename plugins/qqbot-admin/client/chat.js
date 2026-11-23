@@ -1,0 +1,663 @@
+import { icons, receive, send } from '../client.js'
+import {
+  computed,
+  defineComponent,
+  h,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  resolveComponent,
+} from '../vue.js'
+import { ChatMembers, ChatSettings } from './chat-settings.js'
+import { HoldSend } from './hold-send.js'
+
+const subscriptions = new Set()
+receive('qqbot-admin/chat-activity', (body) => {
+  for (const onActivity of subscriptions) onActivity(body)
+})
+
+const keyOf = ({ selfId, channelId }) => JSON.stringify([selfId, channelId])
+const nameOf = (chat) =>
+  chat.name ||
+  `${chat.kind === 'group' ? 'QQ群' : 'QQ 用户'} · ${chat.id.slice(-6)}`
+const clock = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+const date = new Intl.DateTimeFormat('zh-CN', {
+  month: 'long',
+  day: 'numeric',
+  weekday: 'short',
+})
+const dayOf = (time) => new Date(time).toDateString()
+const timeOf = (time) =>
+  dayOf(time) === dayOf(Date.now()) ? clock.format(time) : date.format(time)
+
+function avatar(name, id) {
+  const hue = ['teal', 'blue', 'amber', 'rose'][
+    String(id)
+      .split('')
+      .reduce((sum, c) => sum + c.charCodeAt(0), 0) % 4
+  ]
+  return h(
+    'span',
+    { class: ['qc-avatar', `is-${hue}`], 'aria-hidden': 'true' },
+    [...name.trim()][0] || '·'
+  )
+}
+
+function contentPart(part, index) {
+  switch (part.kind) {
+    case 'image':
+      return h('img', {
+        key: index,
+        src: part.url,
+        class: 'qc-media',
+        loading: 'lazy',
+        alt: '聊天图片',
+        referrerpolicy: 'no-referrer',
+      })
+    case 'audio':
+    case 'video':
+      return h(part.kind, {
+        key: index,
+        src: part.url,
+        class: 'qc-media',
+        controls: true,
+        preload: 'none',
+      })
+    case 'link':
+      return h(
+        'a',
+        {
+          key: index,
+          href: part.url,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
+        part.text
+      )
+    default:
+      return part.text
+  }
+}
+
+function sortMessages(messages) {
+  return [...messages.values()].sort(
+    (a, b) => a.time - b.time || (a.id < b.id ? -1 : Number(a.id > b.id))
+  )
+}
+
+function createChatPage(Features) {
+  return defineComponent({
+    setup() {
+      const chats = ref([])
+      const selected = ref(null)
+      const filter = ref('')
+      const messages = ref([])
+      const hasOlder = ref(false)
+      const loadingChats = ref(true)
+      const loading = ref(false)
+      const chatError = ref('')
+      const error = ref('')
+      const menu = ref(false)
+      const panel = ref(null)
+      const scroller = ref(null)
+      const newMessages = ref(false)
+      const drafts = ref({})
+      const nodes = new Map()
+      const activity = new Map()
+      let generation = 0
+      let listVersion = 0
+      let latestTimer
+      let listTimer
+      let poll
+      let mounted = true
+
+      const current = computed(() =>
+        chats.value.find((chat) => keyOf(chat) === selected.value)
+      )
+      const messageIds = computed(
+        () => new Set(messages.value.map((row) => row.id))
+      )
+      const filtered = computed(() => {
+        const q = filter.value.trim().toLowerCase()
+        return chats.value.filter(
+          (chat) =>
+            !q ||
+            nameOf(chat).toLowerCase().includes(q) ||
+            chat.id.toLowerCase().includes(q)
+        )
+      })
+
+      async function refreshChats() {
+        const version = ++listVersion
+        if (listTimer) {
+          clearTimeout(listTimer)
+          listTimer = undefined
+        }
+        try {
+          const rows = await send('qqbot-admin/chats')
+          if (!mounted || version !== listVersion) return
+          const byKey = new Map(chats.value.map((chat) => [keyOf(chat), chat]))
+          chats.value = rows
+            .map((row) => {
+              const key = keyOf(row)
+              const latest = Math.max(
+                row.time,
+                activity.get(key) ?? 0,
+                byKey.get(key)?.time ?? 0
+              )
+              activity.delete(key)
+              return { ...row, time: latest }
+            })
+            .sort((a, b) => b.time - a.time)
+          chatError.value = ''
+        } catch (cause) {
+          if (version === listVersion)
+            chatError.value = String(cause?.message ?? cause)
+        } finally {
+          if (version === listVersion) loadingChats.value = false
+        }
+      }
+
+      const nearBottom = () =>
+        !scroller.value ||
+        scroller.value.scrollHeight -
+          scroller.value.scrollTop -
+          scroller.value.clientHeight <
+          80
+
+      function bottom() {
+        if (scroller.value)
+          scroller.value.scrollTop = scroller.value.scrollHeight
+        newMessages.value = false
+      }
+
+      async function history({ older = false, initial = false } = {}) {
+        const chat = current.value
+        if (!chat) return
+        if (loading.value) {
+          if (!older && !initial) scheduleHistory()
+          return
+        }
+        const token = generation
+        loading.value = true
+        error.value = ''
+        const oldest = messages.value[0]
+        const before =
+          older && oldest ? { id: oldest.id, time: oldest.time } : undefined
+        try {
+          const result = await send('qqbot-admin/chat-history', {
+            selfId: chat.selfId,
+            channelId: chat.channelId,
+            before,
+          })
+          if (token !== generation || !mounted) return
+          const atBottom = nearBottom()
+          const oldHeight = scroller.value?.scrollHeight ?? 0
+          const oldTop = scroller.value?.scrollTop ?? 0
+          const byId = new Map(messages.value.map((row) => [row.id, row]))
+          const fresh = result.messages.some((row) => !byId.has(row.id))
+          const previousNewest = messages.value.at(-1)
+          const oldestInResult = result.messages[0]
+          const missedPage =
+            !older &&
+            previousNewest &&
+            oldestInResult &&
+            oldestInResult.time >= previousNewest.time &&
+            !result.messages.some((row) => row.id === previousNewest.id)
+          if (missedPage && !atBottom) {
+            newMessages.value = true
+            return
+          }
+          if (missedPage) byId.clear()
+          for (const row of result.messages) byId.set(row.id, row)
+          messages.value = sortMessages(byId)
+          if (older || initial || !oldest || missedPage)
+            hasOlder.value = result.hasOlder
+          await nextTick()
+          if (token !== generation || !scroller.value) return
+          if (older)
+            scroller.value.scrollTop =
+              oldTop + scroller.value.scrollHeight - oldHeight
+          else if (initial || atBottom) bottom()
+          else if (fresh) newMessages.value = true
+        } catch (cause) {
+          if (token === generation)
+            error.value = String(cause?.message ?? cause)
+        } finally {
+          if (token === generation) loading.value = false
+        }
+      }
+
+      function scheduleHistory() {
+        if (latestTimer || !mounted) return
+        latestTimer = setTimeout(() => {
+          latestTimer = undefined
+          void history()
+        }, 250)
+      }
+
+      function open(chat) {
+        const key = chat ? keyOf(chat) : null
+        if (key === selected.value) return
+        generation++
+        clearTimeout(latestTimer)
+        latestTimer = undefined
+        selected.value = key
+        loading.value = false
+        hasOlder.value = false
+        messages.value = []
+        error.value = ''
+        menu.value = false
+        panel.value = null
+        newMessages.value = false
+        nodes.clear()
+        if (chat) void history({ initial: true })
+      }
+
+      function onActivity(event) {
+        const key = keyOf(event)
+        const chat = chats.value.find((row) => keyOf(row) === key)
+        if (chat) {
+          if (chat.time < event.time) {
+            chat.time = event.time
+            chats.value.sort((a, b) => b.time - a.time)
+          }
+        } else {
+          activity.set(key, Math.max(activity.get(key) ?? 0, event.time))
+          listTimer ??= setTimeout(refreshChats, 250)
+        }
+        if (selected.value === key) scheduleHistory()
+      }
+
+      function resync() {
+        if (document.hidden) return
+        void refreshChats()
+        if (current.value) scheduleHistory()
+      }
+
+      onMounted(() => {
+        subscriptions.add(onActivity)
+        document.addEventListener('visibilitychange', resync)
+        poll = setInterval(resync, 20000)
+        void refreshChats()
+      })
+      onUnmounted(() => {
+        mounted = false
+        subscriptions.delete(onActivity)
+        document.removeEventListener('visibilitychange', resync)
+        clearInterval(poll)
+        clearTimeout(latestTimer)
+        clearTimeout(listTimer)
+      })
+
+      function showPanel(kind, target) {
+        menu.value = false
+        panel.value = { kind, target }
+      }
+
+      function showUser(chat, user) {
+        if (!user.userId) return
+        showPanel('settings', {
+          selfId: chat.selfId,
+          id: user.userId,
+          kind: 'dm',
+          name: user.userName || user.username,
+        })
+      }
+
+      function renderMessage(chat, row, index) {
+        const name =
+          row.username ||
+          (row.isSelf ? 'SILI' : chat.kind === 'dm' ? nameOf(chat) : '群友')
+        const previous = messages.value[index - 1]
+        const newDay = !previous || dayOf(row.time) !== dayOf(previous.time)
+        const author = chat.kind === 'group' && !row.isSelf
+        const quote = row.quote
+        const quoteContent = quote?.id
+          ? [h('strong', quote.author), h('span', quote.preview || '消息')]
+          : '引用消息不可用'
+        const quoteVisible = quote?.id && messageIds.value.has(quote.id)
+        return [
+          newDay ? h('div', { class: 'qc-date' }, date.format(row.time)) : null,
+          h(
+            'div',
+            {
+              class: ['qc-message', row.isSelf && 'is-own'],
+              ref: (node) =>
+                node ? nodes.set(row.id, node) : nodes.delete(row.id),
+            },
+            [
+              author ? avatar(name, row.userId) : null,
+              h('div', { class: 'qc-bubble' }, [
+                author
+                  ? h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'qc-author',
+                        onClick: () => showUser(chat, row),
+                        disabled: !row.userId,
+                      },
+                      name
+                    )
+                  : null,
+                quote
+                  ? h(
+                      quoteVisible ? 'button' : 'div',
+                      {
+                        class: 'qc-quote',
+                        type: quoteVisible ? 'button' : undefined,
+                        onClick: quoteVisible
+                          ? () =>
+                              nodes
+                                .get(quote.id)
+                                ?.scrollIntoView({ block: 'center' })
+                          : undefined,
+                      },
+                      quoteContent
+                    )
+                  : null,
+                h(
+                  'div',
+                  { class: 'qc-body' },
+                  row.body.length
+                    ? row.body.map(contentPart)
+                    : '[消息内容不可用]'
+                ),
+                h(
+                  'time',
+                  { datetime: new Date(row.time).toISOString() },
+                  clock.format(row.time)
+                ),
+              ]),
+            ]
+          ),
+        ]
+      }
+
+      function renderList() {
+        return h('aside', { class: 'qc-list' }, [
+          h('div', { class: 'qc-list-head' }, [
+            h('input', {
+              type: 'search',
+              value: filter.value,
+              'aria-label': '搜索会话',
+              placeholder: '搜索会话',
+              onInput: (event) => (filter.value = event.target.value),
+            }),
+          ]),
+          chatError.value
+            ? h('p', { class: 'qc-error', role: 'alert' }, chatError.value)
+            : null,
+          loadingChats.value
+            ? h(
+                'p',
+                { class: 'qc-list-empty', role: 'status' },
+                '正在加载会话…'
+              )
+            : !filtered.value.length
+              ? h('p', { class: 'qc-list-empty' }, '没有匹配的会话。')
+              : h(
+                  'ul',
+                  filtered.value.map((chat) => {
+                    const name = nameOf(chat)
+                    const active = keyOf(chat) === selected.value
+                    return h(
+                      'li',
+                      { key: keyOf(chat) },
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          class: ['qc-list-row', active && 'is-selected'],
+                          'aria-current': active ? 'true' : undefined,
+                          onClick: () => open(chat),
+                        },
+                        [
+                          avatar(name, chat.id),
+                          h('span', { class: 'qc-list-name' }, [
+                            h('strong', name),
+                            h('small', chat.kind === 'group' ? '群聊' : '私聊'),
+                          ]),
+                          h('time', timeOf(chat.time)),
+                        ]
+                      )
+                    )
+                  })
+                ),
+        ])
+      }
+
+      function renderPanel(chat) {
+        if (!panel.value) return null
+        const { kind, target } = panel.value
+        const members = kind === 'members'
+        const title = members
+          ? '已记录成员'
+          : target.kind === 'group'
+            ? '群配置'
+            : '用户配置'
+        return h('aside', { class: 'qc-panel', 'aria-label': title }, [
+          h('header', [
+            h('h2', title),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'qc-icon',
+                'aria-label': '关闭详情',
+                onClick: () => (panel.value = null),
+              },
+              '×'
+            ),
+          ]),
+          members
+            ? h(ChatMembers, { chat, onUser: (row) => showUser(chat, row) })
+            : [
+                chat.kind === 'group' && target.kind === 'dm'
+                  ? h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'qc-back-members',
+                        onClick: () => showPanel('members', chat),
+                      },
+                      '‹ 返回已记录成员'
+                    )
+                  : null,
+                h(ChatSettings, {
+                  target,
+                  features: Features,
+                  key: JSON.stringify([target.kind, target.selfId, target.id]),
+                }),
+              ],
+        ])
+      }
+
+      function renderChat(chat) {
+        if (!chat)
+          return h('main', { class: 'qc-empty' }, '从左侧选择一个会话。')
+        const key = keyOf(chat)
+        return h('main', { class: 'qc-chat', key }, [
+          h('header', { class: 'qc-chat-head' }, [
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'qc-icon qc-back',
+                'aria-label': '返回会话列表',
+                onClick: () => open(null),
+              },
+              '‹'
+            ),
+            avatar(nameOf(chat), chat.id),
+            h('div', { class: 'qc-chat-title' }, [
+              h('strong', nameOf(chat)),
+              h('small', chat.kind === 'group' ? 'QQ群' : 'QQ 私聊'),
+            ]),
+            h('div', { class: 'qc-menu' }, [
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'qc-icon',
+                  'aria-label': '会话选项',
+                  'aria-expanded': menu.value,
+                  onClick: () => (menu.value = !menu.value),
+                },
+                '⋯'
+              ),
+              menu.value
+                ? h(
+                    'div',
+                    {
+                      class: 'qc-menu-popover',
+                      onKeydown: (event) => {
+                        if (event.key === 'Escape') menu.value = false
+                      },
+                    },
+                    [
+                      chat.kind === 'group'
+                        ? h(
+                            'button',
+                            {
+                              type: 'button',
+                              onClick: () => showPanel('members', chat),
+                            },
+                            '已记录成员'
+                          )
+                        : null,
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          onClick: () => showPanel('settings', chat),
+                        },
+                        chat.kind === 'group' ? '群配置' : '用户配置'
+                      ),
+                    ]
+                  )
+                : null,
+            ]),
+          ]),
+          h(
+            'div',
+            {
+              class: 'qc-history',
+              ref: scroller,
+              'aria-label': '聊天记录',
+              onScroll: () => {
+                if (nearBottom() && newMessages.value) {
+                  newMessages.value = false
+                  scheduleHistory()
+                }
+              },
+            },
+            [
+              hasOlder.value
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      class: 'qc-load-more',
+                      disabled: loading.value,
+                      onClick: () => history({ older: true }),
+                    },
+                    '加载更早的消息'
+                  )
+                : null,
+              !messages.value.length && !loading.value && !error.value
+                ? h('p', { class: 'qc-empty' }, '暂无聊天记录。')
+                : null,
+              !messages.value.length && loading.value
+                ? h('p', { class: 'qc-empty', role: 'status' }, '正在加载消息…')
+                : null,
+              error.value
+                ? h('p', { class: 'qc-error', role: 'alert' }, error.value)
+                : null,
+              ...messages.value.map((row, index) =>
+                h('div', { key: row.id }, renderMessage(chat, row, index))
+              ),
+            ]
+          ),
+          newMessages.value
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'qc-new-messages',
+                  onClick: () => {
+                    bottom()
+                    void history()
+                  },
+                },
+                '查看新消息 ↓'
+              )
+            : null,
+          h(HoldSend, {
+            key: `compose:${key}`,
+            chat,
+            modelValue: drafts.value[key] ?? '',
+            'onUpdate:modelValue': (value) => (drafts.value[key] = value),
+            onSent: () => {
+              if (selected.value === key) scheduleHistory()
+            },
+          }),
+        ])
+      }
+
+      return () => {
+        const layout = resolveComponent('k-layout')
+        const chat = current.value
+        return h(layout, null, {
+          default: () =>
+            h(
+              'div',
+              {
+                class: [
+                  'qc-root',
+                  chat && 'has-chat',
+                  panel.value && 'has-panel',
+                ],
+              },
+              [renderList(), renderChat(chat), chat ? renderPanel(chat) : null]
+            ),
+        })
+      }
+    },
+  })
+}
+
+export function registerChat(ctx, Features) {
+  icons.register('qqbot-chat', {
+    render: () =>
+      h(
+        'svg',
+        {
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          'stroke-width': 1.7,
+        },
+        [
+          h('path', {
+            d: 'M20.5 11.5a6.5 6.5 0 0 1-6.5 6.5H8l-4.5 2v-5.3A6.5 6.5 0 0 1 8.5 5H14a6.5 6.5 0 0 1 6.5 6.5Z',
+          }),
+          h('path', { d: 'M8.5 10.5h7m-7 3h4' }),
+        ]
+      ),
+  })
+  ctx.page({
+    path: '/qqbot-chat',
+    name: 'QQ 聊天',
+    authority: 4,
+    order: 87,
+    icon: 'qqbot-chat',
+    component: createChatPage(Features),
+  })
+}

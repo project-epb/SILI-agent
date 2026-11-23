@@ -1,3 +1,5 @@
+@import url("./chat.css");
+
 /* k-layout's .layout-main has a fixed height with overflow hidden: fill it and scroll inside. */
 .qa-root {
   height: 100%; box-sizing: border-box; overflow-y: auto; padding: 1.5rem;
