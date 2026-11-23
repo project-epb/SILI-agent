@@ -194,6 +194,22 @@ html.dark .qc-root, [data-theme="dark"] .qc-root {
   text-align: left;
 }
 .qc-author:hover { text-decoration: underline; }
+.qc-self-author {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 3px;
+  color: var(--qc-accent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.qc-self-tag {
+  flex: 0 0 auto;
+  border: 1px solid var(--qc-accent);
+  border-radius: 5px;
+  padding: 0 4px;
+  font-size: 10px;
+}
 .qc-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .qc-body a { color: var(--qc-accent); text-decoration: underline; }
 .qc-bubble > time { display: block; text-align: right; margin-top: 3px; font-size: 10px; }

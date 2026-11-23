@@ -346,6 +346,12 @@ function createChatPage(Features) {
                       name
                     )
                   : null,
+                row.isSelf
+                  ? h('div', { class: 'qc-self-author' }, [
+                      h('strong', name),
+                      h('span', { class: 'qc-self-tag' }, '本机器人'),
+                    ])
+                  : null,
                 quote
                   ? h(
                       quoteVisible ? 'button' : 'div',
