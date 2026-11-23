@@ -17,10 +17,24 @@ receive('qqbot-admin/chat-activity', (body) => {
   for (const onActivity of subscriptions) onActivity(body)
 })
 
-const keyOf = ({ selfId, channelId }) => JSON.stringify([selfId, channelId])
-const nameOf = (chat) =>
-  chat.name ||
-  `${chat.kind === 'group' ? 'QQ群' : 'QQ 用户'} · ${chat.id.slice(-6)}`
+const keyOf = ({ platform, selfId, channelId }) =>
+  JSON.stringify([platform, selfId, channelId])
+const platformLabels = new Map([
+  ['qq', 'QQ'],
+  ['qqguild', 'QQ 频道'],
+  ['discord', 'Discord'],
+  ['kook', 'KOOK'],
+  ['lark', '飞书'],
+  ['dingtalk', '钉钉'],
+  ['minecraft', 'Minecraft'],
+  ['onebot', 'OneBot'],
+])
+const platformName = (platform) => platformLabels.get(platform) || platform
+const kindName = (chat) =>
+  chat.kind === 'dm' ? '私聊' : chat.platform === 'qq' ? '群聊' : '频道'
+const descriptionOf = (chat) =>
+  `${platformName(chat.platform)} · ${kindName(chat)}`
+const nameOf = (chat) => chat.name || `${kindName(chat)} · ${chat.id.slice(-8)}`
 const clock = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit',
   minute: '2-digit',
@@ -96,6 +110,7 @@ function createChatPage(Features) {
       const chats = ref([])
       const selected = ref(null)
       const filter = ref('')
+      const platformFilter = ref('')
       const messages = ref([])
       const hasOlder = ref(false)
       const loadingChats = ref(true)
@@ -122,13 +137,19 @@ function createChatPage(Features) {
       const messageIds = computed(
         () => new Set(messages.value.map((row) => row.id))
       )
+      const platforms = computed(() =>
+        [...new Set(chats.value.map((chat) => chat.platform))].sort((a, b) =>
+          platformName(a).localeCompare(platformName(b))
+        )
+      )
       const filtered = computed(() => {
         const q = filter.value.trim().toLowerCase()
         return chats.value.filter(
           (chat) =>
-            !q ||
-            nameOf(chat).toLowerCase().includes(q) ||
-            chat.id.toLowerCase().includes(q)
+            (!platformFilter.value || chat.platform === platformFilter.value) &&
+            (!q ||
+              nameOf(chat).toLowerCase().includes(q) ||
+              chat.id.toLowerCase().includes(q))
         )
       })
 
@@ -191,6 +212,7 @@ function createChatPage(Features) {
           older && oldest ? { id: oldest.id, time: oldest.time } : undefined
         try {
           const result = await send('qqbot-admin/chat-history', {
+            platform: chat.platform,
             selfId: chat.selfId,
             channelId: chat.channelId,
             before,
@@ -317,6 +339,7 @@ function createChatPage(Features) {
         const previous = messages.value[index - 1]
         const newDay = !previous || dayOf(row.time) !== dayOf(previous.time)
         const author = chat.kind === 'group' && !row.isSelf
+        const editableAuthor = author && chat.platform === 'qq'
         const quote = row.quote
         const quoteContent = quote?.id
           ? [h('strong', quote.author), h('span', quote.preview || '消息')]
@@ -334,7 +357,7 @@ function createChatPage(Features) {
             [
               author ? avatar(name, row.userId) : null,
               h('div', { class: 'qc-bubble' }, [
-                author
+                editableAuthor
                   ? h(
                       'button',
                       {
@@ -345,7 +368,9 @@ function createChatPage(Features) {
                       },
                       name
                     )
-                  : null,
+                  : author
+                    ? h('span', { class: 'qc-author' }, name)
+                    : null,
                 row.isSelf
                   ? h('div', { class: 'qc-self-author' }, [
                       h('strong', name),
@@ -396,6 +421,27 @@ function createChatPage(Features) {
               placeholder: '搜索会话',
               onInput: (event) => (filter.value = event.target.value),
             }),
+            platforms.value.length > 1
+              ? h(
+                  'select',
+                  {
+                    value: platformFilter.value,
+                    'aria-label': '筛选平台',
+                    onChange: (event) => {
+                      const platform = event.target.value
+                      platformFilter.value = platform
+                      if (platform && current.value?.platform !== platform)
+                        open(null)
+                    },
+                  },
+                  [
+                    h('option', { value: '' }, '全部平台'),
+                    ...platforms.value.map((platform) =>
+                      h('option', { value: platform }, platformName(platform))
+                    ),
+                  ]
+                )
+              : null,
           ]),
           chatError.value
             ? h('p', { class: 'qc-error', role: 'alert' }, chatError.value)
@@ -428,7 +474,7 @@ function createChatPage(Features) {
                           avatar(name, chat.id),
                           h('span', { class: 'qc-list-name' }, [
                             h('strong', name),
-                            h('small', chat.kind === 'group' ? '群聊' : '私聊'),
+                            h('small', descriptionOf(chat)),
                           ]),
                           h('time', timeOf(chat.time)),
                         ]
@@ -504,52 +550,54 @@ function createChatPage(Features) {
             avatar(nameOf(chat), chat.id),
             h('div', { class: 'qc-chat-title' }, [
               h('strong', nameOf(chat)),
-              h('small', chat.kind === 'group' ? 'QQ群' : 'QQ 私聊'),
+              h('small', descriptionOf(chat)),
             ]),
-            h('div', { class: 'qc-menu' }, [
-              h(
-                'button',
-                {
-                  type: 'button',
-                  class: 'qc-icon',
-                  'aria-label': '会话选项',
-                  'aria-expanded': menu.value,
-                  onClick: () => (menu.value = !menu.value),
-                },
-                '⋯'
-              ),
-              menu.value
-                ? h(
-                    'div',
+            chat.platform === 'qq'
+              ? h('div', { class: 'qc-menu' }, [
+                  h(
+                    'button',
                     {
-                      class: 'qc-menu-popover',
-                      onKeydown: (event) => {
-                        if (event.key === 'Escape') menu.value = false
-                      },
+                      type: 'button',
+                      class: 'qc-icon',
+                      'aria-label': '会话选项',
+                      'aria-expanded': menu.value,
+                      onClick: () => (menu.value = !menu.value),
                     },
-                    [
-                      chat.kind === 'group'
-                        ? h(
+                    '⋯'
+                  ),
+                  menu.value
+                    ? h(
+                        'div',
+                        {
+                          class: 'qc-menu-popover',
+                          onKeydown: (event) => {
+                            if (event.key === 'Escape') menu.value = false
+                          },
+                        },
+                        [
+                          chat.kind === 'group'
+                            ? h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  onClick: () => showPanel('members', chat),
+                                },
+                                '已记录成员'
+                              )
+                            : null,
+                          h(
                             'button',
                             {
                               type: 'button',
-                              onClick: () => showPanel('members', chat),
+                              onClick: () => showPanel('settings', chat),
                             },
-                            '已记录成员'
-                          )
-                        : null,
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          onClick: () => showPanel('settings', chat),
-                        },
-                        chat.kind === 'group' ? '群配置' : '用户配置'
-                      ),
-                    ]
-                  )
-                : null,
-            ]),
+                            chat.kind === 'group' ? '群配置' : '用户配置'
+                          ),
+                        ]
+                      )
+                    : null,
+                ])
+              : null,
           ]),
           h(
             'div',
@@ -660,7 +708,7 @@ export function registerChat(ctx, Features) {
   })
   ctx.page({
     path: '/qqbot-chat',
-    name: 'QQ 聊天',
+    name: '聊天',
     authority: 4,
     order: 87,
     icon: 'qqbot-chat',

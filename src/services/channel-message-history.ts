@@ -4,6 +4,8 @@ export interface ChannelMessage {
   platform: string
   selfId: string
   channelId: string
+  channelName?: string
+  channelType?: 'channel' | 'dm' | ''
   messageId: string
   userId: string
   username: string
@@ -44,6 +46,8 @@ interface Config {
 const messageFields = {
   selfId: 'string(64)',
   channelId: 'string(128)',
+  channelName: 'string(255)',
+  channelType: 'string(16)',
   messageId: 'string(255)',
   userId: 'string(64)',
   username: 'string(255)',
@@ -148,6 +152,12 @@ export default class ChannelMessageHistory extends Service {
     const messageId = session.messageId
     const userId = outgoing ? selfId : session.userId
     const username = outgoing ? session.bot.user?.name : session.username
+    const direct = isDirectMessage(session)
+    const channelName =
+      session.event.channel?.name ||
+      session.event.message?.channel?.name ||
+      (direct && !outgoing ? username : '') ||
+      ''
     const elements = session.elements ?? []
     const content = session.content || elements.join('')
     if (platform && selfId && channelId && messageId) {
@@ -167,6 +177,8 @@ export default class ChannelMessageHistory extends Service {
           platform,
           selfId,
           channelId,
+          channelName,
+          channelType: direct ? 'dm' : 'channel',
           messageId,
           userId: userId ?? '',
           username: username ?? '',
@@ -191,12 +203,11 @@ export default class ChannelMessageHistory extends Service {
         this.storageLog.warn('record message', error)
       }
     }
-    const channel = session.event.channel?.name
-    const label = `${channel ? channel + ' ' : ''}(${platform}:${channelId})`
+    const label = `${channelName ? channelName + ' ' : ''}(${platform}:${channelId})`
     const sender = outgoing ? '' : ` | ${username || '<unknown>'} (${userId})`
     this.log.info(
       outgoing ? '↑' : '↓',
-      `${isDirectMessage(session) ? '[DM] ' : ''}${label}${sender}\n${slimMessageContent(content) || '<empty>'}`
+      `${direct ? '[DM] ' : ''}${label}${sender}\n${slimMessageContent(content) || '<empty>'}`
     )
     return true
   }

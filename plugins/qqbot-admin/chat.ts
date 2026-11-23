@@ -3,14 +3,16 @@ import { $, Context, Query, h } from 'koishi'
 import type { Console } from '@koishijs/console'
 
 import type {} from '../../src/plugins/qqbot'
+import { GUARDED_PLATFORMS, isServed } from '../../src/plugins/qqbot/gate'
 import type { ChannelMessage } from '../../src/services/channel-message-history'
 
-const PLATFORM = 'qq'
+const QQ_PLATFORM = 'qq'
 const PRIVATE_PREFIX = 'private:'
 const PAGE_SIZE = 60
 const MAX_MESSAGE_LENGTH = 2000
 
 interface ChatTarget {
+  platform: string
   selfId: string
   channelId: string
 }
@@ -138,8 +140,11 @@ declare module '@koishijs/console' {
 }
 
 function targetOf(target: ChatTarget) {
-  const { selfId, channelId } = target ?? {}
+  const { platform = QQ_PLATFORM, selfId, channelId } = target ?? {}
   if (
+    typeof platform !== 'string' ||
+    !platform ||
+    platform.length > 32 ||
     typeof selfId !== 'string' ||
     !selfId ||
     selfId.length > 64 ||
@@ -149,8 +154,11 @@ function targetOf(target: ChatTarget) {
   ) {
     throw new Error('会话无效。')
   }
-  return { platform: PLATFORM, selfId, channelId }
+  return { platform, selfId, channelId }
 }
+
+const chatKey = ({ platform, selfId, channelId }: ChatTarget) =>
+  JSON.stringify([platform, selfId, channelId])
 
 export function applyChat(ctx: Context, authority: number) {
   // Koishi may resolve the console service through a second copy of the package.
@@ -162,11 +170,10 @@ export function applyChat(ctx: Context, authority: number) {
   ctx.on(
     'channel-message-recorded',
     ({ platform, selfId, channelId, time }) => {
-      if (platform !== PLATFORM) return
       void console
         .broadcast(
           'qqbot-admin/chat-activity',
-          { selfId, channelId, time: time.getTime() },
+          { platform, selfId, channelId, time: time.getTime() },
           auth
         )
         .catch((error) =>
@@ -181,30 +188,54 @@ export function applyChat(ctx: Context, authority: number) {
     'qqbot-admin/chats',
     async () => {
       const activity = await ctx.database
-        .select('channel_message', { platform: PLATFORM })
-        .groupBy(['selfId', 'channelId'], { lastAt: (row) => $.max(row.time) })
+        .select('channel_message', { platform: { $ne: '' } })
+        .groupBy(
+          ['platform', 'selfId', 'channelId', 'channelName', 'channelType'],
+          { lastAt: (row) => $.max(row.time) }
+        )
         .orderBy('lastAt', 'desc')
         .execute()
       if (!activity.length) return []
+      const conversations = new Map<string, Conversation>()
       const groupIds = new Set<string>()
       const userIds = new Set<string>()
       for (const row of activity) {
-        if (row.channelId.startsWith(PRIVATE_PREFIX))
-          userIds.add(row.channelId.slice(PRIVATE_PREFIX.length))
-        else groupIds.add(row.channelId)
+        const key = chatKey(row)
+        const existing = conversations.get(key)
+        if (existing) {
+          if (!existing.name && row.channelName) existing.name = row.channelName
+          if (row.channelType === 'dm') existing.kind = 'dm'
+          continue
+        }
+        const { platform, selfId, channelId } = row
+        const hasPrivatePrefix = channelId.startsWith(PRIVATE_PREFIX)
+        const direct = hasPrivatePrefix || row.channelType === 'dm'
+        const id = hasPrivatePrefix
+          ? channelId.slice(PRIVATE_PREFIX.length)
+          : channelId
+        conversations.set(key, {
+          platform,
+          selfId,
+          channelId,
+          id,
+          kind: direct ? 'dm' : 'group',
+          name: row.channelName ?? '',
+          time: new Date(row.lastAt).getTime(),
+        })
+        if (platform === QQ_PLATFORM) (direct ? userIds : groupIds).add(id)
       }
       const [groups, users] = await Promise.all([
         groupIds.size
           ? ctx.database.get(
               'qqbot_channel',
-              { platform: PLATFORM, id: [...groupIds] },
+              { platform: QQ_PLATFORM, id: [...groupIds] },
               ['selfId', 'id', 'name']
             )
           : [],
         userIds.size
           ? ctx.database.get(
               'qqbot_user',
-              { platform: PLATFORM, id: [...userIds] },
+              { platform: QQ_PLATFORM, id: [...userIds] },
               ['selfId', 'id', 'name']
             )
           : [],
@@ -219,20 +250,13 @@ export function applyChat(ctx: Context, authority: number) {
           (row) => [JSON.stringify([row.selfId, row.id]), row.name] as const
         )
       )
-      return activity.map(({ selfId, channelId, lastAt }): Conversation => {
-        const direct = channelId.startsWith(PRIVATE_PREFIX)
-        const id = direct ? channelId.slice(PRIVATE_PREFIX.length) : channelId
-        const name =
-          (direct ? userNames : groupNames).get(JSON.stringify([selfId, id])) ??
-          ''
-        return {
-          selfId,
-          channelId,
-          id,
-          kind: direct ? 'dm' : 'group',
-          name,
-          time: new Date(lastAt).getTime(),
+      return [...conversations.values()].map((chat) => {
+        if (chat.platform === QQ_PLATFORM) {
+          const names = chat.kind === 'dm' ? userNames : groupNames
+          chat.name =
+            names.get(JSON.stringify([chat.selfId, chat.id])) || chat.name
         }
+        return chat
       })
     },
     auth
@@ -310,45 +334,65 @@ export function applyChat(ctx: Context, authority: number) {
   console.addListener(
     'qqbot-admin/chat-send',
     async (payload) => {
-      const { selfId, channelId } = targetOf(payload)
+      const scope = targetOf(payload)
+      const { platform, selfId, channelId } = scope
       const content =
         typeof payload.text === 'string' ? payload.text.trim() : ''
       if (!content || content.length > MAX_MESSAGE_LENGTH) {
         throw new Error('请输入 1 至 2000 个字符的消息。')
       }
       const bot = ctx.bots.find(
-        (bot) => bot.platform === PLATFORM && bot.selfId === selfId
+        (bot) => bot.platform === platform && bot.selfId === selfId
       )
-      if (!bot) throw new Error('QQ 机器人当前不可用。')
-      const direct = channelId.startsWith(PRIVATE_PREFIX)
-      const userId = channelId.slice(PRIVATE_PREFIX.length)
-      if (direct) {
-        if (!ctx.qqbot.state.isDmAllowed(PLATFORM, selfId, userId))
-          throw new Error('此私聊未激活。')
-      } else {
+      if (!bot) throw new Error('该会话的机器人当前不可用。')
+      const [record] = await ctx.database.get('channel_message', scope, {
+        fields: ['channelType'],
+        sort: { time: 'desc', messageId: 'desc' },
+        limit: 1,
+      })
+      if (!record) throw new Error('找不到该会话的聊天记录。')
+      const hasPrivatePrefix = channelId.startsWith(PRIVATE_PREFIX)
+      const direct = hasPrivatePrefix || record.channelType === 'dm'
+      let userId = hasPrivatePrefix
+        ? channelId.slice(PRIVATE_PREFIX.length)
+        : ''
+      if (direct && !userId && GUARDED_PLATFORMS.has(platform)) {
+        const [incoming] = await ctx.database.get(
+          'channel_message',
+          { ...scope, isSelf: false },
+          {
+            fields: ['userId'],
+            sort: { time: 'desc', messageId: 'desc' },
+            limit: 1,
+          }
+        )
+        userId = incoming?.userId ?? ''
+      }
+      if (!isServed({ ...scope, isDirect: direct, userId }, ctx.qqbot.state)) {
+        throw new Error('此会话当前不可发送。')
+      }
+      if (platform === QQ_PLATFORM && !direct) {
         const [group] = await ctx.database.get(
           'qqbot_channel',
-          { platform: PLATFORM, selfId, id: channelId },
+          { platform, selfId, id: channelId },
           ['allowProactive', 'removedAt', 'recvRejected']
         )
-        if (
-          !ctx.qqbot.state.isGroupActive(PLATFORM, selfId, channelId) ||
-          !group ||
-          group.removedAt ||
-          group.recvRejected
-        ) {
+        if (!group || group.removedAt || group.recvRejected) {
           throw new Error('此群当前不可发送。')
         }
         if (!group.allowProactive) throw new Error('此群未允许机器人主动发送。')
       }
       const text = h.text(content)
       try {
-        const sent = direct
-          ? await bot.sendPrivateMessage(userId, text)
-          : await bot.sendMessage(channelId, text)
+        const sent =
+          platform === QQ_PLATFORM && direct && userId
+            ? await bot.sendPrivateMessage(userId, text)
+            : await bot.sendMessage(channelId, text)
         if (!sent.length) throw new Error('No message ID returned.')
       } catch {
-        throw new Error('QQ 未确认发送成功。请先查看聊天记录，再决定是否重试。')
+        throw new Error(
+          '平台未确认发送成功。请先查看聊天记录，再决定是否重试。'
+        )
       }
       return { ok: true } as const
     },
