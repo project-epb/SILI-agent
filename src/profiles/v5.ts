@@ -1,15 +1,13 @@
 /**
- * v5 profile: the official QQ bot replaces OneBot; every other adapter keeps
- * serving. Plugins come back in phases, see
- * docs/superpowers/specs/2026-11-13-sili-profiles-design.md. Phases 1 and 2
- * are in; phase-3 plugins (OneBot-specific APIs) are not installed.
+ * v5 runs the official QQ bot alongside the other adapters. OneBot
+ * handles legacy binding during the migration window.
  *
  * Access control (src/plugins/qqbot): every ordinary plugin is installed in
  * the served context, so unactivated groups, stranger DMs and OneBot never
  * reach it. Only adapters, the qqbot service, plugin-admin (`assign`) and
  * plugin-bind sit outside. Keep new plugins inside `served`.
  */
-import { App, Context, Session } from 'koishi'
+import { App, Context, Session, h } from 'koishi'
 
 import process from 'node:process'
 
@@ -18,6 +16,7 @@ import { logProcessErrors } from '@/bootstrap'
 import CommandPermissions from '@/modules/CommandPermissions'
 import FallbackHandler from '@/modules/FallbackHandler'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
+import MoegirlGroupUtils from '@/modules/MoegirlGroupUtils'
 import PlainTextAt from '@/modules/PlainTextAt'
 import PluginFeature from '@/plugins/feature'
 import PluginMute from '@/plugins/mute'
@@ -47,6 +46,7 @@ import PatchCallme from '~/callme'
 import PluginCanIUse from '~/caniuse'
 import PluginComfyUI from '~/comfy-ui'
 import PluginDatabaseAdmin from '~/dbadmin'
+import { PluginDebug } from '~/debug'
 import PluginDice from '~/dice'
 import PluginGelbooru from '~/gelbooru'
 import PluginGithub from '~/github'
@@ -69,11 +69,13 @@ import QQBotService, {
 } from '~/qqbot'
 import PluginQueue from '~/queue'
 import PluginReboot from '~/reboot'
+import PluginRepeater from '~/repeater'
 import PluginSensitiveFilter from '~/sensitive-words-filter'
 import PluginSpawn from '~/spawn'
 import PluginSticker from '~/sticker'
 import PluginStickerPool from '~/sticker-pool'
 import PluginToImage from '~/to-image'
+import PluginVersion from '~/version'
 import PluginWebShot from '~/webshot'
 import PluginWhoAsked from '~/who-asked'
 import PluginWikiJoinVerify, {
@@ -238,7 +240,7 @@ function install(app: App) {
       })
     }
 
-    // Minecraft 与 QQ 群互通（MinecraftConnect）依赖 OneBot，属于阶段三，这里只装适配器
+    // The Minecraft adapter also exposes server commands independently of the chat relay.
     if (env.MINECRAFT_SERVER_NAME && env.MINECRAFT_SERVER_URL) {
       ctx.plugin(AdapterMinecraft, {
         bots: [
@@ -419,6 +421,25 @@ function install(app: App) {
     ctx.plugin(PatchCallme)
     ctx.plugin(PiggybackService)
     ctx.plugin(PluginDatabaseAdmin)
+    ctx.plugin(PluginDebug)
+    ctx.plugin(PluginVersion)
+    ctx.plugin(MoegirlGroupUtils, {
+      groupIds: (env.CHANNEL_QQ_MOEGIRL_BFANS ?? '').split('|').map((id) => id.trim()).filter(Boolean),
+      keywords: (env.MOEGIRL_KEYWORDS_BLACKLIST ?? '').split('\n').map((pattern) => pattern.trim()).filter(Boolean),
+    })
+    ctx.channel().plugin(PluginRepeater, {
+      interruptTexts: [
+        'No，不要再复读了！',
+        '🤚我说婷婷，你们搞复读，不讲武德。',
+        '那么就到此为止吧，再复读就不礼貌了。',
+        '🤚很抱歉打扰大家的复读，水群不要忘记多喝热水哟~',
+      ],
+      queryTexts: [
+        (_state, breaker) => `${h.at(breaker.userId)}在？为什么打断复读？`,
+        (_state, breaker) =>
+          `${h.at(breaker.userId)} 你还要继续复读哟，怎么停下来了。`,
+      ],
+    })
     ctx.plugin(PluginHomo)
     ctx.plugin(PluginReboot)
     ctx.plugin(PluginSensitiveFilter)

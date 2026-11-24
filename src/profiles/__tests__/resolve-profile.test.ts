@@ -1,27 +1,33 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_PROFILE, resolveProfileName } from '../index'
+import { resolveProfileName } from '../index'
 
 describe('resolveProfileName', () => {
   it('falls back to the default profile', () => {
-    expect(resolveProfileName([], {})).toBe(DEFAULT_PROFILE)
+    expect(resolveProfileName([], {})).toBe('v5')
   })
 
   it('reads SILI_PROFILE', () => {
-    expect(resolveProfileName([], { SILI_PROFILE: 'v4' })).toBe('v4')
+    expect(resolveProfileName([], { SILI_PROFILE: 'v5' })).toBe('v5')
   })
 
   it('prefers --profile over SILI_PROFILE', () => {
     expect(
-      resolveProfileName(['bun', 'index.ts', '--profile=v4'], {
+      resolveProfileName(['bun', 'index.ts', '--profile=v5'], {
         SILI_PROFILE: 'nope',
       })
-    ).toBe('v4')
+    ).toBe('v5')
   })
 
   it('rejects unknown names and lists the available ones', () => {
     expect(() => resolveProfileName([], { SILI_PROFILE: 'v3' })).toThrow(
-      /Unknown SILI profile "v3"\. Available: v4, v5/
+      /Unknown SILI profile "v3"\. Available: v5/
+    )
+  })
+
+  it('rejects the retired v4 profile', () => {
+    expect(() => resolveProfileName([], { SILI_PROFILE: 'v4' })).toThrow(
+      /Unknown SILI profile "v4"/
     )
   })
 

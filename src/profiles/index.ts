@@ -5,13 +5,12 @@ import type { Profile } from './types'
  * input), so only the selected profile's dependencies get loaded.
  */
 export const PROFILES = {
-  v4: () => import('./v4'),
   v5: () => import('./v5'),
 } satisfies Record<string, () => Promise<{ default: Profile }>>
 
 export type ProfileName = keyof typeof PROFILES
 
-export const DEFAULT_PROFILE: ProfileName = 'v4'
+export const DEFAULT_PROFILE: ProfileName = 'v5'
 
 /**
  * Priority: `--profile=<name>` argument, then `SILI_PROFILE`, then the default.
