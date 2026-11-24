@@ -8,6 +8,7 @@ import process from 'node:process'
 
 import { createApp, loadEnv } from '@/bootstrap'
 import { loadProfile, resolveProfileName } from '@/profiles'
+import { installSQLiteBackup } from '@/services/sqlite-backup'
 
 async function main() {
   // Read the profile name before loadEnv(): it loads .env.* with
@@ -24,6 +25,7 @@ async function main() {
 
   /** 启动应用程序 */
   await app.start()
+  installSQLiteBackup(app)
   // Deployment treats this exact line as the readiness signal; keep it verbatim.
   logger.info('🌈', 'SILI启动成功~')
 }

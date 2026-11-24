@@ -15,13 +15,11 @@ import { App } from 'koishi'
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, resolve } from 'node:path'
 
-import { loadEnv } from '@/bootstrap'
+import { installDatabase, loadEnv } from '@/bootstrap'
 import {
   assetsS3Config,
   stickerPoolConfig,
 } from '@/profiles/shared/plugin-configs'
-
-import PluginMongo from '@koishijs/plugin-database-mongo'
 
 import PluginAssetsS3 from 'koishi-plugin-assets-s3'
 
@@ -53,11 +51,7 @@ const config = stickerPoolConfig(env)
 if (!config) throw new Error('no deepseek provider configured')
 
 const app = new App()
-app.plugin(PluginMongo, {
-  host: env.DB_MONGO_HOST,
-  port: Number(env.DB_MONGO_PORT),
-  database: env.DB_MONGO_DATABASE,
-})
+installDatabase(app, env)
 app.plugin(PluginHTTP)
 app.plugin(PluginAssetsS3, assetsS3Config(env))
 app.plugin(StickerPool, config)
