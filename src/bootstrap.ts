@@ -6,12 +6,14 @@ import { config as setupDotEnv } from 'dotenv'
 
 import { App } from 'koishi'
 
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
 
 import type { Profile } from '@/profiles/types'
 
 import PluginMongo from '@koishijs/plugin-database-mongo'
+import PluginSQLite from '@koishijs/plugin-database-sqlite'
 import PluginServer from '@koishijs/plugin-server'
 
 /**
@@ -70,7 +72,20 @@ export function createApp(profile: Profile, env = process.env) {
     selfUrl: env.KOISHI_SELF_URL,
   })
 
-  /** 安装数据库 */
+  installDatabase(app, env)
+  return app
+}
+
+export function installDatabase(app: App, env = process.env) {
+  const backend = env.SILI_DATABASE || 'mongo'
+  if (backend === 'sqlite') {
+    const path = resolve(app.baseDir, 'data/sili.sqlite')
+    if (!existsSync(path))
+      throw new Error('SILI SQLite migration file is missing')
+    app.plugin(PluginSQLite, { path })
+    return
+  }
+  if (backend !== 'mongo') throw new Error('Unknown SILI_DATABASE backend')
   app.plugin(PluginMongo, {
     host: env.DB_MONGO_HOST,
     port: Number(env.DB_MONGO_PORT),
@@ -78,6 +93,4 @@ export function createApp(profile: Profile, env = process.env) {
     // password: env.DB_MONGO_PASSWORD,
     database: env.DB_MONGO_DATABASE,
   })
-
-  return app
 }

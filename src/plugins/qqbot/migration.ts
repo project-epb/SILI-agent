@@ -97,7 +97,11 @@ export class MigrationFeatures {
   ) {
     this.logger = ctx.logger('qqbot-migration')
     // Declared so old rows can be read; nothing in v5 writes them.
-    ctx.model.extend('channel', { enable: 'list', disable: 'list' } as any)
+    // Legacy switch names can contain commas. Keep each entry intact on SQLite.
+    ctx.model.extend('channel', {
+      enable: { type: 'json', initial: [] },
+      disable: { type: 'json', initial: [] },
+    } as any)
     this.setupBind()
     this.setupMenu()
     this.setupGroupMigrate()

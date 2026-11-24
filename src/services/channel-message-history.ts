@@ -105,7 +105,8 @@ function isDuplicate(error: unknown) {
   return (
     error instanceof Error &&
     (('code' in error && error.code === 'duplicate-entry') ||
-      error.message === 'duplicate-entry')
+      error.message === 'duplicate-entry' ||
+      error.message.startsWith('UNIQUE constraint failed: channel_message.'))
   )
 }
 
@@ -186,6 +187,7 @@ export default class ChannelMessageHistory extends Service {
           username: username ?? '',
           isBot: outgoing || userId === selfId || !!author?.bot,
           isSelf: outgoing || userId === selfId,
+          recalled: false,
           content,
           mentions,
           quoteId:
@@ -319,7 +321,7 @@ export default class ChannelMessageHistory extends Service {
       {
         ...scopeOf(session),
         isSelf: false,
-        mentions: { $el: { $eq: session.userId } },
+        mentions: { $el: session.userId },
         time: { $gt: since },
       },
       { limit: 1, sort: newestFirst }
