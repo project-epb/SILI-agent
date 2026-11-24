@@ -14,8 +14,9 @@ import type { Profile } from '@/profiles/types'
 
 import PluginMongo from '@koishijs/plugin-database-mongo'
 import PluginSQLite from '@koishijs/plugin-database-sqlite'
-import NativeSQLite from '@sili/database-sqlite-native'
 import PluginServer from '@koishijs/plugin-server'
+
+import NativeSQLite from '@sili/database-sqlite-native'
 
 /**
  * `.env.production` / `.env.development` and `.env.local` are loaded with

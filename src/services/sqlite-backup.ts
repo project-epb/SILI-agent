@@ -12,6 +12,7 @@ import {
 import { dirname, join } from 'node:path'
 
 import type SQLite from '@koishijs/plugin-database-sqlite'
+
 import NativeSQLite from '@sili/database-sqlite-native'
 
 export function installSQLiteBackup(app: App) {
