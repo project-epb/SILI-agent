@@ -4,7 +4,7 @@ import { MONO_FONT } from '@/services/html/fonts'
 
 import BasePlugin from '~/_boilerplate'
 
-import OneBotBot from 'koishi-plugin-adapter-onebot'
+import type OneBotBot from 'koishi-plugin-adapter-onebot'
 
 import pkgInfo from '../../package.json'
 
@@ -248,9 +248,12 @@ export default class PluginVersion extends BasePlugin {
       const activePlugins = Array.from(ctx.registry.entries())
         .filter(([_, scope]) => scope.status === 2) // ACTIVE
         .map(([_, scope]) => scope.name || '(anonymous)')
-      const onebotVersionInfo = await (
-        ctx.root.bots.find((i) => i.platform === 'onebot') as OneBotBot<Context>
-      )?.internal.getVersionInfo()
+      const onebot = ctx.root.bots.find((bot) => bot.platform === 'onebot') as
+        | OneBotBot<Context>
+        | undefined
+      const onebotVersionInfo = await onebot?.internal
+        .getVersionInfo()
+        .catch(() => null)
 
       const runtime = process.versions.bun
         ? `Bun v${process.versions.bun} (Node ${process.versions.node})`

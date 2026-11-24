@@ -83,6 +83,17 @@ export function checkUserHasRole(
   )
 }
 
+/** The QQ adapter exposes some bot flags only on the original author payload. */
+export function isBotMessage(session: Session): boolean {
+  const raw = session.event?._data as
+    | { d?: { author?: { bot?: boolean } } }
+    | undefined
+  return (
+    session.userId === session.selfId ||
+    !!(raw?.d?.author?.bot ?? session.event?.user?.isBot)
+  )
+}
+
 export async function sendMessageBySession(
   session: Session,
   message: Fragment,

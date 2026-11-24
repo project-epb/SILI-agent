@@ -1,4 +1,6 @@
-import { Context, Dict, Random, Session, h } from 'koishi'
+import { Context, Dict, Random, Session } from 'koishi'
+
+import { isBotMessage } from '@/utils/formatSession'
 
 import BasePlugin from './_boilerplate'
 
@@ -102,18 +104,16 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
     super(ctx, config, 'repeater')
 
     this.builtinTextSet = new Set(
-      [
-        ...(config.interruptTexts ?? []),
-        ...(config.queryTexts ?? []),
-      ].filter((t): t is string => typeof t === 'string')
+      [...(config.interruptTexts ?? []), ...(config.queryTexts ?? [])].filter(
+        (t): t is string => typeof t === 'string'
+      )
     )
 
     this.handleRepeatChain()
-    this.listenQqEmoji()
   }
 
   private getStatusKey(session: Session): string {
-    return `${session.platform}:${session.channelId}`
+    return `${session.platform}:${session.selfId}:${session.channelId}`
   }
 
   private makeState(content: string, userId: string): RepeatState {
@@ -141,7 +141,8 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
   }
 
   private repeatProbAt(state: RepeatState): number {
-    if (this.config.computeRepeatProb) return this.config.computeRepeatProb(state)
+    if (this.config.computeRepeatProb)
+      return this.config.computeRepeatProb(state)
     const offset = state.times - this.config.repeatStartAt
     return Math.min(
       1,
@@ -187,9 +188,13 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
   /** Advance the per-channel repeat / interrupt / query state machine for one message. */
   private async processRepeatChain(session: Session): Promise<void> {
     const { content, userId } = session
-    if (!content || !userId) return
+    if (!content || !userId || isBotMessage(session)) return
 
     const key = this.getStatusKey(session)
+    if (session.elements?.some((element) => element.type !== 'text')) {
+      this.statusStore.delete(key)
+      return
+    }
     const state = this.statusStore.get(key)
 
     if (!state) {
@@ -246,59 +251,5 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
         this.statusStore.delete(key)
       }
     }
-  }
-
-  // 一些能够接龙的 QQ 表情
-  private listenQqEmoji(): void {
-    const DRAGONS = [392, 393, 394]
-    const TRAINS = [419, 420, 421]
-    const SNAKES = [429, 430, 431]
-
-    this.ctx.platform('onebot').middleware(async (session, next) => {
-      // Post-processing middleware: run downstream first, then maybe continue an emoji chain.
-      // Forward the downstream result so a returned Fragment isn't swallowed.
-      const result = await next()
-
-      const faces = h.select(session.elements, 'face')
-
-      if (faces.length === 1) {
-        const faceId = parseInt(faces[0].attrs.id)
-
-        // 龙 自动接下一个
-        if (DRAGONS.includes(faceId)) {
-          session.send(
-            h('face', { ...faces[0].attrs, id: Math.min(394, faceId + 1) })
-          )
-        }
-        // TODO: 火车头 不确定机制
-        else if (TRAINS.includes(faceId)) {
-          session.send(
-            h('face', {
-              ...faces[0].attrs /** id: Math.min(421, faceId + 1) */,
-            })
-          )
-        }
-        // 蛇年接下一个
-        else if (SNAKES.includes(faceId)) {
-          if (faceId === 431 && Math.random() > 0.9) {
-            // 隐藏款，概率10%
-            session.send(
-              h('face', {
-                ...faces[0].attrs,
-                id: 432,
-              })
-            )
-          } else {
-            session.send(
-              h('face', {
-                ...faces[0].attrs,
-                id: Math.min(431, faceId + 1),
-              })
-            )
-          }
-        }
-      }
-      return result
-    })
   }
 }

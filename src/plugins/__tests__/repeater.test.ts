@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import PluginRepeater, { type Config, type RepeatState } from '../repeater'
+
 // koishi 包顶层会拉 loader 等运行时副作用，在 vitest 下加载失败；
 // 测试只需要 BasePlugin 用到的 snakeCase + plugin 自身用到的 Random.pick，
 // 其他全 stub 掉即可。
@@ -15,14 +17,8 @@ vi.mock('koishi', () => {
       // 让 pickText 的结果可预测。
       pick: <T>(arr: readonly T[]): T => arr[0],
     },
-    h: Object.assign(
-      (tag: string, attrs: Record<string, unknown>) => ({ tag, attrs }),
-      { select: () => [] }
-    ),
   }
 })
-
-import PluginRepeater, { type Config, type RepeatState } from '../repeater'
 
 type MiddlewareFn = (
   session: any,
@@ -31,7 +27,6 @@ type MiddlewareFn = (
 
 function makeMockCtx() {
   const middlewares: MiddlewareFn[] = []
-  const platformMiddlewares: Record<string, MiddlewareFn[]> = {}
   const ctx: any = {
     logger: () => ({
       info: () => {},
@@ -44,19 +39,14 @@ function makeMockCtx() {
       middlewares.push(fn)
       return () => {}
     },
-    platform: (name: string) => ({
-      middleware: (fn: MiddlewareFn) => {
-        ;(platformMiddlewares[name] ||= []).push(fn)
-        return () => {}
-      },
-    }),
   }
-  return { ctx, middlewares, platformMiddlewares }
+  return { ctx, middlewares }
 }
 
 interface SessionInit {
   content: string
   userId: string
+  selfId?: string
   channelId?: string
   platform?: string
 }
@@ -65,6 +55,7 @@ function makeSession(init: SessionInit) {
   const sent: any[] = []
   const session: any = {
     platform: init.platform ?? 'test',
+    selfId: init.selfId ?? 'bot',
     channelId: init.channelId ?? 'ch1',
     userId: init.userId,
     content: init.content,
@@ -101,8 +92,6 @@ function setup(config: Config = {}): {
 } {
   const { ctx, middlewares } = makeMockCtx()
   const plugin = new PluginRepeater(ctx, config)
-  // 第一个注册的 middleware 是 handleRepeatChain（QQ emoji 走 platform 路径，
-  // 不会进 ctx.middleware 总队列）
   return { mw: middlewares[0], plugin }
 }
 
@@ -137,6 +126,37 @@ describe('PluginRepeater', () => {
       ])
       expect(sent).toEqual([])
     })
+  })
+
+  it('isolates repeat chains by bot in the same channel', async () => {
+    const { mw } = setup()
+    await runChain(mw, [
+      ['草', 'A'],
+      ['草', 'B'],
+      ['草', 'C'],
+    ])
+
+    const other = makeSession({ content: '草', userId: 'D', selfId: 'other' })
+    await fire(mw, other.session)
+    expect(other.sent).toEqual([])
+
+    const original = makeSession({ content: '草', userId: 'D' })
+    await fire(mw, original.session)
+    expect(original.sent).toEqual(['草'])
+  })
+
+  it('breaks a text chain when a message contains an image', async () => {
+    const { mw } = setup()
+    await runChain(mw, [
+      ['草', 'A'],
+      ['草', 'B'],
+      ['草', 'C'],
+    ])
+    const image = makeSession({ content: '草', userId: 'D' })
+    image.session.elements = [{ type: 'img' }]
+    await fire(mw, image.session)
+    expect(image.sent).toEqual([])
+    expect(await runChain(mw, [['草', 'E']])).toEqual([])
   })
 
   describe('跟读分支', () => {

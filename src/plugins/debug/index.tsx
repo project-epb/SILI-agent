@@ -3,11 +3,8 @@ import { Context } from 'koishi'
 import BasePlugin from '~/_boilerplate'
 
 import DebugEvent from './event'
-import DebugFace from './face'
-import DebugHistory from './history'
 import DebugInspect from './inspect'
 import DebugPiggyback from './piggyback'
-import DebugReaction from './reaction'
 import DebugMarkdown from './render-markdown'
 
 /**
@@ -22,11 +19,8 @@ export class PluginDebug extends BasePlugin {
     ctx.command('debug', 'SILI debug commands', { authority: 3, hidden: true })
 
     ctx.plugin(DebugPiggyback)
-    ctx.plugin(DebugFace)
-    ctx.plugin(DebugReaction)
     ctx.plugin(DebugInspect)
     ctx.plugin(DebugMarkdown)
-    ctx.plugin(DebugHistory)
     ctx.plugin(DebugEvent)
   }
 }

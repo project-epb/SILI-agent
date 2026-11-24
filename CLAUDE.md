@@ -2,11 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-SILI 是基于 [Koishi](https://koishi.chat/) 的群聊机器人，主要部署在 QQ（NapCat OneBot 适配器），也支持 Discord / KOOK / DingTalk / 卫星等。
+SILI 是基于 [Koishi](https://koishi.chat/) 的群聊机器人，主要部署在官方 QQ bot，也支持 Discord / KOOK / DingTalk / 卫星等。
 
 Runtime: **bun**（dev 与生产统一）。bun 同时是包管理器和运行时——`bun ./src/index.ts` 直接跑 TS/JSX，取代了过去的 tsx。`engines.node >= 24.11` 说的是所需的 Node API 兼容级别（部分原生 API 依赖；bun 自带 CJS 兼容运行时，koishi 的 CJS loader 才跑得起来），**不代表要装 Node —— 容器里没有 node 二进制**，`process.versions.node` 由 bun 的兼容层提供。JSX 经 `src/satori-jsx/` 的 shim 暴露具名导出（satori 是 default-only ESM，严格 loader 直接 import 具名会失败）。
 
-**SILI 命令前缀按部署不同**：生产环境是 `!`、测试 / 本地 dev 是 `;`。本文档示例命令一律不带前缀（写 `chat` / `debug.history` / `llm.compact`），按你所在环境补上即可。
+**SILI 命令前缀按部署不同**：生产环境是 `!`、测试 / 本地 dev 是 `;`。本文档示例命令一律不带前缀（写 `chat` / `debug.event` / `llm.compact`），按你所在环境补上即可。
 
 ## Scripts
 
@@ -47,8 +47,8 @@ JSX 不是 React。`tsconfig.json` 里 `"jsxImportSource": "@satorijs/element"` 
 ```
 src/
 ├── index.ts            入口：解析 profile → 加载 env → 创建 app → 安装 profile → 启动
-├── bootstrap.ts        env 加载、App 与核心服务（server、mongo），所有 profile 共用
-├── profiles/           v4（OneBot 时代，回退用）、v5（官方 QQ bot）；shared/ 放多个 profile 共用的插件配置
+├── bootstrap.ts        env 加载、App 与核心服务（server、数据库）
+├── profiles/           v5 安装入口、插件配置和公共初始化
 ├── adapters/           自研适配器（minecraft）
 ├── modules/            进程级辅助（logging / firewall / fallback handler …）
 ├── services/           对外注入式服务（html 渲染、QQ NT emoji reaction、piggyback…）
@@ -62,9 +62,9 @@ src/
     └── ...             （每个文件就是一个 koishi 命令插件）
 ```
 
-加新功能 = 在 `src/plugins/` 加文件（或目录） + 在要启用它的 profile（`src/profiles/v4.ts` / `v5.ts`）里 `ctx.plugin(YourPlugin)` 注册。
+在 `src/plugins/` 实现插件，在 `src/profiles/v5.ts` 的 `served` 上下文注册。该上下文负责官方 QQ 的群与私聊访问控制。公共命令和账户绑定入口由 QQ 守卫单独放行。入群广告过滤挂在根上下文，收到官方 QQ 入群事件即可运行。
 
-**Profile**：同一时间只运行一个。选择顺序：启动参数 `--profile=<name>` > 环境变量 `SILI_PROFILE` > 默认 `v4`。`SILI_PROFILE` 不要写进 `.env.production` / `.env.development` / `.env.local`——它们以 override 方式加载，会覆盖 compose 传入的值。`v4` 是原 `index.ts` 的原样搬迁，插件注册顺序关系到前置中间件的先后，不要调整。`v5` 按阶段装回插件，设计见 `docs/superpowers/specs/2026-11-13-sili-profiles-design.md`。`v5` 的官方 QQ bot 有访问控制（`src/plugins/qqbot/`）：未激活的群和陌生私聊一律静默。**`v5` 新增插件必须装进 `v5.ts` 里的 `served` 上下文**，装在它外面的插件会被未激活的群和陌生人触发。
+唯一 profile 为 `v5`。入口按 `--profile=v5`、`SILI_PROFILE=v5`、默认值的顺序读取，之后才加载 dotenv。NapCat 在配置了 `ONEBOT_SELFID` 的实例中用于旧账号绑定。
 
 ## LLM 插件特别说明
 

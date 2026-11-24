@@ -1,180 +1,261 @@
-/**
- * @name MgpGroupUtils
- * @desc 内部插件，萌娘百科B站粉丝群工具箱
- */
-import { Context, Session, Time, h, segment } from 'koishi'
+import { $, Context, Session, Time, h } from 'koishi'
+
+import { isGroupAdmin } from '@/modules/CommandPermissions'
+import { isBotMessage } from '@/utils/formatSession'
 
 import BasePlugin from '~/_boilerplate'
-import { checkUserHasRole } from '@/utils/formatSession'
 
-interface SpamLog {
-  time: string
-  match: string[]
-  content: string
-  channelId: string
+interface Config {
+  groupIds: string[]
+  keywords: string[]
 }
+
+interface ModerationEntry {
+  id: number
+  selfId: string
+  channelId: string
+  messageId: string
+  userId: string
+  keyword: string
+  time: Date
+}
+
 declare module 'koishi' {
-  export interface User {
-    mgpGroupSpamLogs: SpamLog[]
+  interface Tables {
+    moegirl_moderation: ModerationEntry
   }
 }
 
-export default class MoegirlGroupUtils extends BasePlugin {
-  // Constants
-  readonly MUTE_DURATION = [0, 10 * Time.minute, 2 * Time.hour, 1 * Time.day]
-  private KEYWORDS_BLACKLIST: RegExp[] = []
-  readonly COMMAND_WHITELIST = [
-    'chat',
-    'dialogue',
-    'dice',
-    'help',
-    'ping',
-    'pixiv',
-    'profile',
-    'teach',
-    'wiki',
-    'youdao',
-  ]
+const LOG_GROUP = '萌娘百科官方群组群管理沟通群'
+const COMMAND_WHITELIST = [
+  'chat',
+  'dialogue',
+  'dice',
+  'help',
+  'ping',
+  'pixiv',
+  'profile',
+  'teach',
+  'wiki',
+  'youdao',
+]
+const MUTE_DURATIONS = [
+  10 * Time.minute,
+  2 * Time.hour,
+  Time.day,
+  30 * Time.day,
+]
 
-  constructor(public ctx: Context) {
-    super(ctx, {}, 'mgp-utils')
+export default class MoegirlGroupUtils extends BasePlugin<Config> {
+  static inject = ['database', 'qqbot']
 
-    this.KEYWORDS_BLACKLIST =
-      process.env.MOEGIRL_KEYWORDS_BLACKLIST?.split('\n')
-        .map((i) => i.trim())
-        .filter((i) => !!i)
-        .map((i) => new RegExp(i)) || []
+  private readonly keywords: RegExp[]
+  private readonly groupsByBot = new Map<string, Promise<Set<string>>>()
+  private readonly pendingByUser = new Map<string, Promise<void>>()
 
-    ctx.model.extend('user', {
-      mgpGroupSpamLogs: 'list',
-    })
-
-    const isMoegirlChannel = (session: Session) =>
-      process.env.CHANNEL_QQ_MOEGIRL_BFANS?.split('|').includes(
-        session.channelId
-      )
-
-    // 指令白名单
-    ctx.on('command/before-execute', async ({ command, session }) => {
-      if (!isMoegirlChannel(session)) return
-      const hitWhiteList = this.COMMAND_WHITELIST.some((i) =>
-        command?.name?.startsWith(i)
-      )
-      if (hitWhiteList) return
-
-      const isAdmin = checkUserHasRole(session, 'admin')
-      if (isAdmin) return
-
-      const { authority } = await session.getUser(session.userId, ['authority'])
-      if (authority < 2) {
-        this.logger.info(command!.name, '指令不在白名单，已阻断。')
-        return ''
+  constructor(ctx: Context, config: Config) {
+    super(ctx, config, 'mgp-utils')
+    this.keywords = config.keywords.map((pattern) => new RegExp(pattern))
+    ctx.model.extend(
+      'moegirl_moderation',
+      {
+        id: 'unsigned',
+        selfId: 'string(64)',
+        channelId: 'string(128)',
+        messageId: 'string(255)',
+        userId: 'string(64)',
+        keyword: 'text',
+        time: 'timestamp',
+      },
+      {
+        autoInc: true,
+        unique: [['selfId', 'channelId', 'messageId']],
+        indexes: [['selfId', 'userId', 'id']],
       }
-    })
+    )
 
-    // 自动禁言
-    ctx.on('message', async (session) => {
-      if (!isMoegirlChannel(session)) return
-      if (!this.KEYWORDS_BLACKLIST.length)
-        return this.logger.warn('missing KEYWORDS_BLACKLIST')
-
-      const textSegs = segment.select(session.elements!, 'text')
-      let matchedText = ''
-      const hitBlackList = this.KEYWORDS_BLACKLIST.some((reg) => {
-        const match = reg.exec(textSegs.join(' ') || '')
-        if (match) {
-          matchedText = match[0]
-          return true
-        }
-      })
-      const isAdmin = checkUserHasRole(session, 'admin')
-      if (!hitBlackList || isAdmin) {
+    ctx.before('command/execute', async ({ command, session }) => {
+      if (!session || !(await this.isManagedGroup(session))) return
+      if (COMMAND_WHITELIST.some((name) => command?.name.startsWith(name)))
         return
-      }
+      if (isGroupAdmin(session)) return
 
-      let { mgpGroupSpamLogs } = await session.app.database.getUser(
-        session.platform,
-        session.userId as string,
-        ['mgpGroupSpamLogs']
+      const user = await session.getUser(session.userId, ['authority'])
+      if ((user?.authority ?? 0) < 2) return ''
+    })
+
+    ctx.on('message', (session) =>
+      this.moderate(session).catch((error) =>
+        this.logger.warn('moderation failed', error)
       )
-      // sess.app.database.getChannel(sess.platform,sess.channelId)
-      ;(mgpGroupSpamLogs = mgpGroupSpamLogs || []).push({
-        time: new Date().toISOString(),
-        match: [matchedText],
-        content: session.content as string,
-        channelId: session.channelId as string,
+    )
+    ctx.on('guild-member-request', (session) =>
+      this.checkJoinRequest(session).catch((error) =>
+        this.logger.warn('join request check failed', error)
+      )
+    )
+  }
+
+  private async isManagedGroup(session: Session) {
+    if (
+      session.platform !== 'qq' ||
+      session.isDirect ||
+      !this.config.groupIds.length
+    )
+      return false
+
+    const { selfId, channelId } = session
+    let groups = this.groupsByBot.get(selfId)
+    if (!groups) {
+      groups = this.ctx.database
+        .get(
+          'qqbot_migration',
+          {
+            kind: 'group',
+            selfId,
+            oldId: this.config.groupIds,
+          },
+          ['newId']
+        )
+        .then(
+          (rows) =>
+            new Set([...this.config.groupIds, ...rows.map((row) => row.newId)])
+        )
+        .catch((error) => {
+          this.groupsByBot.delete(selfId)
+          throw error
+        })
+      this.groupsByBot.set(selfId, groups)
+    }
+    return (await groups).has(channelId)
+  }
+
+  private async moderate(session: Session) {
+    if (!this.keywords.length || !(await this.isManagedGroup(session))) return
+    const { selfId, userId, messageId } = session
+    if (!userId || !messageId || isBotMessage(session) || isGroupAdmin(session))
+      return
+
+    const text = h
+      .select(session.elements, 'text')
+      .map(({ attrs }) => attrs.content)
+      .join(' ')
+    const keyword = this.keywords
+      .find((pattern) => pattern.test(text))
+      ?.exec(text)?.[0]
+    if (keyword == null) return
+
+    // Apply sanctions in order so a slower, shorter mute cannot overwrite a later one.
+    const key = `${selfId}:${userId}`
+    const previous = this.pendingByUser.get(key)
+    const apply = async () => this.recordAndModerate(session, keyword, text)
+    const next = previous ? previous.then(apply, apply) : apply()
+    this.pendingByUser.set(key, next)
+    try {
+      await next
+    } finally {
+      if (this.pendingByUser.get(key) === next) this.pendingByUser.delete(key)
+    }
+  }
+
+  private async recordAndModerate(
+    session: Session,
+    keyword: string,
+    text: string
+  ) {
+    const { selfId, userId, channelId, messageId } = session
+    const db = this.ctx.database
+    const key = { selfId, channelId, messageId }
+    if ((await db.get('moegirl_moderation', key, ['id'])).length) return
+    const { id } = await db.create('moegirl_moderation', {
+      ...key,
+      userId,
+      keyword,
+      time: new Date(),
+    })
+    const count = await db
+      .select('moegirl_moderation', {
+        selfId,
+        userId,
+        id: { $lte: id },
       })
+      .execute(() => $.sum(1))
+    const duration = MUTE_DURATIONS[Math.min(count, MUTE_DURATIONS.length) - 1]
 
-      const count = mgpGroupSpamLogs.length
-      const duration = this.MUTE_DURATION[count]
-        ? this.MUTE_DURATION[count]
-        : Infinity
+    const [mute, recall] = await Promise.allSettled([
+      session.bot.muteGuildMember(
+        session.guildId ?? channelId,
+        userId,
+        duration
+      ),
+      session.bot.deleteMessage(channelId, messageId),
+    ])
+    if (mute.status === 'rejected') this.logger.warn('mute failed', mute.reason)
+    if (recall.status === 'rejected')
+      this.logger.warn('recall failed', recall.reason)
 
-      const log = [
-        `channel: ${session.channelId} (${
-          session?.event?.channel?.name || '未知群名'
-        })`,
-        `user: ${session.userId} (${session.username || '未知昵称'})`,
-        `keywords: ${hitBlackList[1]}`,
-        `${session.content}`,
-        `该用户第【${count}】次触发关键词，本次将【${
-          duration === Infinity ? '踢出群聊' : '禁言 ' + Time.format(duration)
-        }】`,
+    const action =
+      mute.status === 'fulfilled'
+        ? `已禁言 ${Time.format(duration)}`
+        : `禁言失败（预定 ${Time.format(duration)}）`
+    await this.notify(
+      session,
+      [
+        '[萌百群管] 关键词命中',
+        `群：${session.event.channel?.name || channelId}`,
+        `用户：${session.username || userId}（${userId}）`,
+        `关键词：${keyword}`,
+        `第 ${count} 次触发，${action}。撤回${recall.status === 'fulfilled' ? '成功' : '失败'}。`,
+        text,
       ].join('\n')
+    )
+  }
 
-      // 打日志
-      this.logger.info(log)
-
-      // 禁言或踢出
-      session.bot.deleteMessage(
-        session.channelId as string,
-        session.messageId as string
-      )
-      if (duration === Infinity) {
-        session.bot.kickGuildMember(
-          session.guildId,
-          session.userId as string,
-          false
-        )
-      } else {
-        session.bot.muteGuildMember(session.channelId, session.userId, duration)
-      }
-
-      // 转发
-      session.bot.sendMessage(
-        process.env.CHANNEL_QQ_MOEGIRL_ADMIN_LOGS as string,
-        `[MGP_UTILS] B群触发关键词黑名单${h.image(await session.app.html.text(log), 'image/jpeg')}`,
-        process.env.CHANNEL_QQ_MOEGIRL_ADMIN_LOGS as string
-      )
-
-      // 行车记录仪
-      session.app.database.setUser(session.platform, session.userId as string, {
-        mgpGroupSpamLogs,
+  private async checkJoinRequest(session: Session) {
+    if (!(await this.isManagedGroup(session)) || !session.userId) return
+    const count = await this.ctx.database
+      .select('moegirl_moderation', {
+        selfId: session.selfId,
+        userId: session.userId,
       })
-    })
+      .execute(() => $.sum(1))
+    if (!count) return
 
-    // 入群监控
-    ctx.on('guild-member-request', async (sess) => {
-      if (!isMoegirlChannel(sess)) return
-      const data = await sess.app.database.getUser(
-        sess.platform,
-        sess.userId as string,
-        ['mgpGroupSpamLogs']
+    await this.notify(
+      session,
+      [
+        '[萌百群管] 有违规记录的用户申请入群',
+        `群：${session.event.channel?.name || session.channelId}`,
+        `用户：${session.username || session.userId}（${session.userId}）`,
+        `此前触发关键词 ${count} 次。`,
+      ].join('\n')
+    )
+  }
+
+  private async notify(session: Session, text: string) {
+    this.logger.info(text)
+    const channels = await this.ctx.database.get(
+      'qqbot_channel',
+      {
+        selfId: session.selfId,
+        platform: 'qq',
+        name: LOG_GROUP,
+      },
+      ['id', 'removedAt', 'allowProactive', 'recvRejected']
+    )
+    const [channel, duplicate] = channels.filter((row) => !row.removedAt)
+    if (
+      !channel ||
+      duplicate ||
+      !channel.allowProactive ||
+      channel.recvRejected
+    ) {
+      this.logger.warn(
+        'moderation notification destination unavailable: %s',
+        LOG_GROUP
       )
-      const logs = data?.mgpGroupSpamLogs
-      if (logs && logs.length) {
-        sess.bot.sendMessage(
-          process.env.CHANNEL_QQ_MOEGIRL_ADMIN_LOGS as string,
-          [
-            `[MGP_UTILS] 请注意B群入群申请:`,
-            `channel: ${sess.channelId} (${
-              sess?.event?.channel?.name || '未知群名'
-            })`,
-            `user: ${sess.userId} (${sess.username || '未知昵称'})`,
-            `该用户曾【${logs.length}】次触发关键词黑名单。`,
-          ].join('\n')
-        )
-      }
-    })
+      return
+    }
+    await session.bot.sendMessage(channel.id, h.text(text))
   }
 }
