@@ -62,7 +62,7 @@ src/
     └── ...             （每个文件就是一个 koishi 命令插件）
 ```
 
-在 `src/plugins/` 实现插件，在 `src/profiles/v5.ts` 的 `served` 上下文注册。该上下文负责官方 QQ 的群与私聊访问控制。公共命令和账户绑定入口由 QQ 守卫单独放行。
+在 `src/plugins/` 实现插件，在 `src/profiles/v5.ts` 的 `served` 上下文注册。该上下文负责官方 QQ 的群与私聊访问控制。公共命令和账户绑定入口由 QQ 守卫单独放行。入群广告过滤挂在根上下文，收到官方 QQ 入群事件即可运行。
 
 唯一 profile 为 `v5`。入口按 `--profile=v5`、`SILI_PROFILE=v5`、默认值的顺序读取，之后才加载 dotenv。NapCat 在配置了 `ONEBOT_SELFID` 的实例中用于旧账号绑定。
 

@@ -1,6 +1,11 @@
 import { Context, Logger, Schema, Session, h } from 'koishi'
 
 import { isGroupAdmin } from '@/modules/CommandPermissions'
+import { GuildRequestFirewall } from '@/modules/GuildRequestFirewall'
+import {
+  joinRequestAnswerText,
+  type QQJoinVerificationInfo,
+} from '@/utils/qq-join-request'
 
 import { markdownLink, markdownText } from '~/mediawiki/qq-reply'
 import { useApi } from '~/mediawiki/utils'
@@ -83,10 +88,7 @@ interface JoinRequest {
   member_openid: string
   username: string
   apply_at: string
-  verify_info?: {
-    verify_message?: string
-    review_qa_list?: { question: string; answer: string }[]
-  }
+  verify_info?: QQJoinVerificationInfo
 }
 
 export default class PluginWikiJoinVerify {
@@ -139,7 +141,8 @@ export default class PluginWikiJoinVerify {
 
     ctx.on('guild-member-request', (session) => {
       const target = this.lookup(session.channelId)
-      if (!target) return
+      // The firewall owns requests that match the spam rules.
+      if (!target || GuildRequestFirewall.matches(session)) return
       void this.onRequest(session, target).catch((error) =>
         this.logger.warn('join request', error)
       )
@@ -345,7 +348,7 @@ export default class PluginWikiJoinVerify {
     let lines: string[]
     try {
       let decision = await decide(
-        answerOf(request),
+        joinRequestAnswerText(request.verify_info),
         request.member_openid,
         source,
         policy
@@ -357,7 +360,7 @@ export default class PluginWikiJoinVerify {
         !(await this.spend(session, site, request.member_openid, decision.bind))
       )
         decision = await decide(
-          answerOf(request),
+          joinRequestAnswerText(request.verify_info),
           request.member_openid,
           source,
           policy
@@ -452,7 +455,7 @@ export default class PluginWikiJoinVerify {
       let verdict: string
       try {
         const decision = await decide(
-          answerOf(request),
+          joinRequestAnswerText(request.verify_info),
           request.member_openid,
           source,
           policy
@@ -526,14 +529,14 @@ export default class PluginWikiJoinVerify {
 
     const source = this.sourceFor(session, site)
     let bind = await bindOnApproval(
-      answerOf(request),
+      joinRequestAnswerText(request.verify_info),
       request.member_openid,
       source,
       policy
     )
     if (bind && !(await this.spend(session, site, request.member_openid, bind)))
       bind = await bindOnApproval(
-        answerOf(request),
+        joinRequestAnswerText(request.verify_info),
         request.member_openid,
         source,
         policy
@@ -642,18 +645,6 @@ function policyOf(site: Site, channel: ChannelPolicy): Policy {
     groups: channel.groups ?? [],
     tempMinDays: channel.tempMinDays,
   }
-}
-
-/**
- * The applicant's answer text. Not the adapter's session.content: it keeps an
- * empty `verify_message` and drops the Q&A list QQ sends alongside it.
- */
-function answerOf(request: JoinRequest) {
-  const info = request.verify_info
-  return [
-    info?.verify_message ?? '',
-    ...(info?.review_qa_list ?? []).map((qa) => qa.answer),
-  ].join('\n')
 }
 
 function applicantLabel(request: JoinRequest) {

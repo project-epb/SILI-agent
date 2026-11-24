@@ -15,6 +15,7 @@ import AdapterMinecraft from '@/adapters/queqiao-minecraft'
 import { logProcessErrors } from '@/bootstrap'
 import CommandPermissions from '@/modules/CommandPermissions'
 import FallbackHandler from '@/modules/FallbackHandler'
+import { GuildRequestFirewall } from '@/modules/GuildRequestFirewall'
 import HelpAuthorityHint from '@/modules/HelpAuthorityHint'
 import MoegirlGroupUtils from '@/modules/MoegirlGroupUtils'
 import PlainTextAt from '@/modules/PlainTextAt'
@@ -295,6 +296,9 @@ function install(app: App) {
     ctx.plugin(CommandPermissions)
     ctx.plugin(PluginBind)
   })
+
+  // QQ sends join requests to a group admin bot even in groups SILI has not activated.
+  app.plugin(GuildRequestFirewall)
 
   const served = app.intersect(servedFilter(state))
   const servedNotQQ = served.exclude(isQQ)
