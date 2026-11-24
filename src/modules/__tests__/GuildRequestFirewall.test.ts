@@ -40,14 +40,16 @@ describe('GuildRequestFirewall', () => {
 
   it('keeps the legacy answer prefix fallback and can also read bare text', () => {
     expect(
-      GuildRequestFirewall.matches(session('问题：通过一下\n答案：正常答案') as any)
+      GuildRequestFirewall.matches(
+        session('问题：通过一下\n答案：正常答案') as any
+      )
     ).toBe(false)
     expect(
-      GuildRequestFirewall.matches(session('问题：进群动机\n答案：朋友推荐') as any)
+      GuildRequestFirewall.matches(
+        session('问题：进群动机\n答案：朋友推荐') as any
+      )
     ).toBe(true)
-    expect(
-      GuildRequestFirewall.matches(session('请同意') as any)
-    ).toBe(true)
+    expect(GuildRequestFirewall.matches(session('请同意') as any)).toBe(true)
   })
 
   it('rejects a matching request and sends the notice to its group', async () => {

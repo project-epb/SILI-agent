@@ -2,8 +2,8 @@ import { Context, Session } from 'koishi'
 
 import BasePlugin from '@/plugins/_boilerplate'
 import {
-  joinRequestAnswerText,
   type QQJoinVerificationInfo,
+  joinRequestAnswerText,
 } from '@/utils/qq-join-request'
 
 export class GuildRequestFirewall extends BasePlugin {

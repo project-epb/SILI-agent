@@ -3,8 +3,8 @@ import { Context, Logger, Schema, Session, h } from 'koishi'
 import { isGroupAdmin } from '@/modules/CommandPermissions'
 import { GuildRequestFirewall } from '@/modules/GuildRequestFirewall'
 import {
-  joinRequestAnswerText,
   type QQJoinVerificationInfo,
+  joinRequestAnswerText,
 } from '@/utils/qq-join-request'
 
 import { markdownLink, markdownText } from '~/mediawiki/qq-reply'
