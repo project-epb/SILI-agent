@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import PluginRepeater, { type Config, type RepeatState } from '../repeater'
+
 // koishi 包顶层会拉 loader 等运行时副作用，在 vitest 下加载失败；
 // 测试只需要 BasePlugin 用到的 snakeCase + plugin 自身用到的 Random.pick，
 // 其他全 stub 掉即可。
@@ -17,8 +19,6 @@ vi.mock('koishi', () => {
     },
   }
 })
-
-import PluginRepeater, { type Config, type RepeatState } from '../repeater'
 
 type MiddlewareFn = (
   session: any,
@@ -130,7 +130,11 @@ describe('PluginRepeater', () => {
 
   it('isolates repeat chains by bot in the same channel', async () => {
     const { mw } = setup()
-    await runChain(mw, [['草', 'A'], ['草', 'B'], ['草', 'C']])
+    await runChain(mw, [
+      ['草', 'A'],
+      ['草', 'B'],
+      ['草', 'C'],
+    ])
 
     const other = makeSession({ content: '草', userId: 'D', selfId: 'other' })
     await fire(mw, other.session)
@@ -143,7 +147,11 @@ describe('PluginRepeater', () => {
 
   it('breaks a text chain when a message contains an image', async () => {
     const { mw } = setup()
-    await runChain(mw, [['草', 'A'], ['草', 'B'], ['草', 'C']])
+    await runChain(mw, [
+      ['草', 'A'],
+      ['草', 'B'],
+      ['草', 'C'],
+    ])
     const image = makeSession({ content: '草', userId: 'D' })
     image.session.elements = [{ type: 'img' }]
     await fire(mw, image.session)

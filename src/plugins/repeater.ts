@@ -104,10 +104,9 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
     super(ctx, config, 'repeater')
 
     this.builtinTextSet = new Set(
-      [
-        ...(config.interruptTexts ?? []),
-        ...(config.queryTexts ?? []),
-      ].filter((t): t is string => typeof t === 'string')
+      [...(config.interruptTexts ?? []), ...(config.queryTexts ?? [])].filter(
+        (t): t is string => typeof t === 'string'
+      )
     )
 
     this.handleRepeatChain()
@@ -142,7 +141,8 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
   }
 
   private repeatProbAt(state: RepeatState): number {
-    if (this.config.computeRepeatProb) return this.config.computeRepeatProb(state)
+    if (this.config.computeRepeatProb)
+      return this.config.computeRepeatProb(state)
     const offset = state.times - this.config.repeatStartAt
     return Math.min(
       1,
@@ -252,5 +252,4 @@ export default class PluginRepeater extends BasePlugin<ResolvedConfig> {
       }
     }
   }
-
 }

@@ -76,7 +76,8 @@ export default class MoegirlGroupUtils extends BasePlugin<Config> {
 
     ctx.before('command/execute', async ({ command, session }) => {
       if (!session || !(await this.isManagedGroup(session))) return
-      if (COMMAND_WHITELIST.some((name) => command?.name.startsWith(name))) return
+      if (COMMAND_WHITELIST.some((name) => command?.name.startsWith(name)))
+        return
       if (isGroupAdmin(session)) return
 
       const user = await session.getUser(session.userId, ['authority'])
@@ -96,19 +97,30 @@ export default class MoegirlGroupUtils extends BasePlugin<Config> {
   }
 
   private async isManagedGroup(session: Session) {
-    if (session.platform !== 'qq' || session.isDirect || !this.config.groupIds.length)
+    if (
+      session.platform !== 'qq' ||
+      session.isDirect ||
+      !this.config.groupIds.length
+    )
       return false
 
     const { selfId, channelId } = session
     let groups = this.groupsByBot.get(selfId)
     if (!groups) {
       groups = this.ctx.database
-        .get('qqbot_migration', {
-          kind: 'group',
-          selfId,
-          oldId: this.config.groupIds,
-        }, ['newId'])
-        .then((rows) => new Set([...this.config.groupIds, ...rows.map((row) => row.newId)]))
+        .get(
+          'qqbot_migration',
+          {
+            kind: 'group',
+            selfId,
+            oldId: this.config.groupIds,
+          },
+          ['newId']
+        )
+        .then(
+          (rows) =>
+            new Set([...this.config.groupIds, ...rows.map((row) => row.newId)])
+        )
         .catch((error) => {
           this.groupsByBot.delete(selfId)
           throw error
@@ -121,12 +133,16 @@ export default class MoegirlGroupUtils extends BasePlugin<Config> {
   private async moderate(session: Session) {
     if (!this.keywords.length || !(await this.isManagedGroup(session))) return
     const { selfId, userId, messageId } = session
-    if (!userId || !messageId || isBotMessage(session) || isGroupAdmin(session)) return
+    if (!userId || !messageId || isBotMessage(session) || isGroupAdmin(session))
+      return
 
-    const text = h.select(session.elements, 'text')
+    const text = h
+      .select(session.elements, 'text')
       .map(({ attrs }) => attrs.content)
       .join(' ')
-    const keyword = this.keywords.find((pattern) => pattern.test(text))?.exec(text)?.[0]
+    const keyword = this.keywords
+      .find((pattern) => pattern.test(text))
+      ?.exec(text)?.[0]
     if (keyword == null) return
 
     // Apply sanctions in order so a slower, shorter mute cannot overwrite a later one.
@@ -142,7 +158,11 @@ export default class MoegirlGroupUtils extends BasePlugin<Config> {
     }
   }
 
-  private async recordAndModerate(session: Session, keyword: string, text: string) {
+  private async recordAndModerate(
+    session: Session,
+    keyword: string,
+    text: string
+  ) {
     const { selfId, userId, channelId, messageId } = session
     const db = this.ctx.database
     const key = { selfId, channelId, messageId }
@@ -153,59 +173,87 @@ export default class MoegirlGroupUtils extends BasePlugin<Config> {
       keyword,
       time: new Date(),
     })
-    const count = await db.select('moegirl_moderation', {
-      selfId,
-      userId,
-      id: { $lte: id },
-    }).execute(() => $.sum(1))
+    const count = await db
+      .select('moegirl_moderation', {
+        selfId,
+        userId,
+        id: { $lte: id },
+      })
+      .execute(() => $.sum(1))
     const duration = MUTE_DURATIONS[Math.min(count, MUTE_DURATIONS.length) - 1]
 
     const [mute, recall] = await Promise.allSettled([
-      session.bot.muteGuildMember(session.guildId ?? channelId, userId, duration),
+      session.bot.muteGuildMember(
+        session.guildId ?? channelId,
+        userId,
+        duration
+      ),
       session.bot.deleteMessage(channelId, messageId),
     ])
     if (mute.status === 'rejected') this.logger.warn('mute failed', mute.reason)
-    if (recall.status === 'rejected') this.logger.warn('recall failed', recall.reason)
+    if (recall.status === 'rejected')
+      this.logger.warn('recall failed', recall.reason)
 
-    const action = mute.status === 'fulfilled'
-      ? `已禁言 ${Time.format(duration)}`
-      : `禁言失败（预定 ${Time.format(duration)}）`
-    await this.notify(session, [
-      '[萌百群管] 关键词命中',
-      `群：${session.event.channel?.name || channelId}`,
-      `用户：${session.username || userId}（${userId}）`,
-      `关键词：${keyword}`,
-      `第 ${count} 次触发，${action}。撤回${recall.status === 'fulfilled' ? '成功' : '失败'}。`,
-      text,
-    ].join('\n'))
+    const action =
+      mute.status === 'fulfilled'
+        ? `已禁言 ${Time.format(duration)}`
+        : `禁言失败（预定 ${Time.format(duration)}）`
+    await this.notify(
+      session,
+      [
+        '[萌百群管] 关键词命中',
+        `群：${session.event.channel?.name || channelId}`,
+        `用户：${session.username || userId}（${userId}）`,
+        `关键词：${keyword}`,
+        `第 ${count} 次触发，${action}。撤回${recall.status === 'fulfilled' ? '成功' : '失败'}。`,
+        text,
+      ].join('\n')
+    )
   }
 
   private async checkJoinRequest(session: Session) {
     if (!(await this.isManagedGroup(session)) || !session.userId) return
-    const count = await this.ctx.database.select('moegirl_moderation', {
-      selfId: session.selfId,
-      userId: session.userId,
-    }).execute(() => $.sum(1))
+    const count = await this.ctx.database
+      .select('moegirl_moderation', {
+        selfId: session.selfId,
+        userId: session.userId,
+      })
+      .execute(() => $.sum(1))
     if (!count) return
 
-    await this.notify(session, [
-      '[萌百群管] 有违规记录的用户申请入群',
-      `群：${session.event.channel?.name || session.channelId}`,
-      `用户：${session.username || session.userId}（${session.userId}）`,
-      `此前触发关键词 ${count} 次。`,
-    ].join('\n'))
+    await this.notify(
+      session,
+      [
+        '[萌百群管] 有违规记录的用户申请入群',
+        `群：${session.event.channel?.name || session.channelId}`,
+        `用户：${session.username || session.userId}（${session.userId}）`,
+        `此前触发关键词 ${count} 次。`,
+      ].join('\n')
+    )
   }
 
   private async notify(session: Session, text: string) {
     this.logger.info(text)
-    const channels = await this.ctx.database.get('qqbot_channel', {
-      selfId: session.selfId,
-      platform: 'qq',
-      name: LOG_GROUP,
-    }, ['id', 'removedAt', 'allowProactive', 'recvRejected'])
+    const channels = await this.ctx.database.get(
+      'qqbot_channel',
+      {
+        selfId: session.selfId,
+        platform: 'qq',
+        name: LOG_GROUP,
+      },
+      ['id', 'removedAt', 'allowProactive', 'recvRejected']
+    )
     const [channel, duplicate] = channels.filter((row) => !row.removedAt)
-    if (!channel || duplicate || !channel.allowProactive || channel.recvRejected) {
-      this.logger.warn('moderation notification destination unavailable: %s', LOG_GROUP)
+    if (
+      !channel ||
+      duplicate ||
+      !channel.allowProactive ||
+      channel.recvRejected
+    ) {
+      this.logger.warn(
+        'moderation notification destination unavailable: %s',
+        LOG_GROUP
+      )
       return
     }
     await session.bot.sendMessage(channel.id, h.text(text))

@@ -45,10 +45,13 @@ function setup() {
         return entry
       }),
       select: vi.fn((_, query) => ({
-        execute: async () => entries.filter((row) =>
-          row.selfId === query.selfId && row.userId === query.userId &&
-          row.id <= (query.id?.$lte ?? Infinity)
-        ).length,
+        execute: async () =>
+          entries.filter(
+            (row) =>
+              row.selfId === query.selfId &&
+              row.userId === query.userId &&
+              row.id <= (query.id?.$lte ?? Infinity)
+          ).length,
       })),
     },
   }
@@ -75,35 +78,59 @@ function setup() {
       ...overrides,
     }
   }
-  return { ctx, handlers, session, logChannels, entries, mute, recall, send, warn }
+  return {
+    ctx,
+    handlers,
+    session,
+    logChannels,
+    entries,
+    mute,
+    recall,
+    send,
+    warn,
+  }
 }
 
 describe('MoegirlGroupUtils on official QQ', () => {
   it('escalates a mapped group member to a 30-day mute and ignores repeated delivery', async () => {
     const { ctx, handlers, session, entries, mute, send } = setup()
     const onMessage = handlers.get('message')!
-    for (const id of ['m1', 'm2', 'm3', 'm4', 'm4']) await onMessage(session(id))
+    for (const id of ['m1', 'm2', 'm3', 'm4', 'm4'])
+      await onMessage(session(id))
 
     expect(entries).toHaveLength(4)
     expect(mute.mock.calls.map((call) => call[2])).toEqual([
       600_000, 7_200_000, 86_400_000, 2_592_000_000,
     ])
-    expect(ctx.database.get).toHaveBeenCalledWith('qqbot_migration', {
-      kind: 'group', selfId: 'sili', oldId: ['legacy-group-number'],
-    }, ['newId'])
-    expect(ctx.database.get).toHaveBeenCalledWith('qqbot_channel',
-      { selfId: 'sili', platform: 'qq', name: logGroup }, expect.any(Array))
+    expect(ctx.database.get).toHaveBeenCalledWith(
+      'qqbot_migration',
+      {
+        kind: 'group',
+        selfId: 'sili',
+        oldId: ['legacy-group-number'],
+      },
+      ['newId']
+    )
+    expect(ctx.database.get).toHaveBeenCalledWith(
+      'qqbot_channel',
+      { selfId: 'sili', platform: 'qq', name: logGroup },
+      expect.any(Array)
+    )
     expect(send).toHaveBeenLastCalledWith('log-group', {
-      type: 'text', attrs: { content: expect.stringContaining('第 4 次触发') },
+      type: 'text',
+      attrs: { content: expect.stringContaining('第 4 次触发') },
     })
   })
 
   it('applies concurrent sanctions in increasing duration order', async () => {
     const { handlers, session, mute } = setup()
     let release: () => void
-    mute.mockImplementationOnce(() => new Promise<void>((resolve) => {
-      release = resolve
-    }))
+    mute.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        })
+    )
     const onMessage = handlers.get('message')!
     const first = onMessage(session('m1'))
     const second = onMessage(session('m2'))
@@ -118,8 +145,12 @@ describe('MoegirlGroupUtils on official QQ', () => {
     const onMessage = handlers.get('message')!
     await onMessage(session('m1', { channelId: 'other-group' }))
     await onMessage(session('m2', { selfId: 'other-bot' }))
-    await onMessage(session('m3', { event: { member: { roles: [{ id: 'admin' }] } } }))
-    await onMessage(session('m4', { event: { _data: { d: { author: { bot: true } } } } }))
+    await onMessage(
+      session('m3', { event: { member: { roles: [{ id: 'admin' }] } } })
+    )
+    await onMessage(
+      session('m4', { event: { _data: { d: { author: { bot: true } } } } })
+    )
     expect(entries).toEqual([])
     expect(mute).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalled()
@@ -131,7 +162,11 @@ describe('MoegirlGroupUtils on official QQ', () => {
     logChannels[0].allowProactive = false
     await onMessage(session('m1'))
     logChannels[0].allowProactive = true
-    logChannels.push({ id: 'another-group', allowProactive: true, recvRejected: false })
+    logChannels.push({
+      id: 'another-group',
+      allowProactive: true,
+      recvRejected: false,
+    })
     await onMessage(session('m2'))
     expect(mute).toHaveBeenCalledTimes(2)
     expect(send).not.toHaveBeenCalled()
@@ -153,11 +188,17 @@ describe('MoegirlGroupUtils on official QQ', () => {
   it('applies the existing command whitelist only in monitored groups', async () => {
     const { handlers, session } = setup()
     const before = handlers.get('command/execute')!
-    expect(await before({ command: { name: 'wiki.search' }, session: session() })).toBeUndefined()
-    expect(await before({ command: { name: 'version' }, session: session() })).toBe('')
-    expect(await before({
-      command: { name: 'version' },
-      session: session('m2', { getUser: async () => ({ authority: 2 }) }),
-    })).toBeUndefined()
+    expect(
+      await before({ command: { name: 'wiki.search' }, session: session() })
+    ).toBeUndefined()
+    expect(
+      await before({ command: { name: 'version' }, session: session() })
+    ).toBe('')
+    expect(
+      await before({
+        command: { name: 'version' },
+        session: session('m2', { getUser: async () => ({ authority: 2 }) }),
+      })
+    ).toBeUndefined()
   })
 })

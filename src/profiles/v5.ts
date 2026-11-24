@@ -109,6 +109,7 @@ import PluginAssetsS3 from 'koishi-plugin-assets-s3'
 import * as PluginBasedata from 'koishi-plugin-basedata'
 import * as PluginFeedback from 'koishi-plugin-feedback'
 import * as PluginImageSearch from 'koishi-plugin-image-search'
+import * as PluginLinuxAdmin from 'koishi-plugin-linux-admin'
 import * as PluginLlmAdmin from 'koishi-plugin-llm-admin'
 import * as PluginLlmDashboard from 'koishi-plugin-llm-dashboard'
 import * as PluginManosabaMemes from 'koishi-plugin-manosaba-memes'
@@ -119,7 +120,6 @@ import * as PluginRecall from 'koishi-plugin-recall'
 import * as PluginSchedule from 'koishi-plugin-schedule'
 import PluginSilk from 'koishi-plugin-silk'
 import * as PluginStickerAdmin from 'koishi-plugin-sticker-admin'
-import * as PluginLinuxAdmin from 'koishi-plugin-linux-admin'
 
 import PluginHTTP from '@cordisjs/plugin-http'
 
@@ -424,8 +424,14 @@ function install(app: App) {
     ctx.plugin(PluginDebug)
     ctx.plugin(PluginVersion)
     ctx.plugin(MoegirlGroupUtils, {
-      groupIds: (env.CHANNEL_QQ_MOEGIRL_BFANS ?? '').split('|').map((id) => id.trim()).filter(Boolean),
-      keywords: (env.MOEGIRL_KEYWORDS_BLACKLIST ?? '').split('\n').map((pattern) => pattern.trim()).filter(Boolean),
+      groupIds: (env.CHANNEL_QQ_MOEGIRL_BFANS ?? '')
+        .split('|')
+        .map((id) => id.trim())
+        .filter(Boolean),
+      keywords: (env.MOEGIRL_KEYWORDS_BLACKLIST ?? '')
+        .split('\n')
+        .map((pattern) => pattern.trim())
+        .filter(Boolean),
     })
     ctx.channel().plugin(PluginRepeater, {
       interruptTexts: [

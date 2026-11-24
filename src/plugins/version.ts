@@ -248,9 +248,9 @@ export default class PluginVersion extends BasePlugin {
       const activePlugins = Array.from(ctx.registry.entries())
         .filter(([_, scope]) => scope.status === 2) // ACTIVE
         .map(([_, scope]) => scope.name || '(anonymous)')
-      const onebot = ctx.root.bots.find(
-        (bot) => bot.platform === 'onebot'
-      ) as OneBotBot<Context> | undefined
+      const onebot = ctx.root.bots.find((bot) => bot.platform === 'onebot') as
+        | OneBotBot<Context>
+        | undefined
       const onebotVersionInfo = await onebot?.internal
         .getVersionInfo()
         .catch(() => null)
