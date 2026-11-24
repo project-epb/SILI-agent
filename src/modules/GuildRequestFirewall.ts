@@ -21,10 +21,7 @@ export class GuildRequestFirewall extends BasePlugin {
     const raw = session.event?._data as
       | { d?: { verify_info?: QQJoinVerificationInfo } }
       | undefined
-    const info = raw?.d?.verify_info
-    const answer = info
-      ? joinRequestAnswerText(info)
-      : (session.content ?? '').split('答案：').pop().trim()
+    const answer = joinRequestAnswerText(raw?.d?.verify_info ?? session.content)
     return GuildRequestFirewall.ANSWER_BLACK_LIST.some((phrase) =>
       answer.includes(phrase)
     )

@@ -3,10 +3,14 @@ export interface QQJoinVerificationInfo {
   review_qa_list?: { question: string; answer: string }[]
 }
 
-/** QQ can send both fields, including an empty verify_message beside a Q&A list. */
-export function joinRequestAnswerText(info?: QQJoinVerificationInfo) {
+export function joinRequestAnswerText(
+  source?: QQJoinVerificationInfo | string
+) {
+  if (typeof source === 'string') return source.split('答案：').pop().trim()
+
+  // QQ can send an empty verify_message alongside populated Q&A answers.
   return [
-    info?.verify_message ?? '',
-    ...(info?.review_qa_list ?? []).map(({ answer }) => answer),
+    source?.verify_message ?? '',
+    ...(source?.review_qa_list ?? []).map(({ answer }) => answer),
   ].join('\n')
 }
