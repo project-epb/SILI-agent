@@ -12,24 +12,27 @@ import {
 import { dirname, join } from 'node:path'
 
 import type SQLite from '@koishijs/plugin-database-sqlite'
+import NativeSQLite from '@sili/database-sqlite-native'
 
 export function installSQLiteBackup(app: App) {
   if (process.env.SILI_DATABASE !== 'sqlite') return
 
-  const driver = app.database.select('user').driver as SQLite
+  const driver = app.database.select('user').driver as SQLite | NativeSQLite
   const ready = join(dirname(driver.path), '.sili-db-snapshot.sqlite')
   const pending = ready + '.pending'
   const logger = app.logger('sqlite-backup')
 
-  const snapshot = () => {
-    if (existsSync(ready)) return
+  let running = false
+  const snapshot = async () => {
+    if (running || existsSync(ready)) return
+    running = true
     try {
       rmSync(pending, { force: true })
       const fd = openSync(pending, 'wx', 0o600)
       try {
-        // This VFS is used by the live connection, so the snapshot must be
-        // taken there before an external process opens the resulting file.
-        driver.db.run('VACUUM INTO ?', [pending])
+        // Use the live connection to take a consistent snapshot.
+        if (driver instanceof NativeSQLite) await driver.backup(pending)
+        else driver.db.run('VACUUM INTO ?', [pending])
         fchmodSync(fd, 0o600)
         fsyncSync(fd)
       } finally {
@@ -40,6 +43,8 @@ export function installSQLiteBackup(app: App) {
     } catch (error) {
       rmSync(pending, { force: true })
       logger.error('snapshot failed', error)
+    } finally {
+      running = false
     }
   }
   process.on('SIGUSR2', snapshot)
