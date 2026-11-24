@@ -1,0 +1,15 @@
+{
+  "name": "@sili/database-sqlite-native",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Native SQLite driver for SILI's Minato 3",
+  "main": "index.ts",
+  "dependencies": {
+    "@minatojs/sql-utils": "5.5.0",
+    "cosmokit": "1.8.0"
+  },
+  "peerDependencies": {
+    "minato": "^3.6.0"
+  }
+}

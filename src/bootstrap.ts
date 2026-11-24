@@ -14,6 +14,7 @@ import type { Profile } from '@/profiles/types'
 
 import PluginMongo from '@koishijs/plugin-database-mongo'
 import PluginSQLite from '@koishijs/plugin-database-sqlite'
+import NativeSQLite from '@sili/database-sqlite-native'
 import PluginServer from '@koishijs/plugin-server'
 
 /**
@@ -80,7 +81,11 @@ export function installDatabase(app: App, env = process.env) {
     const path = resolve(app.baseDir, 'data/sili.sqlite')
     if (!existsSync(path))
       throw new Error('SILI SQLite migration file is missing')
-    app.plugin(PluginSQLite, { path })
+    const driver = env.SILI_SQLITE_DRIVER || 'wasm'
+    if (driver !== 'wasm' && driver !== 'native')
+      throw new Error('Unknown SILI_SQLITE_DRIVER')
+    app.plugin(driver === 'native' ? NativeSQLite : PluginSQLite, { path })
+    app.logger('database').info('SQLite driver: %s', driver)
     return
   }
   if (backend !== 'mongo') throw new Error('Unknown SILI_DATABASE backend')
