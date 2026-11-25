@@ -58,8 +58,17 @@ export class ImageStore {
   private loading: Promise<Map<string, ImageRef>> | null = null
   /** Image id → a URL it can be downloaded from (QQ links last hours). */
   private urls = new Map<string, string>()
+  /**
+   * A URL's hash id → the id its downloaded bytes really hash to, when the
+   * two differ. QQ's URL format is not a contract; the computed hash rules.
+   */
+  private aliases = new Map<string, string>()
 
-  constructor(private readonly opts: ImageStoreOptions) {}
+  constructor(
+    private readonly opts: ImageStoreOptions,
+    private readonly warn: (msg: string) => void = () => {}
+  ) {}
+
 
   private fileOf(ref: ImageRef) {
     return path.join(this.opts.dir, `${ref.sha1}.${ref.width}x${ref.height}.webp`)
@@ -84,14 +93,13 @@ export class ImageStore {
 
   /**
    * Store raw image bytes; returns the existing ref when already stored.
-   * The key is the SHA1 of the source bytes, or `sha1` when given (the hash
-   * a QQ URL names), so an image keeps the id its URL gave it even if what
-   * was served is not byte-identical. What is stored is the re-encoded
-   * WebP; the key never changes with it.
+   * The key is the SHA1 we compute over the source bytes; what is stored is
+   * the re-encoded WebP, and the key never changes with it.
    */
-  async put(bytes: Uint8Array, sha1 = crypto.createHash('sha1').update(bytes).digest('hex')): Promise<ImageRef> {
+  async put(bytes: Uint8Array): Promise<ImageRef> {
     if (bytes.length > this.opts.maxImageBytes)
       throw new Error(`image over ${this.opts.maxImageBytes} bytes`)
+    const sha1 = crypto.createHash('sha1').update(bytes).digest('hex')
     const index = await this.loadIndex()
     const id = sha1.slice(0, IMAGE_ID_LENGTH)
     const known = index.get(id)
@@ -135,12 +143,17 @@ export class ImageStore {
       await this.touch(stored)
       return stored
     }
-    return this.put(await this.opts.fetch(url), sha1FromQQImageUrl(url))
+    const ref = await this.put(await this.opts.fetch(url))
+    if (id && id !== ref.id) {
+      this.warn(`URL hash ${id} != content hash ${ref.id}: ${url.slice(0, 120)}`)
+      this.aliases.set(id, ref.id)
+    }
+    return ref
   }
 
   /** The ref for an id, or undefined once evicted. */
   async get(id: string): Promise<ImageRef | undefined> {
-    return (await this.loadIndex()).get(id)
+    return (await this.loadIndex()).get(this.aliases.get(id) ?? id)
   }
 
   /** The stored WebP bytes, touching the LRU clock; undefined once evicted. */

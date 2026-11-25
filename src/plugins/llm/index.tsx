@@ -305,7 +305,7 @@ export default class PluginLLM extends BasePlugin<Config> {
     maxImageBytes: 20 * 1024 ** 2,
     encode: encodeImage,
     fetch: async (url) => new Uint8Array((await this.ctx.http.file(url)).data),
-  })
+  }, (msg) => this.logger.warn('[images] %s', msg))
   readonly imageRefs: ImageReferenceCache = new ImageReferenceCache({
     dir: resolve(this.ctx.baseDir, 'data', 'llm', 'image-cache'),
     maxBytes: this.config.imageCacheMaxBytes,

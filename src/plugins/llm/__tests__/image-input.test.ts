@@ -73,6 +73,31 @@ describe('ImageStore', () => {
     await expect(store.put(new Uint8Array(101))).rejects.toThrow()
   })
 
+  it('keys by the computed hash and aliases a URL whose hash disagrees', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'imgs-'))
+    const warnings: string[] = []
+    const store = new ImageStore(
+      {
+        dir,
+        ttlMs: 1e9,
+        maxBytes: 1e9,
+        maxImageBytes: 100,
+        encode: async () => ({ bytes: new Uint8Array(1), width: 1, height: 1 }),
+        fetch: async () => new Uint8Array([7]),
+      },
+      (m) => warnings.push(m)
+    )
+    // fileid = base64url(0x12 0x14 + 20-byte SHA1); this one names 0x11 * 20.
+    const fileid = Buffer.from([0x12, 0x14, ...new Array(20).fill(0x11)]).toString('base64url')
+    const url = `https://multimedia.nt.qq.com.cn/download?fileid=${fileid}`
+    const urlId = store.idOfUrl(url)!
+    expect(urlId).toBe('111111111111')
+    const ref = await store.fetch(url)
+    expect(ref.id).not.toBe(urlId)
+    expect(warnings).toHaveLength(1)
+    expect((await store.get(urlId))?.id).toBe(ref.id)
+  })
+
   it('evicts the least recently used past the size cap', async () => {
     const { store, dir } = await make(25)
     const a = await store.put(new Uint8Array([1]))

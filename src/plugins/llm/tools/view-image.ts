@@ -64,7 +64,8 @@ export const viewImageHandler: ToolHandler = {
       // Downloaded only now, and only if not stored already.
       let id: string | undefined
       try {
-        if (!isUrl && (await store.get(item))) id = item
+        const stored = isUrl ? undefined : await store.get(item)
+        if (stored) id = stored.id
         else {
           const url = isUrl ? item : store.urlOf(item)
           if (url) id = (await store.fetch(url)).id
