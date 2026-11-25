@@ -94,9 +94,9 @@ export class ProviderFiles {
 
   private async upload(imageId: string, bytes: Uint8Array, mime: string): Promise<string> {
     await this.makeRoom(bytes.length)
-    const send = () =>
+    const send = async () =>
       this.client.files.create({
-        file: toFile(bytes, `${imageId}.${mime.split('/')[1] ?? 'bin'}`, { type: mime }) as any,
+        file: await toFile(bytes, `${imageId}.${mime.split('/')[1] ?? 'bin'}`, { type: mime }),
         purpose: 'user_data',
         expires_after: { anchor: 'created_at', seconds: FILE_TTL_S },
       } as any)
