@@ -85,6 +85,17 @@
         "yml-register": "^1.2.5",
       },
     },
+    "plugins/database-sqlite-native": {
+      "name": "@sili/database-sqlite-native",
+      "version": "0.0.0",
+      "dependencies": {
+        "@minatojs/sql-utils": "5.5.0",
+        "cosmokit": "1.8.0",
+      },
+      "peerDependencies": {
+        "minato": "^3.6.0",
+      },
+    },
     "plugins/feedback": {
       "name": "koishi-plugin-feedback",
       "version": "0.0.0",
@@ -514,6 +525,8 @@
     "@shikijs/vscode-textmate": ["@shikijs/vscode-textmate@10.0.2", "https://registry.npmmirror.com/@shikijs/vscode-textmate/-/vscode-textmate-10.0.2.tgz", {}, "sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg=="],
 
     "@shopify/semaphore": ["@shopify/semaphore@3.1.0", "https://registry.npmmirror.com/@shopify/semaphore/-/semaphore-3.1.0.tgz", {}, "sha512-LxonkiWEu12FbZhuOMhsdocpxCqm7By8C/2U9QgNuEoXUx2iMrlXjJv3p93RwfNC6TrdlNRo17gRer1z1309VQ=="],
+
+    "@sili/database-sqlite-native": ["@sili/database-sqlite-native@workspace:plugins/database-sqlite-native"],
 
     "@smithy/abort-controller": ["@smithy/abort-controller@3.1.6", "https://registry.npmmirror.com/@smithy/abort-controller/-/abort-controller-3.1.6.tgz", { "dependencies": { "@smithy/types": "3.6.0", "tslib": "2.8.1" } }, "sha512-0XuhuHQlEqbNQZp7QxxrFTdVWdwxch4vjxYgfInF91hZFkPxf9QDrdQka0KfxFMPqLNzSw0b95uGTrLliQUavQ=="],
 
@@ -1768,6 +1781,8 @@
     "@satorijs/protocol/@satorijs/element": ["@satorijs/element@3.1.8", "https://registry.npmmirror.com/@satorijs/element/-/element-3.1.8.tgz", { "dependencies": { "cosmokit": "^1.7.2" } }, "sha512-Sm+YCO0GMKDtAsQ+JKZ6aJeJZYVeMehqmzk4EJr57MnvZt5kP9iqtN8vYOZc/idE69Y5nA/jxKNCSrgrm1yYrA=="],
 
     "@satorijs/protocol/cosmokit": ["cosmokit@1.8.0", "https://registry.npmmirror.com/cosmokit/-/cosmokit-1.8.0.tgz", {}, "sha512-iTnjvOdRKzmcZGSTamFW/pwlDLNBKkIEjk43Ew40YaxSayogY6OsCV40sSTb2dlvD3stR14bLh04qOoQZzX/0Q=="],
+
+    "@sili/database-sqlite-native/cosmokit": ["cosmokit@1.8.0", "https://registry.npmmirror.com/cosmokit/-/cosmokit-1.8.0.tgz", {}, "sha512-iTnjvOdRKzmcZGSTamFW/pwlDLNBKkIEjk43Ew40YaxSayogY6OsCV40sSTb2dlvD3stR14bLh04qOoQZzX/0Q=="],
 
     "@smithy/middleware-retry/uuid": ["uuid@9.0.1", "https://registry.npmmirror.com/uuid/-/uuid-9.0.1.tgz", { "bin": { "uuid": "dist/bin/uuid" } }, "sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA=="],
 
