@@ -43,7 +43,10 @@ export async function rewriteInboundImages(
 const TURN_IMAGES_KEY = 'images'
 
 interface TurnImages {
-  /** Ids the model has seen in this conversation; view_image accepts only these. */
+  /**
+   * Image ids and image URLs the model has seen in this conversation;
+   * view_image accepts only these, so it never fetches an arbitrary URL.
+   */
   known: Set<string>
   /** Images view_image attached this turn. */
   viewed: number
@@ -55,8 +58,16 @@ export function turnImages(turnState: Record<string, unknown>): TurnImages {
   return state
 }
 
-/** Record the image ids appearing in text as seen in this conversation. */
+/** Record the image ids and `<img src>` URLs in text as seen in this conversation. */
 export function noteImageIds(turnState: Record<string, unknown>, text: string) {
   const { known } = turnImages(turnState)
   for (const id of imageIdsIn(text)) known.add(id)
+  // Tool results arrive JSON-encoded: `<img src=\"…\"/>`.
+  for (const m of text.matchAll(/<img\b[^>]*?\bsrc=\\?"([^"\\]*)\\?"/g))
+    if (/^https?:/.test(m[1])) known.add(decodeUrl(m[1]))
+}
+
+/** The URL as fetched: entity- and JSON-escape-free. */
+export function decodeUrl(url: string): string {
+  return url.replace(/\\u0026/g, '&').replace(/&amp;/g, '&')
 }

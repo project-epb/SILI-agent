@@ -445,9 +445,7 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
 export function buildStoredChannelHistoryHandler(
   history: ChannelMessageHistory,
   /** Names stickers and QQ faces in the stored content (sticker pool). */
-  rewrite: (content: string) => string = (c) => c,
-  /** Turns `<img src>` into stored `<image id>` tags (inbound-images.ts). */
-  images: (content: string) => Promise<string> = async (c) => c
+  rewrite: (content: string) => string = (c) => c
 ): ToolHandler {
   const parameters = READ_CHANNEL_HISTORY_TOOL.parameters
   return {
@@ -489,7 +487,9 @@ export function buildStoredChannelHistoryHandler(
           count,
           before
         )
-        const contents = await Promise.all(messages.map((row) => images(rewrite(row.content))))
+        // Images stay as their URLs: nothing is downloaded until the model
+        // asks view_image for one.
+        const contents = messages.map((row) => rewrite(row.content))
         for (const c of contents) noteImageIds(turnState, c)
         return JSON.stringify({
           channel_id: session.channelId,
