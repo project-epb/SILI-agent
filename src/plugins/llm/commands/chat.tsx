@@ -18,6 +18,7 @@ import {
 import { parseStopKeyword } from '../utils/stop-keyword'
 import type { TurnStatus } from '../services/history-filter'
 import { createProgressNudge } from '../utils/progress-nudge'
+import { describeChatError } from '../utils/chat-error'
 import { noteImageIds, rewriteInboundImages, turnImages } from '../utils/inbound-images'
 import { attachedImages } from '../services/image-store'
 import { addTurnSpeaker } from '../utils/turn-speakers'
@@ -94,16 +95,6 @@ function wrapSteer(items: SteerItem[]): string {
  */
 export default class ChatCommand extends BasePlugin {
   static inject = ['llm', 'database']
-
-  /** Common error reply when the agent loop blows up. */
-  private readonly RANDOM_ERROR_MSG = (
-    <random>
-      <template>SILI不知道喔。</template>
-      <template>这道题SILI不会，长大后在学习~</template>
-      <template>SILI的头好痒，不会要长脑子了吧？！</template>
-      <template>锟斤拷锟斤拷锟斤拷</template>
-    </random>
-  )
 
   /**
    * Quick-trigger keywords for web-search mode without `-s`. Heuristic only;
@@ -974,7 +965,7 @@ export default class ChatCommand extends BasePlugin {
           this.#runSteerLeftovers(scope.key, activeEntry)
           resolveCompletion()
           stopEmojiReaction()
-          return this.RANDOM_ERROR_MSG
+          return describeChatError(e)
         }
 
         // SILENT 路径：agent 主动选择沉默，不发任何东西，emoji 提示用户
