@@ -13,7 +13,7 @@ describe('describeChatError', () => {
     [api('APIConnectionError', undefined, 'Connection error.'), '网络中断'],
     [api('AuthenticationError', 401, 'bad key'), '认证失败'],
     [api('RateLimitError', 429, 'slow down'), '429'],
-    [api('BadRequestError', 400, "This model's maximum context length is 128000 tokens"), '太长'],
+    [api('BadRequestError', 400, "This model's maximum context length is 128000 tokens"), '上下文超长'],
     [api('InternalServerError', 502, 'bad gateway'), '502'],
     [api('BadRequestError', 400, "'file' field is required"), "'file' field is required"],
   ])('%s', (e, expected) => {
