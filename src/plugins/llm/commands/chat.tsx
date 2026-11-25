@@ -56,7 +56,7 @@ function canStopTurn(
  */
 const PROGRESS_NUDGE = [
   PROTOCOL_TAGS.STEER_NOTICE.open,
-  '用户已经有一阵没听到你的消息了。用一句话说说你在做什么，然后继续。',
+  "The user hasn't heard from you in a while — say in a few words what you're doing, then continue.",
   PROTOCOL_TAGS.STEER_NOTICE.close,
 ].join('\n')
 
@@ -70,7 +70,7 @@ function wrapSteer(items: SteerItem[]): string {
     hasMessages
       ? [
           PROTOCOL_TAGS.STEER_NOTICE.open,
-          '以下是用户在你工作期间发来的新消息。它们在这一轮进行中送达，随下一个工具结果一起出现，不是单独的一轮对话。先简短回应，再继续手头的事。',
+          'The user sent new messages while you were working. This is how messages sent mid-turn are surfaced — within the running turn, alongside the next tool result, rather than as a separate conversation turn. Reply to them briefly first, then continue your current work.',
           PROTOCOL_TAGS.STEER_NOTICE.close,
         ].join('\n')
       : '',
