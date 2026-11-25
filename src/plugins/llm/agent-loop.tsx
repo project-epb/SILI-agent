@@ -103,8 +103,9 @@ export interface AgentLoopOptions {
    * result, so the next request sees them without breaking the
    * assistant/tool message order. Whatever arrives after the last tool
    * iteration stays with the caller, to run as a turn of its own.
+   * `toolCalls` is how many tools this iteration ran.
    */
-  drainSteer?: () => string
+  drainSteer?: (toolCalls: number) => string
   /**
    * Per-turn state shared across tool executions (see ToolContext). The
    * caller may pass its own to set state up front; a fresh one otherwise.
@@ -384,7 +385,7 @@ export async function runAgentLoop(
       // Steer rides on the iteration's last result, drained once every tool
       // has finished; skipped when interrupted so it runs as its own turn.
       if (index === collectedToolCalls.length - 1 && !isAborted()) {
-        const steer = opts.drainSteer?.()
+        const steer = opts.drainSteer?.(collectedToolCalls.length)
         if (steer) resultText += `\n\n${steer}`
       }
       messages.push({

@@ -1,28 +1,40 @@
 /**
  * Asks the model to say what it is doing when the user has seen nothing for
- * a while (Claude Code does the same). Each nudge costs a QQ reply — at most
- * 5 per user message — so they are sparse and capped per turn.
+ * a while or for several tool calls (Claude Code's silent-turn reminder).
+ * Each nudge costs a QQ reply, so they are capped per turn.
  */
 export interface ProgressNudgeOptions {
-  /** Silence before a nudge, in ms; 0 turns nudges off. */
+  /** Silence before a nudge, in ms; 0 disables the time trigger. */
   afterMs: number
+  /** Tool calls without visible text before a nudge; 0 disables this trigger. */
+  afterToolCalls: number
   maxPerTurn: number
 }
 
 export function createProgressNudge(opts: ProgressNudgeOptions, now = Date.now) {
   let quietSince = now()
+  let quietCalls = 0
   let given = 0
+  const restart = () => {
+    quietSince = now()
+    quietCalls = 0
+  }
   return {
     /** The user just saw something. */
-    seen() {
-      quietSince = now()
-    },
-    /** Whether to nudge now; a nudge restarts the silence count. */
-    take(): boolean {
-      if (opts.afterMs <= 0 || given >= opts.maxPerTurn) return false
-      if (now() - quietSince < opts.afterMs) return false
+    seen: restart,
+    /**
+     * Record `toolCalls` more calls and say whether to nudge now; a nudge
+     * restarts both counts.
+     */
+    take(toolCalls: number): boolean {
+      quietCalls += toolCalls
+      if (given >= opts.maxPerTurn) return false
+      const byTime = opts.afterMs > 0 && now() - quietSince >= opts.afterMs
+      const byCalls =
+        opts.afterToolCalls > 0 && quietCalls >= opts.afterToolCalls
+      if (!byTime && !byCalls) return false
       given++
-      quietSince = now()
+      restart()
       return true
     },
   }

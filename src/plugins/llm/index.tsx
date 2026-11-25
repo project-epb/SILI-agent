@@ -180,9 +180,11 @@ export interface Config {
   showToolCallNotice?: boolean
   /**
    * Remind the model to say what it is doing after this long without
-   * visible text during tool calls; 0 disables. See utils/progress-nudge.
+   * visible text during tool calls; 0 disables this trigger. See utils/progress-nudge.
    */
   progressNudgeAfterMs?: number
+  /** Also remind after this many tool calls without visible text; 0 disables. */
+  progressNudgeAfterToolCalls?: number
   /** At most this many progress reminders per turn. */
   progressNudgeMaxPerTurn?: number
   /**
@@ -325,6 +327,7 @@ export default class PluginLLM extends BasePlugin<Config> {
       maxToolIterations: 5,
       showToolCallNotice: false,
       progressNudgeAfterMs: 60 * 1000,
+      progressNudgeAfterToolCalls: 5,
       progressNudgeMaxPerTurn: 2,
       dsmlLeakMaxRetries: 2,
       memoryByteLimit: 3000,

@@ -56,7 +56,7 @@ function canStopTurn(
  */
 const PROGRESS_NUDGE = [
   PROTOCOL_TAGS.STEER_NOTICE.open,
-  '用户已经有一阵没看到你的消息了。先用一句话说说你在做什么（不要分条），然后继续。',
+  '用户已经有一阵没听到你的消息了。用一句话说说你在做什么，然后继续。',
   PROTOCOL_TAGS.STEER_NOTICE.close,
 ].join('\n')
 
@@ -70,7 +70,7 @@ function wrapSteer(items: SteerItem[]): string {
     hasMessages
       ? [
           PROTOCOL_TAGS.STEER_NOTICE.open,
-          '以下用户消息是你忙着的时候新发来的。先把手头的事做完，再回应它们，不要忽略。',
+          '以下是用户在你工作期间发来的新消息。它们在这一轮进行中送达，随下一个工具结果一起出现，不是单独的一轮对话。先简短回应，再继续手头的事。',
           PROTOCOL_TAGS.STEER_NOTICE.close,
         ].join('\n')
       : '',
@@ -796,6 +796,7 @@ export default class ChatCommand extends BasePlugin {
         // 逐字流给用户的 helper
         const progressNudge = createProgressNudge({
           afterMs: llm.config.progressNudgeAfterMs ?? 0,
+          afterToolCalls: llm.config.progressNudgeAfterToolCalls ?? 0,
           maxPerTurn: llm.config.progressNudgeMaxPerTurn ?? 0,
         })
         const flushVisibleText = async (force: boolean) => {
@@ -923,12 +924,12 @@ export default class ChatCommand extends BasePlugin {
               } as any)
             },
             turnState,
-            drainSteer: () => {
+            drainSteer: (toolCalls) => {
               const items = activeEntry.inbox.splice(0)
               noteSpeakers(items)
               if (fromOthers(items))
                 getMemoryToolState(turnState).othersSpoke = true
-              return [wrapSteer(items), progressNudge.take() ? PROGRESS_NUDGE : '']
+              return [wrapSteer(items), progressNudge.take(toolCalls) ? PROGRESS_NUDGE : '']
                 .filter(Boolean)
                 .join('\n\n')
             },
