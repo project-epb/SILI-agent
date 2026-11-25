@@ -82,11 +82,16 @@ export class ImageStore {
     return this.loading
   }
 
-  /** Store raw image bytes; returns the existing ref when already stored. */
-  async put(bytes: Uint8Array): Promise<ImageRef> {
+  /**
+   * Store raw image bytes; returns the existing ref when already stored.
+   * The key is the SHA1 of the source bytes, or `sha1` when given (the hash
+   * a QQ URL names), so an image keeps the id its URL gave it even if what
+   * was served is not byte-identical. What is stored is the re-encoded
+   * WebP; the key never changes with it.
+   */
+  async put(bytes: Uint8Array, sha1 = crypto.createHash('sha1').update(bytes).digest('hex')): Promise<ImageRef> {
     if (bytes.length > this.opts.maxImageBytes)
       throw new Error(`image over ${this.opts.maxImageBytes} bytes`)
-    const sha1 = crypto.createHash('sha1').update(bytes).digest('hex')
     const index = await this.loadIndex()
     const id = sha1.slice(0, IMAGE_ID_LENGTH)
     const known = index.get(id)
@@ -130,7 +135,7 @@ export class ImageStore {
       await this.touch(stored)
       return stored
     }
-    return this.put(await this.opts.fetch(url))
+    return this.put(await this.opts.fetch(url), sha1FromQQImageUrl(url))
   }
 
   /** The ref for an id, or undefined once evicted. */
