@@ -27,7 +27,7 @@ export function describeChatError(e: unknown): string {
     /ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|fetch failed|network/i.test(`${message} ${netCode}`)
   )
     return say('SILI 这边信号不好，过会儿再联系。', `网络中断：${netCode || message}`)
-  if (status === 401 || status === 403) return say('SILI 被关在门外了，得请主人来看看。', http)
+  if (status === 401 || status === 403) return say('SILI 被关在门外了，得请 leader 来看看。', http)
   if (status === 429) return say('SILI 今天说太多话，嗓子哑了，歇一会儿再来吧。', http)
   if (status === 413 || (status === 400 && /context|too long|maximum.*tokens|token limit/i.test(message)))
     return say('聊得太多，SILI 记不下了。', http)
