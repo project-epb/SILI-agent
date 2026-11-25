@@ -1,6 +1,7 @@
 import { Context, Logger, Session } from 'koishi'
 
 import { LLMProviderBase } from './providers/_base'
+import { withToolAttachments } from './providers/images'
 import type {
   ChatCompletionFeatures,
   ChatCompletionOptions,
@@ -11,6 +12,7 @@ import type {
 import { PROTOCOL_MARKERS, escapeProtocolTags } from './utils/protocol'
 import { containsDsmlLeak } from './utils/dsml-leak'
 import { ToolRegistry } from './tools'
+import type { ToolResult } from './tools/types'
 
 const { SILENT: SILENT_MARKER, INTERRUPTED: INTERRUPTED_MARKER, MSG_BREAK: MSG_BREAK_MARKER } =
   PROTOCOL_MARKERS
@@ -103,9 +105,10 @@ export interface AgentLoopOptions {
    * result, so the next request sees them without breaking the
    * assistant/tool message order. Whatever arrives after the last tool
    * iteration stays with the caller, to run as a turn of its own.
-   * `toolCalls` is how many tools this iteration ran.
+   * `toolCalls` is how many tools this iteration ran. `images` are the
+   * steered messages' attached images, sent after the tool results.
    */
-  drainSteer?: (toolCalls: number) => string
+  drainSteer?: (toolCalls: number) => { text: string; images: string[] }
   /**
    * Per-turn state shared across tool executions (see ToolContext). The
    * caller may pass its own to set state up front; a fresh one otherwise.
@@ -126,6 +129,7 @@ export interface ToolTurnRecord {
   toolCallId: string
   toolName: string
   content: string
+  images?: string[]
   time: number
 }
 
@@ -198,7 +202,7 @@ export async function runAgentLoop(
       dsmlLeaked = false
 
       const stream = opts.provider.streamChatCompletion(
-        messages,
+        withToolAttachments(messages),
         callOptions,
         { ...opts.features, signal: opts.signal }
       )
@@ -357,6 +361,7 @@ export async function runAgentLoop(
       role: 'assistant',
       content: currentContent,
       tool_calls: collectedToolCalls,
+      reasoning_content: currentReasoning,
     })
 
     for (const [index, tc] of collectedToolCalls.entries()) {
@@ -376,7 +381,9 @@ export async function runAgentLoop(
       opts.logger.info('[agent] tool call:', tc.name, tc.arguments)
       // Tool output comes from outside (web pages, chat history): a forged
       // envelope tag in it must not read as a real message.
-      let resultText = escapeProtocolTags(await dispatchTool(opts, tc, turnState))
+      const result = await dispatchTool(opts, tc, turnState)
+      let resultText = escapeProtocolTags(result.content)
+      const images = [...(result.images ?? [])]
       opts.logger.info(
         '[agent] tool result:',
         tc.name,
@@ -386,18 +393,21 @@ export async function runAgentLoop(
       // has finished; skipped when interrupted so it runs as its own turn.
       if (index === collectedToolCalls.length - 1 && !isAborted()) {
         const steer = opts.drainSteer?.(collectedToolCalls.length)
-        if (steer) resultText += `\n\n${steer}`
+        if (steer?.text) resultText += `\n\n${steer.text}`
+        if (steer?.images.length) images.push(...steer.images)
       }
       messages.push({
         role: 'tool',
         tool_call_id: tc.id,
         tool_name: tc.name,
         content: resultText,
+        ...(images.length && { images }),
       })
       await opts.onToolRecord({
         toolCallId: tc.id,
         toolName: tc.name,
         content: resultText,
+        images: images.length ? images : undefined,
         time: Date.now(),
       })
     }
@@ -422,21 +432,22 @@ async function dispatchTool(
   opts: AgentLoopOptions,
   tc: ToolCall,
   turnState: Record<string, unknown>
-): Promise<string> {
+): Promise<ToolResult> {
   const handler = opts.registry.get(tc.name)
-  if (!handler) return `Error: unknown tool "${tc.name}"`
+  if (!handler) return { content: `Error: unknown tool "${tc.name}"` }
   if (!opts.registry.allows(handler, opts.session))
-    return `Error: ${tc.name} is not enabled in this chat. Tell the user it is unavailable here; do not retry or work around it.`
+    return { content: `Error: ${tc.name} is not enabled in this chat. Tell the user it is unavailable here; do not retry or work around it.` }
   try {
-    return await handler.execute(tc.arguments, {
+    const out = await handler.execute(tc.arguments, {
       ctx: opts.ctx,
       logger: opts.logger,
       session: opts.session,
       turnState,
       signal: opts.signal,
     })
+    return typeof out === 'string' ? { content: out } : out
   } catch (e: any) {
-    return `Error: ${e?.message || String(e)}`
+    return { content: `Error: ${e?.message || String(e)}` }
   }
 }
 

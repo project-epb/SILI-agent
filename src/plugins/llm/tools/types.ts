@@ -23,9 +23,15 @@ export interface ToolContext {
   signal?: AbortSignal
 }
 
+/** A result with images: their pixels follow the batch of results (providers/images.ts). */
+export interface ToolResult {
+  content: string
+  images?: string[]
+}
+
 export interface ToolHandler {
   definition: ToolDefinition
-  execute(args: Record<string, any>, toolCtx: ToolContext): Promise<string>
+  execute(args: Record<string, any>, toolCtx: ToolContext): Promise<string | ToolResult>
   /**
    * May run only in conversations where this returns true. The tool is still
    * listed everywhere: the tool list is part of the cached prompt prefix and

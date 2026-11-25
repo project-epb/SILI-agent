@@ -21,6 +21,7 @@ import { ChatCompletionUsage, LLMProviderBase } from './providers/_base'
 import { AnthropicProvider } from './providers/anthropic'
 import { CopilotProvider } from './providers/copilot'
 import { OpenAIProvider } from './providers/openai'
+import { ResponsesProvider } from './providers/responses'
 import { ActiveChatRegistry } from './services/active-chats'
 import { ChatHistoryService } from './services/chat-history'
 import { CommandCatalogService } from './services/command-catalog'
@@ -29,7 +30,15 @@ import { DeepSeekSearchClient } from './services/deepseek-search-client'
 import type { TurnStatus } from './services/history-filter'
 import { IdleCompactor } from './services/idle-compactor'
 import { ImageReferenceCache } from './services/image-cache'
+import { encodeImage } from './services/image-encode'
+import { ImageStore } from './services/image-store'
+import { rewriteInboundImages } from './utils/inbound-images'
 import { MemoryStore } from './services/memory'
+import {
+  PROVIDER_FILES_CLEANUP_MS,
+  ProviderFiles,
+  extendProviderFileTable,
+} from './services/provider-files'
 import { MemoryForkScheduler } from './services/memory-fork-scheduler'
 import type { MemorySnapshotSource } from './services/memory-snapshot'
 import { SessionManager } from './services/session-manager'
@@ -49,6 +58,7 @@ import {
   buildReadChannelHistoryHandler,
   buildSaveUserMemoryTool,
   buildStoredChannelHistoryHandler,
+  viewImageHandler,
   executeKoishiCommandHandler,
   getMemoryToolState,
   getWebToolsState,
@@ -108,30 +118,27 @@ interface OpenAIConversationLog {
   turn_status?: TurnStatus
   /** User rows only: why a failed turn failed. For people; never sent. */
   turn_error?: string
+  /** User and tool rows: images sent with the row (see providers/images.ts). */
+  images?: string[]
 }
 
-export type ProviderConfig =
-  | {
-      name: string
-      type: 'openai'
-      options: ClientOptions
-      model?: string
-      maxTokens?: number
-    }
-  | {
-      name: string
-      type: 'anthropic'
-      options: AnthropicClientOptions
-      model?: string
-      maxTokens?: number
-    }
-  | {
-      name: string
-      type: 'copilot'
-      options: ClientOptions
-      model?: string
-      maxTokens?: number
-    }
+interface ProviderCommon {
+  name: string
+  model?: string
+  maxTokens?: number
+  /** The models read images; otherwise images become a note. */
+  vision?: boolean
+  /** Send images as Files API file_ids (responses only). */
+  nativeFiles?: boolean
+  /** Total bytes we keep uploaded to this provider; LRU beyond it. */
+  nativeFilesMaxBytes?: number
+}
+
+export type ProviderConfig = ProviderCommon &
+  (
+    | { type: 'openai' | 'copilot' | 'responses'; options: ClientOptions }
+    | { type: 'anthropic'; options: AnthropicClientOptions }
+  )
 
 export interface Config {
   providers: ProviderConfig[]
@@ -290,6 +297,15 @@ export default class PluginLLM extends BasePlugin<Config> {
   readonly groupMemory = new MemoryRecordStore(this.ctx, 'openai_group_memory')
   readonly sessions: SessionManager = new SessionManager(this.ctx)
   readonly tools: ToolRegistry = new ToolRegistry()
+  /** Images the model looks at, by content hash (see services/image-store). */
+  readonly images = new ImageStore({
+    dir: resolve(this.ctx.baseDir, 'data', 'llm', 'images'),
+    ttlMs: 30 * Time.day,
+    maxBytes: 2 * 1024 ** 3,
+    maxImageBytes: 20 * 1024 ** 2,
+    encode: encodeImage,
+    fetch: async (url) => new Uint8Array((await this.ctx.http.file(url)).data),
+  })
   readonly imageRefs: ImageReferenceCache = new ImageReferenceCache({
     dir: resolve(this.ctx.baseDir, 'data', 'llm', 'image-cache'),
     maxBytes: this.config.imageCacheMaxBytes,
@@ -399,32 +415,54 @@ export default class PluginLLM extends BasePlugin<Config> {
       }, Time.minute)
     })
 
+    extendProviderFileTable(ctx)
+    const providerFiles: ProviderFiles[] = []
     for (const providerConfig of config.providers) {
+      let provider: LLMProviderBase
       switch (providerConfig.type) {
         case 'openai':
-          this.providers.set(
-            providerConfig.name,
-            new OpenAIProvider(providerConfig.options)
-          )
+          provider = new OpenAIProvider(providerConfig.options)
           break
+        case 'responses': {
+          const responses = new ResponsesProvider(providerConfig.options)
+          if (providerConfig.nativeFiles) {
+            responses.files = new ProviderFiles(
+              ctx,
+              providerConfig.name,
+              responses.client,
+              providerConfig.nativeFilesMaxBytes ?? 1024 ** 3
+            )
+            providerFiles.push(responses.files)
+          }
+          provider = responses
+          break
+        }
         case 'anthropic':
-          this.providers.set(
-            providerConfig.name,
-            new AnthropicProvider(providerConfig.options)
-          )
+          provider = new AnthropicProvider(providerConfig.options)
           break
         case 'copilot':
-          this.providers.set(
-            providerConfig.name,
-            new CopilotProvider(providerConfig.options)
-          )
+          provider = new CopilotProvider(providerConfig.options)
           break
         default:
           this.logger.warn(
             `Unknown provider type: ${(providerConfig as any).type}`
           )
+          continue
       }
+      provider.vision = providerConfig.vision ?? false
+      provider.imageSource = this.images
+      this.providers.set(providerConfig.name, provider)
     }
+    // Remote files are ours to clean up: few providers expire them.
+    const cleanupProviderFiles = () => {
+      for (const files of providerFiles)
+        files
+          .cleanup()
+          .then((n) => n && this.logger.info('[files] deleted %d expired remote files', n))
+          .catch((e) => this.logger.warn('[files] cleanup failed:', e))
+    }
+    ctx.on('ready', cleanupProviderFiles)
+    ctx.setInterval(cleanupProviderFiles, PROVIDER_FILES_CLEANUP_MS)
 
     this.#initDatabase()
     // 顶层命令（仅声明 namespace，子命令由子插件注册）
@@ -570,13 +608,17 @@ export default class PluginLLM extends BasePlugin<Config> {
       })
     }
 
+    promptSection('image', 'image.prompt.md')
+    this.tools.register(viewImageHandler)
+
     const channelHistory = this.ctx.channelMessageHistory
     promptSection('channel-history', 'channel-history.prompt.md')
     this.tools.register(
       channelHistory
         ? buildStoredChannelHistoryHandler(
             channelHistory,
-            (c) => this.ctx.get('stickerPool')?.rewriteInbound(c) ?? c
+            (c) => this.ctx.get('stickerPool')?.rewriteInbound(c) ?? c,
+            (c) => rewriteInboundImages(c, (url) => this.images.fetch(url), this.logger)
           )
         : buildReadChannelHistoryHandler()
     )
@@ -613,6 +655,13 @@ export default class PluginLLM extends BasePlugin<Config> {
         .catch((e) =>
           this.logger.warn('[image-cache] startup cleanup failed:', e)
         )
+      const cleanupImages = () =>
+        this.images
+          .cleanup()
+          .then((r) => r.removed && this.logger.info('[images] cleanup: removed=%d kept=%d totalBytes=%d', r.removed, r.kept, r.totalBytes))
+          .catch((e) => this.logger.warn('[images] cleanup failed:', e))
+      cleanupImages()
+      this.ctx.setInterval(cleanupImages, Time.hour)
       this.ctx.setInterval(
         () => {
           this.imageRefs
@@ -656,6 +705,8 @@ export default class PluginLLM extends BasePlugin<Config> {
         // and, when it failed, why — the reason is for people, never sent.
         turn_status: 'string',
         turn_error: 'text',
+        // User and tool rows: ids of the images whose pixels go with the row.
+        images: 'json',
       },
       {
         primary: 'id',

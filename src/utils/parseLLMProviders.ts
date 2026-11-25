@@ -5,13 +5,18 @@ import type { ProviderConfig } from '~/llm'
  *
  * Convention:
  *   LLM_PROVIDER_{N}_NAME     — unique identifier (required)
- *   LLM_PROVIDER_{N}_TYPE     — 'openai' | 'anthropic' | 'copilot' (required)
+ *   LLM_PROVIDER_{N}_TYPE     — 'openai' | 'responses' | 'anthropic' | 'copilot' (required)
+ *     'openai' is Chat Completions; 'responses' is the OpenAI Responses API.
  *     For 'copilot', API_KEY is your GitHub OAuth token; BASE_URL is normally
  *     left unset (the endpoint is auto-detected from your Copilot plan).
  *   LLM_PROVIDER_{N}_BASE_URL — API base URL (optional, mainly for openai-compatible)
  *   LLM_PROVIDER_{N}_API_KEY  — API key (optional, SDK can also read from its own env var)
  *   LLM_PROVIDER_{N}_MODEL       — default model override
  *   LLM_PROVIDER_{N}_MAX_TOKENS  — default max tokens override
+ *   LLM_PROVIDER_{N}_VISION      — 'true' when the models read images
+ *   LLM_PROVIDER_{N}_NATIVE_FILES — 'true' to send images as Files API
+ *     file_ids (responses only)
+ *   LLM_PROVIDER_{N}_NATIVE_FILES_MAX_BYTES — total kept uploaded; default 1 GiB
  *
  *   LLM_DEFAULT_PROVIDER — name of the provider to use as default. If set and
  *     matched, that provider is moved to index 0 so PluginLLM picks it up as
@@ -37,39 +42,22 @@ export function parseLLMProviders(
     const maxTokensRaw = env[`${prefix}MAX_TOKENS`]
     const maxTokens = maxTokensRaw ? Number(maxTokensRaw) : undefined
 
+    const nativeFilesMax = env[`${prefix}NATIVE_FILES_MAX_BYTES`]
     const base = {
       name,
       model: model || undefined,
       maxTokens,
+      ...(env[`${prefix}VISION`] === 'true' && { vision: true }),
+      ...(env[`${prefix}NATIVE_FILES`] === 'true' && { nativeFiles: true }),
+      ...(nativeFilesMax && { nativeFilesMaxBytes: Number(nativeFilesMax) }),
+      options: {
+        ...(baseURL && { baseURL }),
+        ...(apiKey && { apiKey }),
+      },
     }
 
-    if (type === 'openai') {
-      providers.push({
-        ...base,
-        type: 'openai',
-        options: {
-          ...(baseURL && { baseURL }),
-          ...(apiKey && { apiKey }),
-        },
-      })
-    } else if (type === 'anthropic') {
-      providers.push({
-        ...base,
-        type: 'anthropic',
-        options: {
-          ...(baseURL && { baseURL }),
-          ...(apiKey && { apiKey }),
-        },
-      })
-    } else if (type === 'copilot') {
-      providers.push({
-        ...base,
-        type: 'copilot',
-        options: {
-          ...(baseURL && { baseURL }),
-          ...(apiKey && { apiKey }),
-        },
-      })
+    if (type === 'openai' || type === 'responses' || type === 'anthropic' || type === 'copilot') {
+      providers.push({ ...base, type })
     }
   }
 

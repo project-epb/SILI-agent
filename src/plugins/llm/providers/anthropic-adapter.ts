@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import type { ChatMessage, StreamChatDelta } from './_base'
+import type { ResolvedPart } from './images'
 
 export function splitSystemMessages(messages: ChatMessage[]): {
   system: string
@@ -13,8 +14,29 @@ export function splitSystemMessages(messages: ChatMessage[]): {
   return { system, rest }
 }
 
+function toAnthropicBlocks(parts: ResolvedPart[]): Anthropic.ContentBlockParam[] {
+  return parts.map((p) =>
+    p.type === 'text'
+      ? { type: 'text', text: p.text }
+      : {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: p.mime as Anthropic.Base64ImageSource['media_type'],
+            data: Buffer.from(p.bytes).toString('base64'),
+          },
+        }
+  )
+}
+
+/**
+ * `resolved` holds the loaded parts of user messages that carry images. A
+ * user message right after tool results joins their message: Anthropic
+ * wants the turn after tool_use to be one user message.
+ */
 export function toAnthropicMessages(
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  resolved: Map<ChatMessage, ResolvedPart[]> = new Map()
 ): Anthropic.MessageParam[] {
   const out: Anthropic.MessageParam[] = []
   let pendingToolResults: Anthropic.ToolResultBlockParam[] = []
@@ -35,6 +57,13 @@ export function toAnthropicMessages(
         tool_use_id: m.tool_call_id,
         content: m.content,
       })
+      continue
+    }
+
+    const parts = m.role === 'user' ? resolved.get(m) : undefined
+    if (parts) {
+      out.push({ role: 'user', content: [...pendingToolResults, ...toAnthropicBlocks(parts)] })
+      pendingToolResults = []
       continue
     }
 

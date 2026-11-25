@@ -99,6 +99,7 @@ export class ChatHistoryService {
           'tool_call_id',
           'tool_name',
           'turn_status',
+          'images',
         ],
       }
     )) as Array<HistoryRow & { reasoning_content?: string }> | null
@@ -113,6 +114,7 @@ export class ChatHistoryService {
           tool_call_id: row.tool_call_id ?? '',
           tool_name: row.tool_name ?? '',
           content: row.content,
+          ...(row.images?.length && { images: row.images }),
         }
       }
       if (row.role === 'assistant') {
@@ -126,7 +128,9 @@ export class ChatHistoryService {
           reasoning_content: row.reasoning_content ?? '',
         }
       }
-      return { role: row.role as 'user' | 'system', content: row.content }
+      if (row.role === 'user')
+        return { role: 'user', content: row.content, ...(row.images?.length && { images: row.images }) }
+      return { role: 'system', content: row.content }
     })
     return { messages, pendingNote }
   }

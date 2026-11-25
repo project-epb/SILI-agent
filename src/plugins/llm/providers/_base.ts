@@ -12,7 +12,15 @@ export interface ToolCall {
 
 export type ChatMessage =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  | {
+      role: 'user'
+      content: string
+      /**
+       * Images whose pixels go with this message, by id; each is sent right
+       * after its `<image id=…/>` tag in `content` (see providers/images.ts).
+       */
+      images?: string[]
+    }
   | {
       role: 'assistant'
       content: string
@@ -24,6 +32,11 @@ export type ChatMessage =
       tool_call_id: string
       tool_name: string
       content: string
+      /**
+       * Images this result brings in. Never sent inside the tool result:
+       * withToolAttachments moves them into a user message after the batch.
+       */
+      images?: string[]
     }
 
 export interface ChatCompletionOptions {
@@ -88,7 +101,16 @@ export interface ModelInfo {
   outputPrice?: number
 }
 
+/** Where providers read stored images from (the llm image store). */
+export interface ImageSource {
+  read(id: string): Promise<{ bytes: Uint8Array; type: string } | undefined>
+}
+
 export abstract class LLMProviderBase {
+  /** Whether the model reads images; without it they become a note. */
+  vision = false
+  imageSource?: ImageSource
+
   protected normalizeOptions(
     options: ChatCompletionOptions,
     features?: ChatCompletionFeatures

@@ -13,6 +13,7 @@ import {
   splitSystemMessages,
   toAnthropicMessages,
 } from './anthropic-adapter'
+import { ResolvedPart, resolveUserParts } from './images'
 
 function mapAnthropicStopReason(reason: string | undefined): StreamFinishReason {
   switch (reason) {
@@ -42,13 +43,17 @@ export class AnthropicProvider extends LLMProviderBase {
     features?: ChatCompletionFeatures
   ): AsyncGenerator<StreamChatDelta, void, unknown> {
     const { system, rest } = splitSystemMessages(messages)
+    const resolved = new Map<ChatMessage, ResolvedPart[]>()
+    for (const m of rest)
+      if (m.role === 'user' && m.images?.length)
+        resolved.set(m, await resolveUserParts(m, this.vision, this.imageSource))
 
     const body: Anthropic.MessageCreateParams = {
       model: options.model,
       max_tokens: options.maxTokens ?? 1024,
       temperature: options.temperature ?? 0.8,
       system: system || undefined,
-      messages: toAnthropicMessages(rest),
+      messages: toAnthropicMessages(rest, resolved),
       stream: true,
     }
 

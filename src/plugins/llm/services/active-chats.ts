@@ -6,6 +6,8 @@ export interface SteerItem {
   prompt: string
   /** The message's own turn_context + user_message envelope. */
   envelope: string
+  /** Images whose pixels go with the envelope. */
+  images?: string[]
 }
 
 /**

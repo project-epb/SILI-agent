@@ -9,6 +9,7 @@ import {
   StreamChatDelta,
   StreamFinishReason,
 } from './_base'
+import { dataUrl, resolveUserParts } from './images'
 import { OpenAIStreamAggregator, prepareOpenAIMessages } from './openai-adapter'
 
 function mapOpenAIFinishReason(reason: string | undefined): StreamFinishReason {
@@ -124,9 +125,23 @@ export class OpenAIProvider extends LLMProviderBase {
   ): AsyncGenerator<StreamChatDelta, void, unknown> {
     const opts = this.normalizeOptions(options, features)
 
+    const prepared: any[] = prepareOpenAIMessages(messages, opts.model)
+    for (const [i, m] of messages.entries()) {
+      if (m.role !== 'user' || !m.images?.length) continue
+      const parts = await resolveUserParts(m, this.vision, this.imageSource)
+      prepared[i] = {
+        role: 'user',
+        content: parts.map((p) =>
+          p.type === 'text'
+            ? { type: 'text', text: p.text }
+            : { type: 'image_url', image_url: { url: dataUrl(p.bytes, p.mime) } }
+        ),
+      }
+    }
+
     const body: Record<string, any> = {
       model: opts.model,
-      messages: prepareOpenAIMessages(messages, opts.model),
+      messages: prepared,
       max_tokens: opts.maxTokens ?? 1024,
       temperature: opts.temperature ?? 0.8,
       top_p: opts.topP ?? 0.8,

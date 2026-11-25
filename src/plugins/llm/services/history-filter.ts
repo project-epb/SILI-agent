@@ -16,6 +16,7 @@ export interface HistoryRow {
   tool_call_id?: string
   tool_name?: string
   turn_status?: TurnStatus | string
+  images?: string[] | null
 }
 
 interface Turn {

@@ -18,6 +18,8 @@ import {
 import { parseStopKeyword } from '../utils/stop-keyword'
 import type { TurnStatus } from '../services/history-filter'
 import { createProgressNudge } from '../utils/progress-nudge'
+import { noteImageIds, rewriteInboundImages } from '../utils/inbound-images'
+import { attachedImages } from '../services/image-store'
 import { addTurnSpeaker } from '../utils/turn-speakers'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
 import { ToolRegistry, getMemoryToolState, snapshotTiers } from '../tools'
@@ -250,6 +252,9 @@ export default class ChatCommand extends BasePlugin {
         const stickerPool = llm.ctx.get('stickerPool')
         if (stickerPool && userPrompt)
           userPrompt = stickerPool.rewriteInbound(userPrompt)
+        const fetchImage = (url: string) => llm.images.fetch(url)
+        if (userPrompt)
+          userPrompt = await rewriteInboundImages(userPrompt, fetchImage, llm.logger)
 
         const startTime = Date.now()
         const scope = resolveConversationScope(session)
@@ -447,6 +452,11 @@ export default class ChatCommand extends BasePlugin {
             content: stickerPool.rewriteInbound(quoteMeta.content),
           }
         }
+        if (quoteMeta)
+          quoteMeta = {
+            ...quoteMeta,
+            content: await rewriteInboundImages(quoteMeta.content, fetchImage, llm.logger),
+          }
         const quotedMessageBlock = quoteMeta
           ? buildQuotedMessageBlock(
               quoteMeta,
@@ -470,6 +480,10 @@ export default class ChatCommand extends BasePlugin {
                 return ''
               })
           : ''
+        // The first few images of this message go with it as pixels; which
+        // ones is fixed here and stored with the row, so replay matches.
+        const ownImages = attachedImages(`${quotedMessageBlock}\n${userMessageBlock}`)
+        let envelopeImages = ownImages.ids
         // Base envelope shapes — the optional memory snapshot prefix is
         // computed AFTER history load (we only seed memory on the first
         // turn of a fresh conversation, and post-compaction sessions
@@ -479,6 +493,7 @@ export default class ChatCommand extends BasePlugin {
           quotedMessageBlock,
           attachmentsBlock,
           userMessageBlock,
+          ownImages.note,
         ]
           .filter(Boolean)
           .join('\n')
@@ -491,6 +506,7 @@ export default class ChatCommand extends BasePlugin {
               quotedMessageBlock,
               attachmentsBlock,
               userMessageBlock,
+              ownImages.note,
             ]
               .filter(Boolean)
               .join('\n')
@@ -513,6 +529,7 @@ export default class ChatCommand extends BasePlugin {
             session,
             prompt: userPrompt ?? '',
             envelope: persistableEnvelopeBase,
+            images: envelopeImages,
           })
           llm.logger.info('[chat] steered into the running turn of %s', scope.key)
           return
@@ -527,6 +544,7 @@ export default class ChatCommand extends BasePlugin {
           const prepend = (base: string) => [earlier, base].filter(Boolean).join('\n\n')
           persistableEnvelopeBase = prepend(persistableEnvelopeBase)
           userMessageEnvelopeBase = prepend(userMessageEnvelopeBase)
+          envelopeImages = [...backlog.flatMap((item) => item.images ?? []), ...envelopeImages]
         }
 
         // 解析 conversation_id：
@@ -743,8 +761,10 @@ export default class ChatCommand extends BasePlugin {
             content: pendingNote
               ? `${pendingNote}\n\n${userMessageEnvelope}`
               : userMessageEnvelope,
+            ...(envelopeImages.length && { images: envelopeImages }),
           }
         )
+        for (const m of chatMessages) noteImageIds(turnState, m.content)
 
         // 分配本 chat invocation 的 turn_number。在 session rotation 之后、
         // 任何 record 落库之前 allocate；ActiveChatRegistry 已经按 owner
@@ -773,6 +793,7 @@ export default class ChatCommand extends BasePlugin {
           turn_number: turnNumber,
           intra_turn_seq: 0,
           turn_status: 'running',
+          ...(envelopeImages.length && { images: envelopeImages }),
         } as any)
         const thisTurn = {
           conversation_id,
@@ -917,6 +938,7 @@ export default class ChatCommand extends BasePlugin {
                 reasoning_content: '',
                 tool_call_id: record.toolCallId,
                 tool_name: record.toolName,
+                ...(record.images && { images: record.images }),
                 time: record.time,
                 turn_number: turnNumber,
                 intra_turn_seq: nextSeq(),
@@ -928,9 +950,11 @@ export default class ChatCommand extends BasePlugin {
               noteSpeakers(items)
               if (fromOthers(items))
                 getMemoryToolState(turnState).othersSpoke = true
-              return [wrapSteer(items), progressNudge.take(toolCalls) ? PROGRESS_NUDGE : '']
+              const text = [wrapSteer(items), progressNudge.take(toolCalls) ? PROGRESS_NUDGE : '']
                 .filter(Boolean)
                 .join('\n\n')
+              noteImageIds(turnState, text)
+              return { text, images: items.flatMap((item) => item.images ?? []) }
             },
             onTurnEnd: async () => {
               // 强制把这一轮累积的可见文本发出，作为一条独立消息——

@@ -41,11 +41,11 @@ describe('stored channel history', () => {
     const session = { channelId: 'group', isDirect: false }
     const result = await buildStoredChannelHistoryHandler(history).execute(
       { before_message_id: 'reply-message', count: 2 },
-      { session } as ToolContext
+      { session, turnState: {} } as unknown as ToolContext
     )
 
     expect(read).toHaveBeenCalledWith(session, 2, 'reply-message')
-    const parsed = JSON.parse(result)
+    const parsed = JSON.parse(result as string)
     expect(parsed.channel_id).toBe('group')
     expect(parsed.next_before_message_id).toBe('older-message')
     expect(parsed.messages).toHaveLength(2)

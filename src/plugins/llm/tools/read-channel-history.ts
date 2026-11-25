@@ -4,6 +4,7 @@ import type ChannelMessageHistory from '@/services/channel-message-history'
 
 import type { ToolDefinition } from '../providers/_base'
 import type { ToolHandler } from './types'
+import { noteImageIds } from '../utils/inbound-images'
 
 export const READ_CHANNEL_HISTORY_TOOL: ToolDefinition = {
   name: 'read_channel_history',
@@ -444,7 +445,9 @@ export function buildReadChannelHistoryHandler(): ToolHandler {
 export function buildStoredChannelHistoryHandler(
   history: ChannelMessageHistory,
   /** Names stickers and QQ faces in the stored content (sticker pool). */
-  rewrite: (content: string) => string = (c) => c
+  rewrite: (content: string) => string = (c) => c,
+  /** Turns `<img src>` into stored `<image id>` tags (inbound-images.ts). */
+  images: (content: string) => Promise<string> = async (c) => c
 ): ToolHandler {
   const parameters = READ_CHANNEL_HISTORY_TOOL.parameters
   return {
@@ -465,7 +468,7 @@ export function buildStoredChannelHistoryHandler(
         additionalProperties: false,
       },
     },
-    async execute(args, { session, logger }) {
+    async execute(args, { session, logger, turnState }) {
       if (session.isDirect || !session.channelId) {
         return JSON.stringify({
           error: 'read_channel_history 只适用于群聊频道。',
@@ -486,10 +489,12 @@ export function buildStoredChannelHistoryHandler(
           count,
           before
         )
+        const contents = await Promise.all(messages.map((row) => images(rewrite(row.content))))
+        for (const c of contents) noteImageIds(turnState, c)
         return JSON.stringify({
           channel_id: session.channelId,
           next_before_message_id: nextMessageId ?? null,
-          messages: messages.map((row) => ({
+          messages: messages.map((row, i) => ({
             message_id: row.messageId,
             timestamp: row.time.toISOString(),
             sender: {
@@ -499,7 +504,7 @@ export function buildStoredChannelHistoryHandler(
               is_bot: !!row.isBot,
             },
             quoted_message_id: row.quoteId || null,
-            content: rewrite(row.content).replace(
+            content: contents[i].replace(
               /(src|url)="(?:base64:|data:)[^"]*"/gi,
               '$1="[inline media]"'
             ),
