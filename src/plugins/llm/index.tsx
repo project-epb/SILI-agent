@@ -32,6 +32,7 @@ import { IdleCompactor } from './services/idle-compactor'
 import { ImageReferenceCache } from './services/image-cache'
 import { encodeImage } from './services/image-encode'
 import { ImageStore } from './services/image-store'
+import { historyImageTags } from './utils/inbound-images'
 import { MemoryStore } from './services/memory'
 import {
   PROVIDER_FILES_CLEANUP_MS,
@@ -616,7 +617,11 @@ export default class PluginLLM extends BasePlugin<Config> {
       channelHistory
         ? buildStoredChannelHistoryHandler(
             channelHistory,
-            (c) => this.ctx.get('stickerPool')?.rewriteInbound(c) ?? c
+            (c) =>
+              historyImageTags(
+                this.ctx.get('stickerPool')?.rewriteInbound(c) ?? c,
+                (url) => this.images.idOfUrl(url)
+              )
           )
         : buildReadChannelHistoryHandler()
     )

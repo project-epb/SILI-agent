@@ -487,8 +487,8 @@ export function buildStoredChannelHistoryHandler(
           count,
           before
         )
-        // Images stay as their URLs: nothing is downloaded until the model
-        // asks view_image for one.
+        // Nothing is downloaded here: view_image fetches an image when the
+        // model asks for it.
         const contents = messages.map((row) => rewrite(row.content))
         for (const c of contents) noteImageIds(turnState, c)
         return JSON.stringify({

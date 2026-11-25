@@ -18,7 +18,7 @@ import {
 import { parseStopKeyword } from '../utils/stop-keyword'
 import type { TurnStatus } from '../services/history-filter'
 import { createProgressNudge } from '../utils/progress-nudge'
-import { noteImageIds, rewriteInboundImages } from '../utils/inbound-images'
+import { noteImageIds, rewriteInboundImages, turnImages } from '../utils/inbound-images'
 import { attachedImages } from '../services/image-store'
 import { addTurnSpeaker } from '../utils/turn-speakers'
 import { buildMemorySnapshot } from '../services/memory-snapshot'
@@ -764,7 +764,10 @@ export default class ChatCommand extends BasePlugin {
             ...(envelopeImages.length && { images: envelopeImages }),
           }
         )
-        for (const m of chatMessages) noteImageIds(turnState, m.content)
+        for (const m of chatMessages) {
+          noteImageIds(turnState, m.content)
+          if ('images' in m) for (const id of m.images ?? []) turnImages(turnState).seen.add(id)
+        }
 
         // 分配本 chat invocation 的 turn_number。在 session rotation 之后、
         // 任何 record 落库之前 allocate；ActiveChatRegistry 已经按 owner
@@ -954,7 +957,9 @@ export default class ChatCommand extends BasePlugin {
                 .filter(Boolean)
                 .join('\n\n')
               noteImageIds(turnState, text)
-              return { text, images: items.flatMap((item) => item.images ?? []) }
+              const images = items.flatMap((item) => item.images ?? [])
+              for (const id of images) turnImages(turnState).seen.add(id)
+              return { text, images }
             },
             onTurnEnd: async () => {
               // 强制把这一轮累积的可见文本发出，作为一条独立消息——

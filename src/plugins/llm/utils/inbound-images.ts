@@ -40,6 +40,18 @@ export async function rewriteInboundImages(
   })
 }
 
+/**
+ * Chat-history images, without downloading: a QQ URL carries the image's
+ * hash, so it becomes the `<image id=…/>` the image has (or will have once
+ * view_image fetches it); a URL without one stays an `<img src>`.
+ */
+export function historyImageTags(content: string, idOfUrl: (url: string) => string | undefined): string {
+  return content.replace(IMG, (all, src: string) => {
+    const id = idOfUrl(src.replace(/&amp;/g, '&'))
+    return id ? `<image id="${id}"/>` : all
+  })
+}
+
 const TURN_IMAGES_KEY = 'images'
 
 interface TurnImages {
@@ -50,11 +62,21 @@ interface TurnImages {
   known: Set<string>
   /** Images view_image attached this turn. */
   viewed: number
+  /** Ids whose pixels the model already got in this conversation. */
+  seen: Set<string>
+  /** view_image attachments per tool batch (agent-loop iteration). */
+  batch: { iteration: number; count: number }
 }
 
 export function turnImages(turnState: Record<string, unknown>): TurnImages {
   let state = turnState[TURN_IMAGES_KEY] as TurnImages | undefined
-  if (!state) turnState[TURN_IMAGES_KEY] = state = { known: new Set(), viewed: 0 }
+  if (!state)
+    turnState[TURN_IMAGES_KEY] = state = {
+      known: new Set(),
+      viewed: 0,
+      seen: new Set(),
+      batch: { iteration: 0, count: 0 },
+    }
   return state
 }
 

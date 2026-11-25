@@ -79,7 +79,7 @@ describe('ImageStore', () => {
     const b = await store.put(new Uint8Array([2]))
     const c = await store.put(new Uint8Array([3]))
     const old = new Date(Date.now() - 60_000)
-    await fs.utimes(path.join(dir, `${b.sha256}.2x3.webp`), old, old)
+    await fs.utimes(path.join(dir, `${b.sha1}.2x3.webp`), old, old)
     const r = await store.cleanup()
     expect(r.removed).toBe(1)
     expect(await store.get(b.id)).toBeUndefined()

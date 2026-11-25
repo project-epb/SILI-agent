@@ -21,6 +21,8 @@ export interface ToolContext {
   turnState: Record<string, unknown>
   /** Aborts when the turn is stopped; long-running tools should honour it. */
   signal?: AbortSignal
+  /** Agent-loop iteration: calls with the same number ran in one batch. */
+  iteration?: number
 }
 
 /** A result with images: their pixels follow the batch of results (providers/images.ts). */

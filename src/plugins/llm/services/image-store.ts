@@ -2,10 +2,16 @@ import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-/** What the model sees of a stored image; `id` is the sha256's first 12 hex. */
+import { sha1FromQQImageUrl } from '../../sticker-pool/parse'
+
+/**
+ * What the model sees of a stored image; `id` is the first 12 hex of the
+ * source file's SHA1 — the same hash a QQ image URL carries, so an image in
+ * chat history has its id before anyone downloads it.
+ */
 export interface ImageRef {
   id: string
-  sha256: string
+  sha1: string
   type: string
   width: number
   height: number
@@ -34,15 +40,15 @@ export interface ImageStoreOptions {
 }
 
 const TYPE = 'image/webp'
-// <sha256>.<w>x<h>.webp — the name carries everything a tag needs, so the
+// <sha1>.<w>x<h>.webp — the name carries everything a tag needs, so the
 // index rebuilds from readdir alone.
-const NAME = /^([0-9a-f]{64})\.(\d+)x(\d+)\.webp$/
+const NAME = /^([0-9a-f]{40})\.(\d+)x(\d+)\.webp$/
 
 export const IMAGE_ID_LENGTH = 12
 
 /**
  * Content-addressed store for images the model looks at, on the host (not
- * the Linux VM). Keyed by the sha256 of the source bytes, so a re-sent
+ * the Linux VM). Keyed by the SHA1 of the source bytes, so a re-sent
  * picture is one file. mtime is the LRU clock: every use touches it;
  * cleanup drops files idle past the TTL, then the least recently used
  * until under the size cap.
@@ -50,13 +56,13 @@ export const IMAGE_ID_LENGTH = 12
 export class ImageStore {
   private index: Map<string, ImageRef> | null = null
   private loading: Promise<Map<string, ImageRef>> | null = null
-  /** Source URL → ref, so re-reading chat history does not re-download. */
-  private byUrl = new Map<string, ImageRef>()
+  /** Image id → a URL it can be downloaded from (QQ links last hours). */
+  private urls = new Map<string, string>()
 
   constructor(private readonly opts: ImageStoreOptions) {}
 
   private fileOf(ref: ImageRef) {
-    return path.join(this.opts.dir, `${ref.sha256}.${ref.width}x${ref.height}.webp`)
+    return path.join(this.opts.dir, `${ref.sha1}.${ref.width}x${ref.height}.webp`)
   }
 
   private async loadIndex(): Promise<Map<string, ImageRef>> {
@@ -67,7 +73,7 @@ export class ImageStore {
       for (const name of await fs.readdir(this.opts.dir)) {
         const m = NAME.exec(name)
         if (!m) continue
-        const ref = { id: m[1].slice(0, IMAGE_ID_LENGTH), sha256: m[1], type: TYPE, width: +m[2], height: +m[3] }
+        const ref = { id: m[1].slice(0, IMAGE_ID_LENGTH), sha1: m[1], type: TYPE, width: +m[2], height: +m[3] }
         index.set(ref.id, ref)
       }
       this.index = index
@@ -80,16 +86,16 @@ export class ImageStore {
   async put(bytes: Uint8Array): Promise<ImageRef> {
     if (bytes.length > this.opts.maxImageBytes)
       throw new Error(`image over ${this.opts.maxImageBytes} bytes`)
-    const sha256 = crypto.createHash('sha256').update(bytes).digest('hex')
+    const sha1 = crypto.createHash('sha1').update(bytes).digest('hex')
     const index = await this.loadIndex()
-    const id = sha256.slice(0, IMAGE_ID_LENGTH)
+    const id = sha1.slice(0, IMAGE_ID_LENGTH)
     const known = index.get(id)
-    if (known?.sha256 === sha256) {
+    if (known?.sha1 === sha1) {
       await this.touch(known)
       return known
     }
     const encoded = await this.opts.encode(bytes)
-    const ref = { id, sha256, type: TYPE, width: encoded.width, height: encoded.height }
+    const ref = { id, sha1, type: TYPE, width: encoded.width, height: encoded.height }
     const file = this.fileOf(ref)
     await fs.writeFile(`${file}.part`, encoded.bytes)
     await fs.rename(`${file}.part`, file)
@@ -97,14 +103,34 @@ export class ImageStore {
     return ref
   }
 
-  /** Download and store an image; the same URL is fetched once per process. */
+  /**
+   * The id a URL's image has or will have, read from a QQ URL without
+   * downloading, and remembered so view_image can fetch it by id later.
+   * Undefined when the URL carries no hash.
+   */
+  idOfUrl(url: string): string | undefined {
+    const id = sha1FromQQImageUrl(url)?.slice(0, IMAGE_ID_LENGTH)
+    if (!id) return
+    this.urls.delete(id)
+    this.urls.set(id, url)
+    if (this.urls.size > 5000) this.urls.delete(this.urls.keys().next().value!)
+    return id
+  }
+
+  /** A URL to download the image with this id from, if one was seen. */
+  urlOf(id: string): string | undefined {
+    return this.urls.get(id)
+  }
+
+  /** Store the image at a URL; skips the download when its hash is already stored. */
   async fetch(url: string): Promise<ImageRef> {
-    const cached = this.byUrl.get(url)
-    if (cached && (await this.get(cached.id))) return cached
-    const ref = await this.put(await this.opts.fetch(url))
-    this.byUrl.set(url, ref)
-    if (this.byUrl.size > 2000) this.byUrl.delete(this.byUrl.keys().next().value!)
-    return ref
+    const id = this.idOfUrl(url)
+    const stored = id && (await this.get(id))
+    if (stored) {
+      await this.touch(stored)
+      return stored
+    }
+    return this.put(await this.opts.fetch(url))
   }
 
   /** The ref for an id, or undefined once evicted. */

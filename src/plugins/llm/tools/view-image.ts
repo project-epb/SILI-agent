@@ -3,12 +3,13 @@ import { imageTag } from '../services/image-store'
 import { decodeUrl, turnImages } from '../utils/inbound-images'
 import type { ToolHandler, ToolResult } from './types'
 
-export const VIEW_IMAGES_PER_CALL = 4
+/** Images attached per tool batch, however many view_image calls it holds. */
+export const VIEW_IMAGES_PER_BATCH = 4
 export const VIEW_IMAGES_PER_TURN = 8
 
 export const VIEW_IMAGE_TOOL: ToolDefinition = {
   name: 'view_image',
-  description: `查看图片。images 每项是 \`<image id="…"/>\` 的 id，或聊天记录里 \`<img src="…"/>\` 的 URL（原样复制）。一次最多 ${VIEW_IMAGES_PER_CALL} 张，每轮合计最多 ${VIEW_IMAGES_PER_TURN} 张。`,
+  description: `查看图片。images 每项是 \`<image id="…"/>\` 的 id，或 \`<img src="…"/>\` 的 URL（原样复制）。同一批调用合计最多附 ${VIEW_IMAGES_PER_BATCH} 张，每轮最多 ${VIEW_IMAGES_PER_TURN} 张。`,
   parameters: {
     type: 'object',
     properties: {
@@ -16,7 +17,7 @@ export const VIEW_IMAGE_TOOL: ToolDefinition = {
         type: 'array',
         items: { type: 'string' },
         minItems: 1,
-        maxItems: VIEW_IMAGES_PER_CALL,
+        maxItems: VIEW_IMAGES_PER_BATCH,
       },
     },
     required: ['images'],
@@ -24,9 +25,11 @@ export const VIEW_IMAGE_TOOL: ToolDefinition = {
   },
 }
 
+const EXPIRED = 'expired: the image can no longer be downloaded'
+
 export const viewImageHandler: ToolHandler = {
   definition: VIEW_IMAGE_TOOL,
-  async execute(args, { ctx, turnState, logger }): Promise<ToolResult> {
+  async execute(args, { ctx, turnState, logger, iteration = 0 }): Promise<ToolResult> {
     const wanted = [
       ...new Set(
         (Array.isArray(args?.images) ? args.images : [])
@@ -35,36 +38,52 @@ export const viewImageHandler: ToolHandler = {
       ),
     ] as string[]
     if (!wanted.length) return { content: 'Error: images is empty.' }
-    if (wanted.length > VIEW_IMAGES_PER_CALL)
-      return { content: `Error: at most ${VIEW_IMAGES_PER_CALL} images per call.` }
     const state = turnImages(turnState)
     const unknown = wanted.filter((s) => !state.known.has(s))
     if (unknown.length)
       return { content: `Error: not an image id or image URL from this conversation: ${unknown.join(', ')}` }
-    if (state.viewed + wanted.length > VIEW_IMAGES_PER_TURN)
-      return {
-        content: `Error: at most ${VIEW_IMAGES_PER_TURN} images per turn; ${VIEW_IMAGES_PER_TURN - state.viewed} left.`,
-      }
-    // A URL is downloaded and stored only now, when the model asks for it.
+    if (state.batch.iteration !== iteration) state.batch = { iteration, count: 0 }
+
+    const store = ctx.llm.images
     const lines: string[] = []
     const ids: string[] = []
     for (const item of wanted) {
-      if (!/^https?:/.test(item)) {
-        lines.push(`${item}: attached below`)
-        ids.push(item)
+      const isUrl = /^https?:/.test(item)
+      const hinted = isUrl ? store.idOfUrl(item) : item
+      if (hinted && state.seen.has(hinted)) {
+        lines.push(`${item}: already viewed earlier in this conversation; see above`)
         continue
       }
+      if (state.batch.count >= VIEW_IMAGES_PER_BATCH || state.viewed >= VIEW_IMAGES_PER_TURN) {
+        const cap = state.viewed >= VIEW_IMAGES_PER_TURN
+          ? `${VIEW_IMAGES_PER_TURN} per turn`
+          : `${VIEW_IMAGES_PER_BATCH} per batch of calls; view it in a later step`
+        lines.push(`${item}: not attached, limit is ${cap}`)
+        continue
+      }
+      // Downloaded only now, and only if not stored already.
+      let id: string | undefined
       try {
-        const ref = await ctx.llm.images.fetch(item)
-        state.known.add(ref.id)
-        lines.push(`${item} → ${imageTag(ref)}: attached below`)
-        ids.push(ref.id)
+        if (!isUrl && (await store.get(item))) id = item
+        else {
+          const url = isUrl ? item : store.urlOf(item)
+          if (url) id = (await store.fetch(url)).id
+        }
       } catch (e) {
         logger.warn('[view_image] fetch failed: %s', (e as Error)?.message ?? e)
-        lines.push(`${item}: could not be downloaded (the link may have expired)`)
       }
+      if (!id) {
+        lines.push(`${item}: ${EXPIRED}`)
+        continue
+      }
+      const ref = await store.get(id)
+      state.known.add(id)
+      state.seen.add(id)
+      state.batch.count++
+      state.viewed++
+      ids.push(id)
+      lines.push(`${item}: ${ref ? imageTag(ref) : `<image id="${id}"/>`} attached below`)
     }
-    state.viewed += ids.length
     return { content: lines.join('\n'), images: ids }
   },
 }

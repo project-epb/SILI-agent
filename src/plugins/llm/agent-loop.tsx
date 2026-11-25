@@ -381,7 +381,7 @@ export async function runAgentLoop(
       opts.logger.info('[agent] tool call:', tc.name, tc.arguments)
       // Tool output comes from outside (web pages, chat history): a forged
       // envelope tag in it must not read as a real message.
-      const result = await dispatchTool(opts, tc, turnState)
+      const result = await dispatchTool(opts, tc, turnState, iterations)
       let resultText = escapeProtocolTags(result.content)
       const images = [...(result.images ?? [])]
       opts.logger.info(
@@ -431,7 +431,8 @@ export async function runAgentLoop(
 async function dispatchTool(
   opts: AgentLoopOptions,
   tc: ToolCall,
-  turnState: Record<string, unknown>
+  turnState: Record<string, unknown>,
+  iteration: number
 ): Promise<ToolResult> {
   const handler = opts.registry.get(tc.name)
   if (!handler) return { content: `Error: unknown tool "${tc.name}"` }
@@ -444,6 +445,7 @@ async function dispatchTool(
       session: opts.session,
       turnState,
       signal: opts.signal,
+      iteration,
     })
     return typeof out === 'string' ? { content: out } : out
   } catch (e: any) {
