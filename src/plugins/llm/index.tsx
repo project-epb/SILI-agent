@@ -185,8 +185,6 @@ export interface Config {
   progressNudgeAfterMs?: number
   /** Also remind after this many tool calls without visible text; 0 disables. */
   progressNudgeAfterToolCalls?: number
-  /** At most this many progress reminders per turn. */
-  progressNudgeMaxPerTurn?: number
   /**
    * DeepSeek "DSML leak" workaround (see utils/dsml-leak.ts): when the model
    * dumps its tool-call markup as plain content, re-send the same payload
@@ -328,7 +326,6 @@ export default class PluginLLM extends BasePlugin<Config> {
       showToolCallNotice: false,
       progressNudgeAfterMs: 60 * 1000,
       progressNudgeAfterToolCalls: 5,
-      progressNudgeMaxPerTurn: 2,
       dsmlLeakMaxRetries: 2,
       memoryByteLimit: 3000,
       sharedMemoryByteLimit: 3000,

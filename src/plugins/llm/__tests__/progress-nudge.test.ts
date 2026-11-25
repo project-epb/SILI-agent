@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { createProgressNudge } from '../utils/progress-nudge'
 
 describe('createProgressNudge', () => {
-  it('nudges after the silence, counts silence again after each nudge or visible text, and stops at the cap', () => {
+  it('nudges after the silence and counts silence again after each nudge or visible text', () => {
     let t = 0
     const n = createProgressNudge(
-      { afterMs: 60, afterToolCalls: 0, maxPerTurn: 2 },
+      { afterMs: 60, afterToolCalls: 0 },
       () => t
     )
     t = 59
@@ -20,13 +20,11 @@ describe('createProgressNudge', () => {
     expect(n.take(1)).toBe(false)
     t = 160
     expect(n.take(1)).toBe(true)
-    t = 1000
-    expect(n.take(1)).toBe(false)
   })
 
   it('nudges after enough quiet tool calls; visible text resets the count', () => {
     const n = createProgressNudge(
-      { afterMs: 0, afterToolCalls: 5, maxPerTurn: 9 },
+      { afterMs: 0, afterToolCalls: 5 },
       () => 0
     )
     expect(n.take(3)).toBe(false)
@@ -39,7 +37,7 @@ describe('createProgressNudge', () => {
   it('is off when both triggers are 0', () => {
     let t = 0
     const n = createProgressNudge(
-      { afterMs: 0, afterToolCalls: 0, maxPerTurn: 2 },
+      { afterMs: 0, afterToolCalls: 0 },
       () => t
     )
     t = 1e9

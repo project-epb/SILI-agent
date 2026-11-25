@@ -797,7 +797,6 @@ export default class ChatCommand extends BasePlugin {
         const progressNudge = createProgressNudge({
           afterMs: llm.config.progressNudgeAfterMs ?? 0,
           afterToolCalls: llm.config.progressNudgeAfterToolCalls ?? 0,
-          maxPerTurn: llm.config.progressNudgeMaxPerTurn ?? 0,
         })
         const flushVisibleText = async (force: boolean) => {
           while (sendFromIndex.value < sendBuffer.length) {
