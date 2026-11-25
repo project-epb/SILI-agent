@@ -11,10 +11,10 @@ describe('describeChatError', () => {
     [new Error('Tool call JSON parse failed for x: {'), 'JSON'],
     [api('APIConnectionTimeoutError', undefined, 'Request timed out.'), '超时'],
     [api('APIConnectionError', undefined, 'Connection error.'), '网络中断'],
-    [api('AuthenticationError', 401, 'bad key'), '认证失败'],
-    [api('RateLimitError', 429, 'slow down'), '429'],
-    [api('BadRequestError', 400, "This model's maximum context length is 128000 tokens"), '上下文超长'],
-    [api('InternalServerError', 502, 'bad gateway'), '502'],
+    [api('AuthenticationError', 401, 'bad key'), 'HTTP 401'],
+    [api('RateLimitError', 429, 'slow down'), 'HTTP 429'],
+    [api('BadRequestError', 400, "This model's maximum context length is 128000 tokens"), '记不下'],
+    [api('InternalServerError', 502, 'bad gateway'), 'HTTP 502'],
     [api('BadRequestError', 400, "'file' field is required"), "'file' field is required"],
   ])('%s', (e, expected) => {
     expect(describeChatError(e)).toContain(expected)
