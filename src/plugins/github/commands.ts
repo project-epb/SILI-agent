@@ -5,14 +5,15 @@ import type { SubscriptionStore } from './subscribe'
 
 export const REPO_RE = /^[\w.-]+\/[\w.-]+$/
 
-/** Reply strings — verbatim from the old plugin's locales/zh-CN.json. Functions interpolate the repo name. */
+/** Reply strings. Functions interpolate the repo name. Replies about subscriptions must say whether
+ * they concern the current channel or the global registry: the bot reads these to decide what to run. */
 export const MSG = {
-  listEmpty: '当前没有订阅的仓库。',
+  listEmpty: '当前频道没有订阅任何仓库。',
   privateContext: '当前不是群聊上下文。',
   repoExpected: '请输入仓库名。',
   repoInvalid: '请输入正确的仓库名。',
   requireAuth: '要使用此功能，请先对机器人进行授权。',
-  reposEmpty: '当前没有监听的仓库。',
+  reposEmpty: '全局注册表中没有仓库。',
   subAddUnchanged: (n: string) => `已经在当前频道订阅过仓库 ${n}。`,
   subAddSucceeded: '添加订阅成功！',
   subDeleteUnchanged: (n: string) => `尚未在当前频道订阅过仓库 ${n}。`,
@@ -24,19 +25,21 @@ export const MSG = {
   repoNotFound: '仓库不存在或您无权访问。',
   forbidden: '第三方访问受限，请尝试授权此应用。\nhttps://docs.github.com/articles/restricting-access-to-your-organization-s-data/',
   repoDeleteUnchanged: (n: string) => `尚未添加过仓库 ${n}。`,
-  repoDeleteSucceeded: '移除仓库成功！',
+  repoDeleteSucceeded: '已删除该仓库的 webhook，并移除了所有频道对它的订阅。',
+  listHeader: '当前频道订阅的仓库：',
+  reposHeader: '全局注册表中的仓库（所有频道共用，不代表当前频道已订阅）：',
   repoDeleteFailed: '由于未知原因移除仓库失败。',
 } as const
 
 /** Pure: the -l list reply. */
 export function resolveListReply(webhooks: Record<string, unknown> | undefined): string {
   const names = Object.keys(webhooks ?? {})
-  return names.length ? names.sort().join('\n') : MSG.listEmpty
+  return names.length ? [MSG.listHeader, ...names.sort()].join('\n') : MSG.listEmpty
 }
 
-/** Pure: the no-option github.repos reply (list all registered repos). */
+/** Pure: the no-option github.registry reply (list all registered repos). */
 export function resolveReposListReply(names: string[]): string {
-  return names.length ? names.join('\n') : MSG.reposEmpty
+  return names.length ? [MSG.reposHeader, ...names].join('\n') : MSG.reposEmpty
 }
 
 /** Pure: map a GitHub webhook-create error status to a reply key. */
@@ -91,7 +94,7 @@ export function makeRepoStore(ctx: Context): RepoStore {
   }
 }
 
-/** Register github/gh + github.repos. (github.repos body is added in Task 4.) */
+/** Register github/gh, github.subscribe, github.registry, github.issue and github.star. */
 export function applyCommands(
   ctx: Context,
   config: Config,
@@ -101,14 +104,21 @@ export function applyCommands(
 ): void {
   const hidden = (session: any) => session.isDirect
 
-  // ---- github [name] / gh : channel subscription management ----
+  // `github` / `gh` is only a namespace: it shows help. Channel subscription lives in
+  // `github.subscribe`, the global webhook registry in `github.registry`. Do not put
+  // subscribe options back on the parent: mixing "this channel" and "every channel"
+  // under one command name made the bot delete other channels' subscriptions.
   ctx
-    .command('github [name]', { featLevel: 0 })
+    .command('github', 'GitHub 仓库事件推送与操作', { featLevel: 0 })
     .alias('gh')
+    .action(({ session }) => session!.execute('help github'))
+
+  ctx
+    .command('github.subscribe [name]', '管理当前频道订阅的仓库（只影响本频道）')
     .channelFields(['github'])
-    .option('list', '-l', { hidden })
-    .option('add', '-a', { hidden, authority: 2 })
-    .option('delete', '-d', { hidden, authority: 2 })
+    .option('list', '-l 列出当前频道订阅的仓库', { hidden })
+    .option('add', '-a 当前频道订阅仓库（仓库须已在全局注册表中）', { hidden, authority: 2 })
+    .option('delete', '-d 当前频道取消订阅仓库（不影响其他频道）', { hidden, authority: 2 })
     .action(async ({ session, options }, name) => {
       const s = session!
       if (options!.list) {
@@ -137,9 +147,9 @@ export function applyCommands(
           await s.send(MSG.subUnknown(repo))
           const reply = await s.prompt(config.replyTimeout ?? 60000)
           if (reply !== undefined && ['', '.', '。'].includes(reply.trim())) {
-            // Chain into github.repos --add --subscribe (creates hook AND subscribes).
+            // Chain into github.registry --add --subscribe (creates hook AND subscribes).
             return s.execute(
-              { name: 'github.repos', args: [repo], options: { add: true, subscribe: true } },
+              { name: 'github.registry', args: [repo], options: { add: true, subscribe: true } },
               true
             )
           }
@@ -150,11 +160,10 @@ export function applyCommands(
         store.subscribe(repo, s.cid, {})
         return MSG.subAddSucceeded
       }
-      return s.execute('help github')
+      return s.execute('help github.subscribe')
     })
 
-  // github.repos is registered in Task 4 (same applyCommands function).
-  applyReposCommand(ctx, config, http, store, repoStore)
+  applyRegistryCommand(ctx, config, http, store, repoStore)
   applyIssueStarCommands(ctx, http)
 }
 
@@ -205,8 +214,8 @@ function applyIssueStarCommands(ctx: Context, http: GitHubHttp): void {
     })
 }
 
-/** github.repos [name] — manage the global webhook registry (-a create / -d delete / -s also-subscribe). */
-function applyReposCommand(
+/** github.registry [name] — the global webhook registry shared by every channel. */
+function applyRegistryCommand(
   ctx: Context,
   config: Config,
   http: GitHubHttp,
@@ -217,11 +226,11 @@ function applyReposCommand(
   const callbackUrl = () => ctx.server.config.selfUrl + path + '/webhook'
 
   ctx
-    .command('github.repos [name]')
+    .command('github.registry [name]', '管理全局仓库注册表（webhook），影响所有频道；不带选项时列出已注册仓库')
     .userFields(['id', 'github'])
-    .option('add', '-a')
-    .option('delete', '-d')
-    .option('subscribe', '-s')
+    .option('add', '-a 在仓库上注册 webhook（需要已授权的 GitHub 账号）')
+    .option('delete', '-d 删除 webhook，并移除所有频道对该仓库的订阅')
+    .option('subscribe', '-s 与 -a 同用：注册后让当前频道订阅该仓库')
     .action(async ({ session, options }, name) => {
       const s = session!
       if (!options!.add && !options!.delete) {
@@ -255,8 +264,8 @@ function applyReposCommand(
         }
         await repoStore.create({ name: repo, id: data.id, secret })
         if (!options!.subscribe) return MSG.repoAddSucceeded
-        // -s: chain into channel subscribe (github --add)
-        return s.execute({ name: 'github', args: [repo], options: { add: true } }, true)
+        // -s: chain into channel subscribe
+        return s.execute({ name: 'github.subscribe', args: [repo], options: { add: true } }, true)
       }
 
       // -d (delete webhook globally)
