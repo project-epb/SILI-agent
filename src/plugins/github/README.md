@@ -46,17 +46,19 @@
 # 1. 绑定 GitHub 账号（返回一个授权链接，点击后在浏览器完成授权）
 github.authorize
 
-# 2. 在仓库上注册 webhook，并顺带订阅到当前频道
-github.repos -a owner/repo -s
+# 2. 在仓库上注册 webhook（写入全局注册表），并顺带订阅到当前频道
+github.registry -a owner/repo -s
 ```
 
 完成后，该仓库的事件就会推送到当前频道。之后其他频道也可以只订阅、无需重复注册：
 
 ```
-github -a owner/repo      # 当前频道订阅（仓库须已注册过 webhook）
-github -l                 # 查看当前频道订阅了哪些仓库
-github -d owner/repo      # 取消订阅
+github.subscribe -a owner/repo      # 当前频道订阅（仓库须已在全局注册表中）
+github.subscribe -l                 # 查看当前频道订阅了哪些仓库
+github.subscribe -d owner/repo      # 当前频道取消订阅，不影响其他频道
 ```
+
+> 两层概念不要混淆：`github.subscribe` 只管**当前频道**；`github.registry` 管**全局注册表**，所有频道共用。`github.registry -d` 会删除 webhook 并移除**所有频道**对该仓库的订阅，只想让本频道不再接收推送时用 `github.subscribe -d`。
 
 ## 引用回复交互
 
@@ -98,12 +100,13 @@ github -d owner/repo      # 取消订阅
 | 命令                                     | 说明                                                                                      |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
 | `github.authorize`（别名 `github.auth`） | 通过 OAuth 绑定 GitHub 账号                                                               |
-| `github [repo]`（别名 `gh`）             | 频道订阅管理：`-l` 列出、`-a` 订阅、`-d` 取消订阅                                         |
-| `github.repos [repo]`                    | webhook 注册管理：无参数列出已注册仓库、`-a` 注册、`-d` 删除、`-s` 注册后顺带订阅当前频道 |
+| `github`（别名 `gh`）                    | 显示 GitHub 相关指令的帮助                                                                |
+| `github.subscribe [repo]`                | **当前频道**订阅管理：`-l` 列出、`-a` 订阅、`-d` 取消订阅                                 |
+| `github.registry [repo]`                 | **全局**注册表（webhook）管理：无参数列出已注册仓库、`-a` 注册、`-d` 删除并移除所有频道的订阅、`-s` 注册后顺带订阅当前频道 |
 | `github.issue <title> [body] -r <repo>`  | 新建一个 issue                                                                            |
 | `github.star <repo>`                     | star 一个仓库                                                                             |
 
-> 频道订阅相关的 `-a` / `-d` 默认需要 authority 2。
+> `github.subscribe` 的 `-a` / `-d` 默认需要 authority 2。
 
 ## 支持的事件
 
@@ -133,7 +136,7 @@ github -d owner/repo      # 取消订阅
 ## 工作原理
 
 - **账号绑定**：`github.authorize` 生成带一次性 state 的授权链接；用户在浏览器授权后，回调路由用 code 换取 access / refresh token 并与其聊天账号关联。请求失败时呈现自带的结果页而非空白错误。
-- **事件推送**：`github.repos -a` 调用 GitHub API 在仓库上创建 webhook 并记录其 secret；每次投递用该 secret 校验签名后，按订阅关系渲染并广播到相应频道。
+- **事件推送**：`github.registry -a` 调用 GitHub API 在仓库上创建 webhook 并记录其 secret；每次投递用该 secret 校验签名后，按订阅关系渲染并广播到相应频道。
 - **引用回复**：广播时，插件把「消息 → 该事件支持的操作及对应 API 地址」的映射同时写入内存（`replyTimeout`）与数据库（`replyColdTimeout`）；当用户引用某条消息时据此定位资源并执行操作，内存未命中则回查数据库。详见上文「引用回复的两层时限」。
 
 ## License
